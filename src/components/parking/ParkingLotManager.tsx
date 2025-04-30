@@ -8,7 +8,7 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star } from 'lucide-react'; // Added Sparkles, Star
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff } from 'lucide-react'; // Added Sparkles, Star, Mic, MicOff
 import AuthModal from '@/components/auth/AuthModal';
 import UserProfile from '@/components/profile/UserProfile';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,11 @@ import Link from 'next/link';
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
 import { getUserGamification } from '@/services/user-service'; // Import gamification service
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
+import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
+import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
+import { cn } from '@/lib/utils';
+import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
+
 
 export default function ParkingLotManager() {
   const {
@@ -48,10 +53,243 @@ export default function ParkingLotManager() {
   const [userHistorySummary, setUserHistorySummary] = useState<string>("Prefers Downtown Garage, parks mostly weekday mornings."); // Example summary
 
   const { toast } = useToast();
+   const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null); // State for report modal
+   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+     // Fetch recommendations when locations are loaded or user/destination changes
+     const fetchRecommendations = useCallback(async (destination?: string) => { // Added optional destination
+       if (!isAuthenticated || !userId || locations.length === 0) {
+           setRecommendations([]); // Clear recommendations if not logged in or no locations
+           return;
+       }
+       setIsLoadingRecommendations(true);
+       try {
+           // Simulate getting user location/destination (replace with actual data)
+           const currentCoords = { latitude: 34.0522, longitude: -118.2437 }; // Example: Near Downtown Garage
+           const destinationCoords = destination // Use provided destination if available
+              ? { latitude: 34.0550, longitude: -118.2500 } // TODO: Geocode destination string to coords
+              : undefined;
+
+            // Fetch user preferences (e.g., from gamification/profile service)
+            // const gamificationData = await getUserGamification(userId);
+            // setUserPreferredServices(gamificationData.preferredServices || []); // Assuming preferences are stored there
+
+           // Prepare input for the recommendation flow
+           // Convert locations to JSON string with essential details
+           const locationsWithPrice = await Promise.all(locations.map(async loc => {
+               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, 'Basic'); // Estimate for 1 hour
+               return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
+           }));
+           const nearbyLotsJson = JSON.stringify(locationsWithPrice);
+
+           const input = {
+               userId: userId,
+               currentLatitude: currentCoords.latitude,
+               currentLongitude: currentCoords.longitude,
+               destinationLatitude: destinationCoords?.latitude,
+               destinationLongitude: destinationCoords?.longitude,
+               preferredServices: userPreferredServices,
+               nearbyParkingLots: nearbyLotsJson,
+               userHistorySummary: userHistorySummary,
+               // maxDistanceKm: 5, // Optional: Add distance constraint
+           };
+
+           const result = await recommendParking(input);
+           setRecommendations(result.recommendations || []);
+
+       } catch (err) {
+           console.error("Failed to fetch recommendations:", err);
+           toast({
+               title: "Recommendation Error",
+               description: "Could not fetch personalized parking recommendations.",
+               variant: "destructive",
+           });
+           setRecommendations([]); // Clear recommendations on error
+       } finally {
+           setIsLoadingRecommendations(false);
+       }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+     }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast]); // Add relevant dependencies
+
+    useEffect(() => {
+        // Fetch recommendations after locations are loaded and user is authenticated
+        if (!isLoadingLocations && locations.length > 0 && isAuthenticated) {
+            fetchRecommendations();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoadingLocations, locations, isAuthenticated, toast, fetchRecommendations, userId, userPreferredServices, userHistorySummary]);
+
+   // --- Voice Assistant Integration ---
+    // Move handleVoiceCommandResult here
+    const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput) => {
+        const { intent, entities, responseText } = commandOutput;
+
+        console.log("Processed Intent:", intent);
+        console.log("Processed Entities:", entities);
+
+        // Speak the response first
+        voiceAssistant.speak(responseText);
+
+        // --- Execute action based on intent ---
+        switch (intent) {
+            case 'find_parking':
+                // Trigger recommendation fetch or filter based on destination
+                if (entities.destination) {
+                     toast({ title: "Finding Parking", description: `Looking for parking near ${entities.destination}. Recommendations updated.` });
+                     // TODO: Update recommendations based on destination entity
+                     await fetchRecommendations(entities.destination);
+                } else {
+                     toast({ title: "Finding Parking", description: `Showing general recommendations.` });
+                     await fetchRecommendations();
+                }
+                break;
+
+            case 'reserve_spot':
+                if (entities.spotId) {
+                    // Find the location containing this spot ID (simple example)
+                    const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
+                    if (location) {
+                        setSelectedLocationId(location.id);
+                        // Need a way to trigger the reservation dialog for the specific spot
+                        // This might require refactoring ParkingLotGrid or exposing a function
+                        toast({ title: "Action Required", description: `Navigating to ${location.name}. Please confirm reservation for ${entities.spotId} on screen.` });
+                         // Scroll to grid?
+                         setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
+                         // TODO: Programmatically trigger the reservation dialog in ParkingLotGrid
+                         console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
+                    } else {
+                        voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                    }
+                } else {
+                    voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                }
+                break;
+
+            case 'check_availability':
+                if (entities.spotId) {
+                    const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
+                     if (location) {
+                         setSelectedLocationId(location.id);
+                         // TODO: Highlight or provide status for the specific spot
+                         toast({ title: "Checking Availability", description: `Checking status for ${entities.spotId} in ${location.name}. See grid below.` });
+                         setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
+                         console.warn(`Need mechanism to display/highlight availability for ${entities.spotId}`);
+                    } else {
+                         voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                    }
+                } else if (entities.locationId) {
+                     const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
+                     if (location) {
+                         setSelectedLocationId(location.id);
+                         const available = location.capacity - (location.currentOccupancy ?? 0);
+                         voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                     } else {
+                         voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                     }
+                } else {
+                    voiceAssistant.speak("Which spot or location would you like me to check?");
+                }
+                break;
+
+            case 'cancel_reservation':
+                 // Requires checking active reservations and asking user to confirm which one
+                 toast({ title: "Action Required", description: "Please open your profile to view and cancel active reservations." });
+                 // Optionally open profile: setIsProfileOpen(true);
+                break;
+
+            case 'get_directions':
+                 if (entities.locationId) {
+                     const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
+                     if (location) {
+                         toast({ title: "Getting Directions", description: `Opening map directions for ${location.name}...` });
+                         // TODO: Integrate with mapping service (e.g., open Google Maps URL)
+                         // window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank');
+                     } else {
+                         voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                     }
+                 } else if (pinnedSpot) {
+                     const location = locations.find(l => l.id === pinnedSpot.locationId);
+                      toast({ title: "Getting Directions", description: `Opening map directions to your parked car at ${pinnedSpot.spotId}...` });
+                      // TODO: Integrate with mapping service to pinned spot coordinates (if available)
+                 } else {
+                      voiceAssistant.speak("Where would you like directions to?");
+                 }
+                break;
+            case 'report_issue':
+                if (entities.spotId) {
+                    const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
+                     if (location && isAuthenticated) {
+                         // Find the corresponding 'reservation' (even if just parked) to pass to modal
+                         // This is tricky without a proper reservation list. Simulate finding a match.
+                         const mockReservation = {
+                             id: `rep_${entities.spotId}`,
+                             spotId: entities.spotId,
+                             locationId: location.id,
+                             locationName: location.name,
+                             startTime: new Date().toISOString(),
+                             endTime: '', cost: 0, status: 'Active' as const
+                         };
+                         setReportingReservation(mockReservation);
+                         setIsReportModalOpen(true);
+                         // TTS response handled by the flow already
+                     } else if (!isAuthenticated) {
+                          voiceAssistant.speak("Please sign in to report an issue.");
+                          setIsAuthModalOpen(true);
+                     } else {
+                          voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                     }
+                } else {
+                    voiceAssistant.speak("Which spot are you reporting an issue for?");
+                }
+                break;
+            case 'unknown':
+                // Response already spoken by the flow
+                break;
+        }
+    }, [locations, pinnedSpot, isAuthenticated, toast]); // Added toast
+
+   const handleVoiceCommand = useCallback(async (transcript: string) => {
+        if (!transcript) return;
+        try {
+            const result = await processVoiceCommand({ transcript });
+            await handleVoiceCommandResult(result);
+        } catch (err) {
+            console.error("Failed to process voice command:", err);
+            toast({
+                title: "Voice Command Error",
+                description: "Sorry, I couldn't process that request.",
+                variant: "destructive",
+            });
+            voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
+        }
+    }, [handleVoiceCommandResult, toast]); // Dependencies
+
+   const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
+   const voiceAssistant = useVoiceAssistant({
+       onCommand: handleVoiceCommand,
+       onStateChange: (newState) => {
+           console.log("Voice Assistant State:", newState);
+           // Update UI based on state if needed
+       }
+   });
+
+   // useEffect moved below
+   useEffect(() => {
+       if (voiceAssistant.error) {
+           toast({
+               title: "Voice Assistant Error",
+               description: voiceAssistant.error,
+               variant: "destructive",
+               duration: 4000,
+           });
+       }
+   }, [voiceAssistant.error, toast]);
+   // --- End Voice Assistant Integration ---
+
 
   // Fetch locations
   useEffect(() => {
-    const fetchLocations = async () => {
+    const fetchLocationsData = async () => {
       setIsLoadingLocations(true);
       setError(null);
       try {
@@ -68,69 +306,8 @@ export default function ParkingLotManager() {
         setIsLoadingLocations(false);
       }
     };
-    fetchLocations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchLocationsData();
   }, []);
-
-   // Fetch recommendations when locations are loaded or user/destination changes
-   const fetchRecommendations = useCallback(async () => {
-     if (!isAuthenticated || !userId || locations.length === 0) {
-         setRecommendations([]); // Clear recommendations if not logged in or no locations
-         return;
-     }
-     setIsLoadingRecommendations(true);
-     try {
-         // Simulate getting user location/destination (replace with actual data)
-         const currentCoords = { latitude: 34.0522, longitude: -118.2437 }; // Example: Near Downtown Garage
-         const destinationCoords = { latitude: 34.0550, longitude: -118.2500 }; // Example: Near Airport Lot B
-
-          // Fetch user preferences (e.g., from gamification/profile service)
-          // const gamificationData = await getUserGamification(userId);
-          // setUserPreferredServices(gamificationData.preferredServices || []); // Assuming preferences are stored there
-
-         // Prepare input for the recommendation flow
-         // Convert locations to JSON string with essential details
-         const locationsWithPrice = await Promise.all(locations.map(async loc => {
-             const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, 'Basic'); // Estimate for 1 hour
-             return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
-         }));
-         const nearbyLotsJson = JSON.stringify(locationsWithPrice);
-
-         const input = {
-             userId: userId,
-             currentLatitude: currentCoords.latitude,
-             currentLongitude: currentCoords.longitude,
-             destinationLatitude: destinationCoords.latitude,
-             destinationLongitude: destinationCoords.longitude,
-             preferredServices: userPreferredServices,
-             nearbyParkingLots: nearbyLotsJson,
-             userHistorySummary: userHistorySummary,
-             // maxDistanceKm: 5, // Optional: Add distance constraint
-         };
-
-         const result = await recommendParking(input);
-         setRecommendations(result.recommendations || []);
-
-     } catch (err) {
-         console.error("Failed to fetch recommendations:", err);
-         toast({
-             title: "Recommendation Error",
-             description: "Could not fetch personalized parking recommendations.",
-             variant: "destructive",
-         });
-         setRecommendations([]); // Clear recommendations on error
-     } finally {
-         setIsLoadingRecommendations(false);
-     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast]); // Add relevant dependencies
-
-  useEffect(() => {
-      // Fetch recommendations after locations are loaded and user is authenticated
-      if (!isLoadingLocations && locations.length > 0 && isAuthenticated) {
-          fetchRecommendations();
-      }
-  }, [isLoadingLocations, locations, isAuthenticated, fetchRecommendations]);
 
 
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
@@ -194,7 +371,6 @@ export default function ParkingLotManager() {
        }
   };
 
-  // Clear the pinned location manually (example)
   const clearPinnedLocation = () => {
       setPinnedSpot(null);
       toast({ title: "Pinned Location Cleared" });
@@ -204,25 +380,80 @@ export default function ParkingLotManager() {
   const handleSelectRecommendation = (lotId: string) => {
       setSelectedLocationId(lotId);
       // Optionally scroll to the parking grid
-      // document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' });
+       document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
+   const getVoiceButtonIcon = () => {
+       switch (voiceAssistant.state) {
+           case 'listening':
+               return <Mic className="h-5 w-5 text-destructive animate-pulse" />;
+           case 'processing':
+               return <Loader2 className="h-5 w-5 animate-spin" />;
+           case 'speaking':
+                return <MicOff className="h-5 w-5 text-muted-foreground" />; // Indicate listening is off while speaking
+           case 'error':
+               return <MicOff className="h-5 w-5 text-destructive" />;
+           case 'idle':
+           default:
+               return <Mic className="h-5 w-5" />;
+       }
+   };
+
+   const handleVoiceButtonClick = () => {
+       if (voiceAssistant.isListening) {
+           voiceAssistant.stopListening();
+       } else {
+           voiceAssistant.startListening();
+       }
+   };
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Parking Availability</h1>
-           {/* Auth / Profile Button */}
-           {isAuthenticated && userId ? (
-                <Button variant="outline" onClick={() => setIsProfileOpen(true)}>
-                    View Profile
-                </Button>
-           ) : (
-                <Button onClick={() => setIsAuthModalOpen(true)}>
-                    Sign In / Sign Up
-                </Button>
-           )}
+           <div className="flex items-center gap-2">
+                {/* Voice Assistant Button */}
+                {voiceAssistant.isSupported ? (
+                     <Button
+                         variant="outline"
+                         size="icon"
+                         onClick={handleVoiceButtonClick}
+                         disabled={voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking'}
+                         aria-label={voiceAssistant.isListening ? 'Stop listening' : 'Start voice command'}
+                         className={cn(
+                             voiceAssistant.isListening && "border-destructive text-destructive",
+                             (voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking') && "opacity-50 cursor-not-allowed"
+                         )}
+                     >
+                         {getVoiceButtonIcon()}
+                     </Button>
+                ) : (
+                     <Button variant="outline" size="icon" disabled title="Voice commands not supported by your browser">
+                        <MicOff className="h-5 w-5 text-muted-foreground opacity-50" />
+                    </Button>
+                )}
+
+               {/* Auth / Profile Button */}
+               {isAuthenticated && userId ? (
+                    <Button variant="outline" onClick={() => setIsProfileOpen(true)}>
+                        View Profile
+                    </Button>
+               ) : (
+                    <Button onClick={() => setIsAuthModalOpen(true)}>
+                        Sign In / Sign Up
+                    </Button>
+               )}
+           </div>
        </div>
+        {/* Voice Assistant Status Indicator (Optional) */}
+        {voiceAssistant.state !== 'idle' && voiceAssistant.state !== 'error' && (
+            <p className="text-sm text-muted-foreground text-center mb-4">
+                 {voiceAssistant.state === 'listening' && 'Listening...'}
+                 {voiceAssistant.state === 'processing' && 'Processing command...'}
+                 {voiceAssistant.state === 'speaking' && 'Speaking...'}
+            </p>
+        )}
+
 
        {/* Pinned Location */}
        {pinnedSpot && (
@@ -381,6 +612,30 @@ export default function ParkingLotManager() {
              onAuthClick={() => setIsAuthModalOpen(true)}
              onProfileClick={() => setIsProfileOpen(true)}
          />
+
+        {/* Report Issue Modal (Now also potentially triggered by voice) */}
+        <ReportIssueModal
+            isOpen={isReportModalOpen}
+            onClose={() => {
+                 setIsReportModalOpen(false);
+                 setTimeout(() => setReportingReservation(null), 300);
+            }}
+            reservation={reportingReservation}
+            userId={userId || ''} // Pass userId, ensure it's not null if modal can open
+        />
     </div>
   );
+}
+
+
+// Interfaces used in this component (potentially move to a types file)
+interface ParkingHistoryEntry {
+  id: string;
+  spotId: string;
+  locationName: string;
+  locationId: string;
+  startTime: string;
+  endTime: string;
+  cost: number;
+  status: 'Completed' | 'Active' | 'Upcoming';
 }
