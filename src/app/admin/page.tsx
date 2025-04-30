@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, CarWash, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar } from "lucide-react"; // Added Megaphone, ImageIcon, Calendar
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bathroom, ConciergeBell } from "lucide-react"; // Replaced CarWash with SprayCan, Added Bathroom, ConciergeBell
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Added Textarea
@@ -176,19 +176,25 @@ export default function AdminDashboardPage() {
             // Creating new ad - Ensure targetLocationId is set correctly
             setCurrentAd({
                 ...initialAdFormState,
-                targetLocationId: selectedLotId !== 'all' ? selectedLotId : '' // Pre-fill if a specific lot is selected
+                targetLocationId: selectedLotId !== 'all' ? selectedLotId : '', // Pre-fill if a specific lot is selected
+                status: 'active' // Default to active for new ads
             });
         }
         setIsAdModalOpen(true);
     };
 
-    const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setCurrentAd(prev => ({ ...prev, [name]: value }));
     };
 
+     const handleAdSelectChange = (name: keyof Advertisement, value: string) => {
+         setCurrentAd(prev => ({ ...prev, [name]: value }));
+     };
+
+
     const handleSaveAd = async () => {
-        if (!currentAd.title || !currentAd.description || (!currentAd.id && selectedLotId === 'all' && !currentAd.targetLocationId)) {
+        if (!currentAd.title || !currentAd.description || (selectedLotId === 'all' && !currentAd.targetLocationId && !currentAd.id)) {
             toast({ title: "Missing Information", description: "Please fill in title, description, and target location (if applicable).", variant: "destructive" });
             return;
         }
@@ -198,7 +204,8 @@ export default function AdminDashboardPage() {
             const adDataToSave = {
                 ...currentAd,
                 // Ensure targetLocationId is set correctly, especially if creating while 'all' is selected
-                targetLocationId: currentAd.id ? currentAd.targetLocationId : (currentAd.targetLocationId || (selectedLotId !== 'all' ? selectedLotId : '')),
+                // If 'All Locations' is selected in the dropdown, set targetLocationId to empty string or undefined
+                 targetLocationId: currentAd.targetLocationId === 'all' ? '' : (currentAd.targetLocationId || (selectedLotId !== 'all' ? selectedLotId : '')),
             };
 
             if (currentAd.id) {
@@ -216,11 +223,11 @@ export default function AdminDashboardPage() {
                     if (existingIndex > -1) {
                         const newAds = [...prevAds];
                         newAds[existingIndex] = savedAd!;
-                        return newAds;
+                        return newAds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Keep sorted
                     } else {
                         // Add new ad only if it matches the current filter
-                        if (selectedLotId === 'all' || savedAd!.targetLocationId === selectedLotId) {
-                             return [savedAd!, ...prevAds];
+                        if (selectedLotId === 'all' || savedAd!.targetLocationId === selectedLotId || !savedAd!.targetLocationId) {
+                             return [savedAd!, ...prevAds].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Keep sorted
                         }
                         return prevAds; // Don't add if it doesn't match filter
                     }
@@ -259,13 +266,15 @@ export default function AdminDashboardPage() {
     // --- End Advertisement Management ---
 
 
-   const getServiceIcon = (service: ParkingLotService) => {
+   const getServiceIcon = (service: ParkingLotService | undefined, className: string = "h-4 w-4 mr-2") => {
      switch (service) {
-       case 'EV Charging': return <EvStation className="h-4 w-4 mr-2" />;
-       case 'Car Wash': return <CarWash className="h-4 w-4 mr-2" />;
-       case 'Mobile Money Agent': return <BadgeCent className="h-4 w-4 mr-2" />;
-       case 'Wifi': return <Wifi className="h-4 w-4 mr-2" />;
-       default: return <Sparkles className="h-4 w-4 mr-2" />; // Default icon
+       case 'EV Charging': return <EvStation className={className} />;
+       case 'Car Wash': return <SprayCan className={className} />; // Replaced CarWash
+       case 'Mobile Money Agent': return <BadgeCent className={className} />;
+       case 'Wifi': return <Wifi className={className} />;
+       case 'Restroom': return <Bathroom className={className} />;
+       case 'Valet': return <ConciergeBell className={className} />;
+       default: return <Sparkles className={className} />; // Default icon
      }
    };
 
@@ -486,7 +495,7 @@ export default function AdminDashboardPage() {
                                        >
                                             {getServiceIcon(service)} {service}
                                        </label>
-                                       {isUpdatingServices && isChecked === selectedLot.services?.includes(service) && (
+                                       {isUpdatingServices && isChecked !== selectedLot.services?.includes(service) && ( // Show loader only when state is changing
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />
                                         )}
                                    </div>
@@ -534,12 +543,14 @@ export default function AdminDashboardPage() {
                                     {selectedLotId === 'all' && <TableHead>Target Location</TableHead>}
                                     <TableHead>Runs</TableHead>
                                     <TableHead>Associated Service</TableHead>
+                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {advertisements.map((ad) => {
-                                     const targetLotName = parkingLots.find(lot => lot.id === ad.targetLocationId)?.name || 'All';
+                                     const targetLotName = parkingLots.find(lot => lot.id === ad.targetLocationId)?.name || 'All Locations';
+                                     const statusColor = ad.status === 'active' ? 'text-green-600' : ad.status === 'inactive' ? 'text-orange-600' : 'text-gray-500';
                                      return (
                                         <TableRow key={ad.id}>
                                             <TableCell>
@@ -560,9 +571,12 @@ export default function AdminDashboardPage() {
                                              <TableCell className="text-xs">
                                                 {ad.associatedService ? (
                                                     <Badge variant="outline" size="sm" className="flex items-center w-fit">
-                                                        {getServiceIcon(ad.associatedService)} {ad.associatedService}
+                                                        {getServiceIcon(ad.associatedService, "h-3 w-3 mr-1")} {ad.associatedService}
                                                     </Badge>
                                                 ) : <span className="text-muted-foreground">None</span>}
+                                            </TableCell>
+                                            <TableCell className={`text-xs font-medium ${statusColor}`}>
+                                                {ad.status?.charAt(0).toUpperCase() + ad.status?.slice(1) || 'Unknown'}
                                             </TableCell>
                                             <TableCell className="text-right space-x-1">
                                                 <Button variant="ghost" size="sm" onClick={() => handleOpenAdModal(ad)}>Edit</Button>
@@ -717,26 +731,36 @@ export default function AdminDashboardPage() {
                        </div>
                    )}
                    {/* Target Location (Only if Admin and creating/editing) */}
-                   {selectedLotId === 'all' && ( // Assuming only Admins see 'all'
-                       <div className="grid grid-cols-4 items-center gap-4">
-                           <Label htmlFor="targetLocationId" className="text-right">Location*</Label>
-                           <Select name="targetLocationId" value={currentAd.targetLocationId || ''} onValueChange={(value) => setCurrentAd(prev => ({ ...prev, targetLocationId: value }))} disabled={isSavingAd}>
-                               <SelectTrigger className="col-span-3">
-                                   <SelectValue placeholder="Select target location" />
-                               </SelectTrigger>
-                               <SelectContent>
-                                   <SelectItem value="">All Locations</SelectItem>
-                                   {parkingLots.map(lot => (
-                                       <SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>
-                                   ))}
-                               </SelectContent>
-                           </Select>
-                       </div>
-                   )}
+                   {/* Allow selection even if a specific lot is chosen initially, but pre-fill it */}
+                    <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="targetLocationId" className="text-right">Location*</Label>
+                       <Select
+                            name="targetLocationId"
+                            value={currentAd.targetLocationId || 'all'} // Use 'all' to represent empty/global
+                            onValueChange={(value) => handleAdSelectChange('targetLocationId', value)}
+                            disabled={isSavingAd}
+                       >
+                           <SelectTrigger className="col-span-3">
+                               <SelectValue placeholder="Select target location" />
+                           </SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="all">All Locations</SelectItem>
+                               {parkingLots.map(lot => (
+                                   <SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>
+                               ))}
+                           </SelectContent>
+                       </Select>
+                   </div>
+
                    {/* Associated Service */}
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="associatedService" className="text-right">Link to Service (Optional)</Label>
-                        <Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => setCurrentAd(prev => ({ ...prev, associatedService: value as ParkingLotService | undefined || undefined }))} disabled={isSavingAd}>
+                        <Select
+                             name="associatedService"
+                             value={currentAd.associatedService || ''}
+                             onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )}
+                             disabled={isSavingAd}
+                        >
                             <SelectTrigger className="col-span-3">
                                 <SelectValue placeholder="Link to a specific service..." />
                             </SelectTrigger>
@@ -745,7 +769,7 @@ export default function AdminDashboardPage() {
                                 {allAvailableServices.map(service => (
                                     <SelectItem key={service} value={service}>
                                          <span className="flex items-center gap-2">
-                                            {getServiceIcon(service)} {service}
+                                            {getServiceIcon(service, "h-4 w-4 mr-2")} {service}
                                          </span>
                                     </SelectItem>
                                 ))}
@@ -763,6 +787,25 @@ export default function AdminDashboardPage() {
                        <Label htmlFor="endDate" className="text-right">End Date</Label>
                        <Input id="endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
                    </div>
+                    {/* Status */}
+                   <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="status" className="text-right">Status</Label>
+                         <Select
+                             name="status"
+                             value={currentAd.status || 'active'}
+                             onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')}
+                             disabled={isSavingAd}
+                         >
+                             <SelectTrigger className="col-span-3">
+                                 <SelectValue placeholder="Select status" />
+                             </SelectTrigger>
+                             <SelectContent>
+                                 <SelectItem value="active">Active</SelectItem>
+                                 <SelectItem value="inactive">Inactive</SelectItem>
+                                 <SelectItem value="draft">Draft</SelectItem>
+                             </SelectContent>
+                         </Select>
+                   </div>
                </div>
                <DialogFooter>
                    <DialogClose asChild>
@@ -779,5 +822,3 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
-
-    

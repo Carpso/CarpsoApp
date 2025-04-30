@@ -3,12 +3,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, EvStation, CarWash, Wifi, Loader2, ServerCrash } from "lucide-react"; // Added Loader2, ServerCrash
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, EvStation, SprayCan, Wifi, Loader2, ServerCrash } from "lucide-react"; // Replaced CarWash with SprayCan, Added Loader2, ServerCrash
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Advertisement } from '@/services/advertisement'; // Import Advertisement type
 import { getAdvertisements } from '@/services/advertisement'; // Import service to fetch ads
+import type { ParkingLotService } from '@/services/parking-lot'; // Import service type
 
 // Mock Data - Replace with actual data fetching
 const mockEvents = [
@@ -20,11 +21,24 @@ const mockAuctions = [
     { id: 1, title: "Abandoned Vehicle Auction", location: "Mall Parking Deck - Level 3", date: "Next Tuesday, 10 AM", description: "Several vehicles up for auction. Viewing starts at 9 AM.", image: "https://picsum.photos/seed/auction1/300/150" },
 ];
 
+// Helper to get service icon
+const getServiceIcon = (service: ParkingLotService | undefined) => {
+    switch (service) {
+      case 'EV Charging': return <EvStation className="h-8 w-8 text-primary mb-2" />;
+      case 'Car Wash': return <SprayCan className="h-8 w-8 text-primary mb-2" />; // Replaced CarWash
+      case 'Mobile Money Agent': return <BadgeCent className="h-8 w-8 text-primary mb-2" />;
+      case 'Wifi': return <Wifi className="h-8 w-8 text-primary mb-2" />;
+      // Add other cases for Valet, Restroom etc. if needed
+      default: return <Sparkles className="h-8 w-8 text-primary mb-2" />; // Default icon
+    }
+  };
+
+
 const mockServices = [
-    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: EvStation },
-    { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: CarWash },
-    { id: 3, name: "Mobile Money Booth", location: "Airport Lot B", description: "Airtel & MTN Mobile Money available.", icon: BadgeCent },
-    { id: 4, name: "Free Wi-Fi Zone", location: "Downtown Garage", description: "Complimentary Wi-Fi near the entrance.", icon: Wifi },
+    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: EvStation, serviceType: 'EV Charging' as ParkingLotService },
+    { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: SprayCan, serviceType: 'Car Wash' as ParkingLotService }, // Replaced CarWash
+    { id: 3, name: "Mobile Money Booth", location: "Airport Lot B", description: "Airtel & MTN Mobile Money available.", icon: BadgeCent, serviceType: 'Mobile Money Agent' as ParkingLotService },
+    { id: 4, name: "Free Wi-Fi Zone", location: "Downtown Garage", description: "Complimentary Wi-Fi near the entrance.", icon: Wifi, serviceType: 'Wifi' as ParkingLotService },
 ];
 
 
@@ -151,7 +165,8 @@ export default function ExplorePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {mockServices.map(service => (
                 <Card key={service.id} className="flex flex-col items-center p-4 text-center hover:bg-accent/5 transition-colors">
-                    <service.icon className="h-8 w-8 text-primary mb-2" />
+                    {/* Use the helper function to get the icon component */}
+                    {getServiceIcon(service.serviceType)}
                     <CardTitle className="text-base font-medium mb-1">{service.name}</CardTitle>
                     <CardDescription className="text-xs mb-2 flex items-center gap-1">
                         <MapPin className="h-3 w-3"/> {service.location}
@@ -166,5 +181,3 @@ export default function ExplorePage() {
     </div>
   );
 }
-
-    
