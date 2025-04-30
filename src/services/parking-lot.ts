@@ -3,7 +3,7 @@
 /**
  * Represents a service offered at a parking lot.
  */
-export type ParkingLotService = 'EV Charging' | 'Car Wash' | 'Mobile Money Agent' | 'Valet' | 'Restroom';
+export type ParkingLotService = 'EV Charging' | 'Car Wash' | 'Mobile Money Agent' | 'Valet' | 'Restroom' | 'Wifi'; // Added Wifi
 
 
 /**
@@ -43,7 +43,7 @@ export interface ParkingLot {
 
 // Sample data - replace with actual API calls or database queries
 const sampleParkingLots: ParkingLot[] = [
-  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Anytown', capacity: 50, latitude: 34.0522, longitude: -118.2437, services: ['EV Charging', 'Mobile Money Agent'] },
+  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Anytown', capacity: 50, latitude: 34.0522, longitude: -118.2437, services: ['EV Charging', 'Mobile Money Agent', 'Wifi'] }, // Added Wifi
   { id: 'lot_B', name: 'Airport Lot B', address: '456 Airport Rd, Anytown', capacity: 150, latitude: 34.0550, longitude: -118.2500, services: ['Restroom', 'EV Charging'] },
   { id: 'lot_C', name: 'Mall Parking Deck', address: '789 Retail Ave, Anytown', capacity: 200, latitude: 34.0500, longitude: -118.2400, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom'] },
    { id: 'lot_D', name: 'University Campus Lot', address: '1 College Way, Anytown', capacity: 80, latitude: 34.0580, longitude: -118.2450 }, // No services listed
@@ -107,5 +107,3 @@ export async function updateParkingLotServices(lotId: string, services: ParkingL
 
 
 // Add more functions as needed, e.g., updateParkingLot, addParkingLot (for admins)
-
-```
