@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, ChargingStation, SprayCan, Wifi, Loader2, ServerCrash } from "lucide-react"; // Replaced EvStation with ChargingStation, Added Loader2, ServerCrash
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash } from "lucide-react"; // Replaced ChargingStation with Fuel, Added Loader2, ServerCrash
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,8 +24,8 @@ const mockAuctions = [
 // Helper to get service icon
 const getServiceIcon = (service: ParkingLotService | undefined) => {
     switch (service) {
-      case 'EV Charging': return <ChargingStation className="h-8 w-8 text-primary mb-2" />; // Replaced EvStation
-      case 'Car Wash': return <SprayCan className="h-8 w-8 text-primary mb-2" />; // Replaced CarWash
+      case 'EV Charging': return <Fuel className="h-8 w-8 text-primary mb-2" />; // Replaced ChargingStation with Fuel
+      case 'Car Wash': return <SprayCan className="h-8 w-8 text-primary mb-2" />;
       case 'Mobile Money Agent': return <BadgeCent className="h-8 w-8 text-primary mb-2" />;
       case 'Wifi': return <Wifi className="h-8 w-8 text-primary mb-2" />;
       // Add other cases for Valet, Restroom etc. if needed
@@ -35,8 +35,8 @@ const getServiceIcon = (service: ParkingLotService | undefined) => {
 
 
 const mockServices = [
-    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: ChargingStation, serviceType: 'EV Charging' as ParkingLotService }, // Replaced EvStation
-    { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: SprayCan, serviceType: 'Car Wash' as ParkingLotService }, // Replaced CarWash
+    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: Fuel, serviceType: 'EV Charging' as ParkingLotService }, // Replaced ChargingStation
+    { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: SprayCan, serviceType: 'Car Wash' as ParkingLotService },
     { id: 3, name: "Mobile Money Booth", location: "Airport Lot B", description: "Airtel & MTN Mobile Money available.", icon: BadgeCent, serviceType: 'Mobile Money Agent' as ParkingLotService },
     { id: 4, name: "Free Wi-Fi Zone", location: "Downtown Garage", description: "Complimentary Wi-Fi near the entrance.", icon: Wifi, serviceType: 'Wifi' as ParkingLotService },
 ];
@@ -54,7 +54,12 @@ export default function ExplorePage() {
             try {
                 // Fetch all active advertisements (no specific location filter here)
                 const fetchedAds = await getAdvertisements();
-                setAds(fetchedAds);
+                // Add location name if missing for display
+                const adsWithNames = fetchedAds.map(ad => ({
+                    ...ad,
+                    targetLotName: ad.targetLotName || (ad.targetLocationId ? `Lot ${ad.targetLocationId.substring(0,5)}...` : 'All Locations')
+                }));
+                setAds(adsWithNames);
             } catch (err) {
                 console.error("Failed to fetch advertisements for explore page:", err);
                 setErrorLoadingAds("Could not load promotions and updates.");
@@ -71,11 +76,12 @@ export default function ExplorePage() {
         ...ads.map(ad => ({ // Transform fetched ads to match display structure
              id: ad.id,
              title: ad.title,
-             location: ad.targetLocationId ? (ad.targetLotName || `Lot ${ad.targetLocationId.substring(0,5)}`) : 'All Locations', // Use target or default
+             location: ad.targetLotName || 'All Locations', // Use added name
              date: ad.endDate ? `Until ${new Date(ad.endDate).toLocaleDateString()}` : 'Ongoing',
              description: ad.description,
              image: ad.imageUrl || `https://picsum.photos/seed/${ad.id}/300/150`, // Use provided or placeholder image
              isAd: true, // Flag to potentially style differently
+             associatedService: ad.associatedService, // Pass service type
         })),
         ...mockEvents.map(event => ({ ...event, isAd: false })), // Keep mock events for now
     ];
@@ -106,21 +112,27 @@ export default function ExplorePage() {
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {allPromotions.map(item => (
-                    <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                    <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
                         <Image src={item.image} alt={item.title} width={300} height={150} className="w-full h-40 object-cover"/>
-                        <CardHeader>
+                        <CardHeader className="pb-2">
                             <div className="flex justify-between items-start">
-                                <CardTitle>{item.title}</CardTitle>
+                                <CardTitle className="text-lg">{item.title}</CardTitle>
                                 {item.isAd && <Badge variant="secondary" size="sm">Ad</Badge>}
                             </div>
                             <CardDescription className="flex items-center gap-1 text-xs pt-1">
                                 <MapPin className="h-3 w-3" /> {item.location} &bull; {item.date}
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <p className="text-sm text-muted-foreground">{item.description}</p>
-                            {/* Optionally add a CTA button for ads */}
-                            {/* {item.isAd && <Button size="sm" variant="link" className="mt-2 text-xs p-0 h-auto">Learn More</Button>} */}
+                        <CardContent className="flex-grow flex flex-col justify-between">
+                            <p className="text-sm text-muted-foreground mb-2">{item.description}</p>
+                            {/* Show associated service badge if available */}
+                            {item.isAd && item.associatedService && (
+                                <div className="mt-auto pt-2">
+                                    <Badge variant="outline" size="sm" className="flex items-center w-fit">
+                                         {getServiceIcon(item.associatedService)} <span className="ml-1">{item.associatedService}</span>
+                                    </Badge>
+                                </div>
+                             )}
                         </CardContent>
                     </Card>
                 ))}
