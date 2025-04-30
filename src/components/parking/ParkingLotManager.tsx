@@ -1,4 +1,3 @@
-// src/components/parking/ParkingLotManager.tsx
 'use client';
 
 import React, { useState, useEffect, useContext, useCallback } from 'react';
@@ -383,21 +382,19 @@ export default function ParkingLotManager() {
        document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-   const getVoiceButtonIcon = () => {
-       switch (voiceAssistant.state) {
-           case 'listening':
-               return <Mic className="h-5 w-5 text-destructive animate-pulse" />;
-           case 'processing':
-               return <Loader2 className="h-5 w-5 animate-spin" />;
-           case 'speaking':
-                return <MicOff className="h-5 w-5 text-muted-foreground" />; // Indicate listening is off while speaking
-           case 'error':
-               return <MicOff className="h-5 w-5 text-destructive" />;
-           case 'idle':
-           default:
-               return <Mic className="h-5 w-5" />;
-       }
-   };
+  const getVoiceButtonIcon = () => {
+        switch (voiceAssistant.state) {
+            case 'listening':
+                return <Mic key="mic" className="h-5 w-5 text-destructive animate-pulse" />;
+            case 'processing':
+                return <Loader2 key="loader" className="h-5 w-5 animate-spin" />;
+            case 'speaking':
+            case 'error':
+            case 'idle':
+            default:
+                return <Mic key="default-mic" className="h-5 w-5" />;
+        }
+    };
 
    const handleVoiceButtonClick = () => {
        if (voiceAssistant.isListening) {
