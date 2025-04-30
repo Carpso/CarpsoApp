@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bathroom, ConciergeBell } from "lucide-react"; // Replaced ChargingStation with Fuel, Added Bathroom, ConciergeBell
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell } from "lucide-react"; // Replaced Bathroom with Bath
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Added Textarea
@@ -270,11 +270,11 @@ export default function AdminDashboardPage() {
 
    const getServiceIcon = (service: ParkingLotService | undefined, className: string = "h-4 w-4 mr-2") => {
      switch (service) {
-       case 'EV Charging': return <Fuel className={className} />; // Replaced ChargingStation
+       case 'EV Charging': return <Fuel className={className} />;
        case 'Car Wash': return <SprayCan className={className} />;
        case 'Mobile Money Agent': return <BadgeCent className={className} />;
        case 'Wifi': return <Wifi className={className} />;
-       case 'Restroom': return <Bathroom className={className} />;
+       case 'Restroom': return <Bath className={className} />; // Replaced Bathroom with Bath
        case 'Valet': return <ConciergeBell className={className} />;
        default: return <Sparkles className={className} />; // Default icon
      }
