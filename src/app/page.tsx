@@ -1,7 +1,8 @@
-import ParkingLotGrid from '@/components/parking/ParkingLotGrid';
+// src/app/page.tsx
+import ParkingLotManager from '@/components/parking/ParkingLotManager';
 
 export default function Home() {
   return (
-     <ParkingLotGrid />
+     <ParkingLotManager />
   );
 }

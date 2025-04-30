@@ -14,21 +14,18 @@ import {
 
 interface ParkingSpotProps {
   spot: ParkingSpotStatus;
-  // isSelected: boolean; // Removed isSelected prop
-  onSelect: (spotId: string) => void; // Keep onSelect, but simplify usage
+  onSelect: (spot: ParkingSpotStatus) => void; // Pass the full spot object
 }
 
-// export default function ParkingSpot({ spot, isSelected, onSelect }: ParkingSpotProps) { // Original signature
-export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) { // Updated signature
+export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) {
   const statusColor = spot.isOccupied ? 'bg-destructive/20 text-destructive' : 'bg-green-200 text-green-800';
-  const hoverColor = !spot.isOccupied ? 'hover:bg-teal-100 hover:border-accent' : '';
-  // const selectedColor = isSelected ? 'border-primary ring-2 ring-primary' : ''; // Removed selectedColor logic
-  const cursorStyle = spot.isOccupied ? 'cursor-not-allowed' : 'cursor-pointer';
+  const hoverColor = !spot.isOccupied ? 'hover:bg-teal-100 hover:border-accent' : 'hover:bg-destructive/30'; // Add hover for occupied too
+  const cursorStyle = spot.isOccupied ? 'cursor-pointer' : 'cursor-pointer'; // Allow clicking occupied spots now
 
   const handleClick = () => {
     // Always call onSelect when clicked. The parent (ParkingLotGrid)
-    // will decide whether to open the dialog or show a toast based on occupancy.
-    onSelect(spot.spotId);
+    // will decide whether to open the dialog or show a toast/live view.
+    onSelect(spot);
   };
 
   return (
@@ -40,7 +37,6 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) { // U
               'transition-all duration-150 ease-in-out shadow-sm',
               statusColor,
               hoverColor,
-              // selectedColor, // Removed selectedColor class
               cursorStyle,
               'border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2' // Added focus styles
             )}
@@ -52,8 +48,8 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) { // U
             }}
             role="button" // Indicate interactivity
             tabIndex={0} // Make it focusable
-            aria-disabled={spot.isOccupied}
-            aria-label={`Parking Spot ${spot.spotId} - ${spot.isOccupied ? 'Occupied' : 'Available'}`}
+            // aria-disabled={spot.isOccupied} // No longer strictly disabled
+            aria-label={`Parking Spot ${spot.spotId} - ${spot.isOccupied ? 'Occupied' : 'Available'}. Click for details.`}
           >
             <CardContent className="flex flex-col items-center justify-center p-3 aspect-square">
               {spot.isOccupied ? (
@@ -67,7 +63,11 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) { // U
         </TooltipTrigger>
         <TooltipContent>
            <p>Spot {spot.spotId}: {spot.isOccupied ? 'Occupied' : 'Available'}</p>
-           {!spot.isOccupied && <p className="text-xs text-muted-foreground">Click to reserve</p>}
+           {!spot.isOccupied ? (
+              <p className="text-xs text-muted-foreground">Click to reserve</p>
+           ) : (
+               <p className="text-xs text-muted-foreground">Click to view live location</p>
+           )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

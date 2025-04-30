@@ -1,16 +1,15 @@
 // src/components/parking/ParkingLotGrid.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
+import type { ParkingLot } from '@/services/parking-lot';
 import { getParkingSpotStatus } from '@/services/parking-sensor';
 import ParkingSpot from './ParkingSpot';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -19,25 +18,39 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info } from 'lucide-react';
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle } from 'lucide-react';
+import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
+import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
+import { Button } from '@/components/ui/button'; // Import Button
+import LiveLocationView from './LiveLocationView'; // Import LiveLocationView
 
-const TOTAL_SPOTS = 20; // Example total number of spots
+interface ParkingLotGridProps {
+  location: ParkingLot;
+  onSpotReserved: (spotId: string, locationId: string) => void; // Callback when a spot is reserved
+}
 
-export default function ParkingLotGrid() {
+export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotGridProps) {
   const [spots, setSpots] = useState<ParkingSpotStatus[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpotStatus | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isReserving, setIsReserving] = useState(false);
+  const [prediction, setPrediction] = useState<PredictParkingAvailabilityOutput | null>(null);
+  const [isPredictionLoading, setIsPredictionLoading] = useState(false);
+  const [showLiveLocation, setShowLiveLocation] = useState(false); // State for Live Location modal
+  const [liveLocationSpotId, setLiveLocationSpotId] = useState<string | null>(null); // Spot ID for Live Location
+
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchSpotStatuses = async () => {
-      // Only set loading true on initial load
-      if (spots.length === 0) setIsLoading(true);
+  const fetchSpotStatuses = useCallback(async () => {
+      // Only set loading true on initial load or location change
+      if (spots.length === 0 || (spots.length > 0 && !spots[0]?.spotId.startsWith(location.id))) {
+          setIsLoading(true);
+      }
       try {
-        const spotPromises = Array.from({ length: TOTAL_SPOTS }, (_, i) =>
-          getParkingSpotStatus(`A${i + 1}`) // Example Spot ID format
+        // Simulate fetching spots for the specific location
+        const spotPromises = Array.from({ length: location.capacity }, (_, i) =>
+          getParkingSpotStatus(`${location.id}-S${i + 1}`) // Example Spot ID format using location ID
         );
         const spotStatuses = await Promise.all(spotPromises);
         setSpots(spotStatuses);
@@ -45,47 +58,86 @@ export default function ParkingLotGrid() {
         console.error("Failed to fetch parking spot statuses:", error);
         toast({
           title: "Error",
-          description: "Failed to load parking spot data. Please try again later.",
+          description: `Failed to load parking data for ${location.name}. Please try again later.`,
           variant: "destructive",
         });
       } finally {
-         // Only set loading false on initial load
-        if (isLoading) setIsLoading(false);
+         // Only set loading false on initial load/location change
+         if(isLoading) setIsLoading(false);
       }
-    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.id, location.name, location.capacity, toast]); // Dependencies include location details
 
-    fetchSpotStatuses();
-    // Optional: Set up interval polling for real-time updates
+  useEffect(() => {
+    fetchSpotStatuses(); // Fetch initially and on location change
     const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds
     return () => clearInterval(intervalId); // Cleanup interval on unmount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // Removed `spots` and `isLoading` dependency to avoid loop
+  }, [fetchSpotStatuses]); // Depend on the memoized fetch function
 
-  const handleSelectSpot = (spot: ParkingSpotStatus) => {
+ const handleSelectSpot = async (spot: ParkingSpotStatus) => {
      if (!spot.isOccupied) {
-      setSelectedSpot(spot);
-      setIsDialogOpen(true);
-    } else {
+         setSelectedSpot(spot);
+         setIsDialogOpen(true);
+         setIsPredictionLoading(true); // Start loading prediction
+         setPrediction(null); // Clear previous prediction
+         try {
+             // Simulate historical data and trends
+             const historicalData = `Spot ${spot.spotId} usage: Mon-Fri 8am-6pm usually busy, weekends lighter.`;
+             const trends = `Current time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None nearby.`;
+             const predictionResult = await predictParkingAvailability({
+                 spotId: spot.spotId,
+                 historicalData: historicalData,
+                 trends: trends,
+             });
+             setPrediction(predictionResult);
+         } catch (err) {
+             console.error('Prediction failed for selected spot:', err);
+             // Optionally show a small error message for prediction failure
+             toast({
+                 title: "Prediction Info",
+                 description: "Could not fetch prediction data for this spot.",
+                 variant: "default",
+             })
+         } finally {
+             setIsPredictionLoading(false);
+         }
+     } else {
          toast({
              title: "Spot Occupied",
              description: `Spot ${spot.spotId} is currently occupied.`,
-             variant: "default", // Use default or a custom 'info' variant if created
+             variant: "default",
          });
-    }
-  };
+         // Allow viewing live location if occupied (placeholder functionality)
+         setLiveLocationSpotId(spot.spotId);
+         setShowLiveLocation(true);
+     }
+ };
 
-  const handleReserve = async () => {
+
+  const handleReserveConfirm = async () => {
       if (!selectedSpot) return;
       setIsReserving(true);
+
       // Simulate reservation API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       setIsReserving(false);
       setIsDialogOpen(false); // Close dialog on successful reservation
 
       toast({
         title: "Reservation Successful",
-        description: `Spot ${selectedSpot.spotId} reserved successfully!`,
+        description: (
+             <div className="flex flex-col gap-2">
+               <span>Spot {selectedSpot.spotId} reserved successfully!</span>
+               <Button variant="outline" size="sm" onClick={() => {
+                   setLiveLocationSpotId(selectedSpot.spotId);
+                   setShowLiveLocation(true);
+               }}>
+                 <Eye className="mr-2 h-4 w-4" /> View Live Location
+               </Button>
+            </div>
+        ),
+        duration: 5000, // Keep toast longer to allow clicking the button
       });
 
       // Optimistically update the spot status
@@ -94,45 +146,64 @@ export default function ParkingLotGrid() {
           spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true } : spot
         )
       );
+      onSpotReserved(selectedSpot.spotId, location.id); // Notify parent
       setSelectedSpot(null); // Clear selection
   };
 
-  const handleDialogClose = () => {
-      setIsDialogOpen(false);
-      // Delay clearing selected spot slightly to allow dialog fade-out
-      setTimeout(() => {
-          if (!isReserving) { // Don't clear if reservation is in progress
+  const handleDialogClose = (open: boolean) => {
+      if (!open) {
+         setIsDialogOpen(false);
+          // Delay clearing selected spot slightly to allow dialog fade-out
+          setTimeout(() => {
              setSelectedSpot(null);
-          }
-      }, 300);
+             setPrediction(null); // Clear prediction
+          }, 300);
+      } else {
+          setIsDialogOpen(true);
+      }
   }
 
+  const handleReservationTimeout = () => {
+      setIsDialogOpen(false);
+      toast({
+        title: "Reservation Timed Out",
+        description: `Reservation for spot ${selectedSpot?.spotId} expired.`,
+        variant: "destructive",
+      });
+       setTimeout(() => {
+           setSelectedSpot(null);
+           setPrediction(null); // Clear prediction
+        }, 300);
+  };
+
+
   const availableSpots = spots.filter(spot => !spot.isOccupied).length;
+  const totalSpots = location.capacity;
 
   return (
-    <div className="container py-8 px-4 md:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold mb-6 text-center">Parking Availability</h1>
-
+    <>
        <Card className="mb-8">
          <CardHeader>
-             <CardTitle>Select an Available Spot</CardTitle>
-             <CardDescription>Click on a green spot to view details and reserve.</CardDescription>
+             <CardTitle>Select an Available Spot at {location.name}</CardTitle>
+             <CardDescription>{location.address}</CardDescription>
+             <CardDescription>Click on a green spot (<Car className="inline h-4 w-4 text-green-800" />) to reserve.</CardDescription>
          </CardHeader>
          <CardContent>
             {isLoading ? (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                {Array.from({ length: TOTAL_SPOTS }).map((_, index) => (
+                {Array.from({ length: totalSpots }).map((_, index) => (
                     <Skeleton key={index} className="h-20 w-full aspect-square" />
                 ))}
                 </div>
+            ) : spots.length === 0 ? (
+                 <p className="text-muted-foreground text-center">No spots available to display for this location.</p>
             ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3">
                 {spots.map((spot) => (
                     <ParkingSpot
                     key={spot.spotId}
                     spot={spot}
-                    // isSelected={selectedSpot?.spotId === spot.spotId} // No visual selection needed on grid now
-                    onSelect={() => handleSelectSpot(spot)} // Pass the full spot object
+                    onSelect={() => handleSelectSpot(spot)}
                     />
                 ))}
                 </div>
@@ -140,9 +211,8 @@ export default function ParkingLotGrid() {
          </CardContent>
          <CardFooter className="flex justify-center items-center pt-4">
            <div className="text-sm text-muted-foreground">
-               {isLoading ? 'Loading spots...' : `${availableSpots} / ${TOTAL_SPOTS} spots available`}
+               {isLoading ? 'Loading spots...' : `${availableSpots} / ${totalSpots} spots available`}
            </div>
-            {/* Reservation button moved to AlertDialog */}
          </CardFooter>
        </Card>
 
@@ -152,32 +222,58 @@ export default function ParkingLotGrid() {
             <AlertDialogHeader>
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
               <AlertDialogDescription>
-                You are about to reserve spot <span className="font-semibold">{selectedSpot?.spotId}</span>.
+                You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
+                {/* Prediction Display */}
+                <div className="mt-3 text-sm border-t pt-3">
+                   <h4 className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</h4>
+                   {isPredictionLoading ? (
+                       <div className="flex items-center gap-2 text-muted-foreground">
+                           <Loader2 className="h-4 w-4 animate-spin" /> Loading prediction...
+                       </div>
+                   ) : prediction ? (
+                       <div className="space-y-1">
+                           <p>Likelihood Available: <span className="font-semibold">{(prediction.predictedAvailability * 100).toFixed(0)}%</span></p>
+                           <p>Confidence: <span className="font-semibold capitalize">{prediction.confidenceLevel}</span></p>
+                           <p className="text-xs text-muted-foreground">Factors: {prediction.factors}</p>
+                       </div>
+                   ) : (
+                       <p className="text-muted-foreground text-xs flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Prediction data unavailable.</p>
+                   )}
+                </div>
                 {/* Add more details like price, duration limits, etc. here */}
-                <p className="mt-2">Estimated cost: $5.00 (Example)</p>
-                <p className="text-xs text-muted-foreground mt-1">Reservations are held for 15 minutes.</p>
+                 <p className="mt-2 text-xs text-muted-foreground">Reservations held for a limited time. Confirm below.</p>
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={handleDialogClose} disabled={isReserving}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleReserve}
-                disabled={isReserving || selectedSpot?.isOccupied} // Double check occupancy
-                className="bg-accent hover:bg-accent/90 text-accent-foreground"
-              >
-                {isReserving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Reserving...
-                  </>
-                ) : (
-                  'Confirm Reservation'
-                )}
-              </AlertDialogAction>
+             {/* Timed Reservation Slider */}
+             <div className="my-4 px-1">
+                 <TimedReservationSlider
+                     onConfirm={handleReserveConfirm}
+                     onTimeout={handleReservationTimeout}
+                     isConfirming={isReserving} // Pass reserving state
+                     disabled={isReserving || selectedSpot?.isOccupied} // Disable slider when reserving or spot occupied
+                 />
+             </div>
+            <AlertDialogFooter className="mt-0 pt-0"> {/* Adjusted spacing */}
+              <AlertDialogCancel onClick={() => handleDialogClose(false)} disabled={isReserving}>Cancel</AlertDialogCancel>
+              {/* Confirmation button is now part of the slider component */}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-    </div>
+        {/* Live Location View Modal */}
+        <LiveLocationView
+           isOpen={showLiveLocation}
+           onClose={() => {
+               setShowLiveLocation(false);
+               setLiveLocationSpotId(null); // Clear spot ID when closing
+           }}
+           spotId={liveLocationSpotId}
+           locationName={location.name}
+        />
+    </>
   );
 }
+
+
+// Helper Icon for ParkingSpot
+import { Car, Ban } from 'lucide-react';
