@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard } from 'lucide-react'; // Added Smartphone, CreditCard
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface UserProfileProps {
@@ -30,14 +30,18 @@ interface UserProfileProps {
 interface UserDetails {
   name: string;
   email?: string;
-  phone?: string;
+  phone?: string; // Standard phone
   avatarUrl?: string;
   memberSince: string;
 }
 
 interface BillingInfo {
-  balance: number; // Positive for credit, negative for arrears
-  paymentMethod?: string; // e.g., 'Visa **** 1234'
+  accountBalance: number; // Positive for credit, negative for arrears
+  paymentMethods: {
+      type: 'Card' | 'MobileMoney';
+      details: string; // e.g., 'Visa **** 1234' or 'MTN 07XX XXX XXX'
+      isPrimary: boolean;
+  }[];
 }
 
 interface ParkingHistoryEntry {
@@ -55,6 +59,7 @@ const fetchUserDetails = async (userId: string): Promise<UserDetails> => {
   return {
     name: `User ${userId.substring(0, 5)}`,
     email: `user_${userId.substring(0, 5)}@example.com`,
+    phone: '+1 555 123 4567',
     avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
     memberSince: '2024-01-15',
   };
@@ -65,8 +70,11 @@ const fetchBillingInfo = async (userId: string): Promise<BillingInfo> => {
    // Replace with actual API call
    const randomBalance = (Math.random() * 10) - 5; // Random balance between -5 and +5
    return {
-       balance: parseFloat(randomBalance.toFixed(2)),
-       paymentMethod: 'Visa **** 4321',
+       accountBalance: parseFloat(randomBalance.toFixed(2)),
+       paymentMethods: [
+            { type: 'Card', details: 'Visa **** 4321', isPrimary: true },
+            { type: 'MobileMoney', details: 'Airtel 075X XXX XXX', isPrimary: false },
+       ],
    };
 };
 
@@ -136,32 +144,51 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
                     <div className="space-y-1">
                         <p className="text-lg font-semibold">{userDetails?.name}</p>
                         <p className="text-sm text-muted-foreground">{userDetails?.email}</p>
+                        <p className="text-sm text-muted-foreground">{userDetails?.phone}</p>
                         <p className="text-xs text-muted-foreground">Member since: {userDetails?.memberSince}</p>
                     </div>
                 </div>
 
                 {/* Billing Info */}
-                <div className="mb-6 space-y-2">
+                <div className="mb-6 space-y-4">
                     <h3 className="text-md font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" /> Billing</h3>
                      <div className="flex justify-between items-center p-3 border rounded-md bg-secondary/50">
                          <div>
                             <p className="text-sm text-muted-foreground">Account Balance</p>
-                            <p className={`text-xl font-bold ${billingInfo && billingInfo.balance < 0 ? 'text-destructive' : 'text-primary'}`}>
-                                ${billingInfo?.balance.toFixed(2)}
+                            <p className={`text-xl font-bold ${billingInfo && billingInfo.accountBalance < 0 ? 'text-destructive' : 'text-primary'}`}>
+                                ${billingInfo?.accountBalance.toFixed(2)}
                             </p>
                          </div>
-                         {billingInfo && billingInfo.balance < 0 ? (
+                         {billingInfo && billingInfo.accountBalance < 0 ? (
                               <Badge variant="destructive" className="flex items-center gap-1">
                                   <AlertCircle className="h-3 w-3" /> Arrears
                               </Badge>
                          ) : (
-                              <Badge variant="default" className="flex items-center gap-1 bg-green-600">
+                              <Badge variant="default" className="flex items-center gap-1 bg-green-600 text-white"> {/* Ensure contrast */}
                                   <CheckCircle className="h-3 w-3" /> Paid Up
                               </Badge>
                          )}
                      </div>
-                    <p className="text-xs text-muted-foreground">Payment Method: {billingInfo?.paymentMethod || 'Not set'}</p>
-                    {/* Add button to manage payment methods */}
+                     {/* Payment Methods List */}
+                     <div>
+                        <p className="text-sm font-medium mb-2">Payment Methods</p>
+                        <div className="space-y-2">
+                            {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
+                                billingInfo.paymentMethods.map((method, index) => (
+                                    <div key={index} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                                        <div className="flex items-center gap-2">
+                                            {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                                            <span>{method.details}</span>
+                                        </div>
+                                        {method.isPrimary && <Badge variant="secondary" size="sm">Primary</Badge>}
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-xs text-muted-foreground">No payment methods added.</p>
+                            )}
+                        </div>
+                     </div>
+
                     <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
                 </div>
 
@@ -195,9 +222,11 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
 
 
         <SheetFooter className="mt-auto pt-4 border-t">
-             <Button variant="destructive" onClick={onLogout} className="w-full">
-                <LogOut className="mr-2 h-4 w-4" /> Log Out
-             </Button>
+             <SheetClose asChild>
+                 <Button variant="destructive" onClick={onLogout} className="w-full">
+                    <LogOut className="mr-2 h-4 w-4" /> Log Out
+                 </Button>
+             </SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>
@@ -208,21 +237,29 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
 // Skeleton Loader for Profile
 const ProfileSkeleton = () => (
     <div className="space-y-6">
+        {/* User Info Skeleton */}
         <div className="flex items-center space-x-4">
             <Skeleton className="h-16 w-16 rounded-full" />
             <div className="space-y-2">
                 <Skeleton className="h-6 w-32" />
                 <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-36" />
                 <Skeleton className="h-3 w-24" />
             </div>
         </div>
-         <div className="space-y-2">
+        {/* Billing Skeleton */}
+         <div className="space-y-4">
              <Skeleton className="h-5 w-20 mb-2" />
              <Skeleton className="h-16 w-full" />
-             <Skeleton className="h-4 w-32" />
+             <div className="space-y-2 pt-2">
+                 <Skeleton className="h-4 w-28 mb-2" />
+                 <Skeleton className="h-10 w-full" />
+                 <Skeleton className="h-10 w-full" />
+             </div>
              <Skeleton className="h-9 w-full" />
          </div>
          <Separator/>
+         {/* History Skeleton */}
           <div className="space-y-3">
              <Skeleton className="h-5 w-28 mb-3" />
              <Skeleton className="h-16 w-full" />

@@ -4,17 +4,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Check, Loader2, TimerOff } from 'lucide-react';
+import { Check, Loader2, TimerOff, MoveRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface TimedReservationSliderProps {
   onConfirm: () => void;
   onTimeout: () => void;
   timeoutSeconds?: number;
-  isConfirming: boolean; // Added prop to indicate confirmation in progress
-  disabled?: boolean; // Added prop to disable the slider
+  isConfirming: boolean; // Confirmation process active
+  disabled?: boolean; // General disable flag
 }
 
 const RESERVATION_TIMEOUT_SECONDS = 15; // Default timeout
+const SLIDER_CONFIRM_THRESHOLD = 95; // Value to reach for confirmation
 
 export default function TimedReservationSlider({
   onConfirm,
@@ -23,78 +25,94 @@ export default function TimedReservationSlider({
   isConfirming,
   disabled = false,
 }: TimedReservationSliderProps) {
-  const [sliderValue, setSliderValue] = useState([0]);
+  const [sliderValue, setSliderValue] = useState([SLIDER_CONFIRM_THRESHOLD]); // Start near the end
   const [timeLeft, setTimeLeft] = useState(timeoutSeconds);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isSliding, setIsSliding] = useState(false); // Track user interaction
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isDraggingRef = useRef(false); // Track if slider is being actively dragged
+  const isTimedOutRef = useRef(false); // Track timeout state
 
+  // Automatic Countdown and Slider Decrease Effect
   useEffect(() => {
-    // Start countdown timer only if not disabled and not already confirmed
-    if (!disabled && !isConfirmed && !isConfirming) {
-      setTimeLeft(timeoutSeconds); // Reset timer when enabled/re-enabled
-      setSliderValue([0]); // Reset slider visually
+    isTimedOutRef.current = false; // Reset timeout status on re-render/enable
 
-      intervalRef.current = setInterval(() => {
-        setTimeLeft((prevTime) => {
-          if (prevTime <= 1) {
-            clearInterval(intervalRef.current!);
-            if (!isConfirmed) { // Check if not already confirmed by sliding
-              onTimeout();
-            }
-            return 0;
-          }
-          return prevTime - 1;
-        });
-      }, 1000);
+    if (!disabled && !isConfirming && !isConfirmed && !isSliding) {
+        setTimeLeft(timeoutSeconds); // Reset timer
+        setSliderValue([SLIDER_CONFIRM_THRESHOLD]); // Reset slider position
+
+        intervalRef.current = setInterval(() => {
+            setTimeLeft((prevTime) => {
+                if (prevTime <= 1) {
+                    clearInterval(intervalRef.current!);
+                    if (!isConfirmed && !isTimedOutRef.current) {
+                         isTimedOutRef.current = true;
+                         onTimeout();
+                    }
+                    setSliderValue([0]); // Move slider to 0 on timeout
+                    return 0;
+                }
+
+                const newTime = prevTime - 1;
+                // Decrease slider value proportionally to time remaining
+                const newSliderValue = Math.max(0, (newTime / timeoutSeconds) * SLIDER_CONFIRM_THRESHOLD);
+                setSliderValue([newSliderValue]);
+
+                return newTime;
+            });
+        }, 1000);
+
     } else {
-       // Clear interval if disabled, confirming, or already confirmed
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
         }
     }
 
-    // Cleanup interval on unmount or when disabled/confirming
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeoutSeconds, onTimeout, disabled, isConfirming]); // Rerun effect if disabled or isConfirming changes
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeoutSeconds, disabled, isConfirming, isConfirmed, isSliding]); // Rerun effect if state changes
 
   const handleSliderChange = (value: number[]) => {
-     if (disabled || isConfirming) return; // Prevent interaction if disabled or confirming
+    if (disabled || isConfirming || isConfirmed || isTimedOutRef.current) return;
 
-      // Only update slider value if actively dragging
-      if (isDraggingRef.current) {
-          setSliderValue(value);
-           if (value[0] >= 95 && !isConfirmed) { // Threshold for confirmation
-             setIsConfirmed(true);
-             if (intervalRef.current) clearInterval(intervalRef.current); // Stop timer
-             onConfirm();
-           }
-      }
+    setSliderValue(value); // Update visual position immediately
+
+    // Check for confirmation only when user releases the slider
+    if (!isSliding && value[0] >= SLIDER_CONFIRM_THRESHOLD) {
+      setIsConfirmed(true);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      onConfirm();
+    }
   };
 
-   const handlePointerDown = () => {
-       if (disabled || isConfirming) return;
-       isDraggingRef.current = true;
-   };
+  const handlePointerDown = () => {
+    if (disabled || isConfirming || isConfirmed || isTimedOutRef.current) return;
+    setIsSliding(true);
+    if (intervalRef.current) clearInterval(intervalRef.current); // Pause auto-slide on interaction
+  };
 
-   const handlePointerUp = () => {
-       if (disabled || isConfirming) return;
-       isDraggingRef.current = false;
-       // If slider is released below threshold, snap it back
-       if (sliderValue[0] < 95 && !isConfirmed) {
-           setSliderValue([0]);
-       }
-   };
+  const handlePointerUp = () => {
+    if (disabled || isConfirming || isConfirmed || isTimedOutRef.current) return;
+    setIsSliding(false);
+
+    if (sliderValue[0] >= SLIDER_CONFIRM_THRESHOLD) {
+      // Confirm if threshold met on release
+      setIsConfirmed(true);
+      onConfirm();
+    } else {
+       // If not confirmed, restart the countdown (useEffect dependency `isSliding` handles this)
+       // Optionally snap back, but letting useEffect handle reset is smoother
+       // setSliderValue([0]); // Or reset to time-based position
+    }
+  };
 
   const isTimedOut = timeLeft <= 0 && !isConfirmed && !isConfirming;
   const sliderBg = isConfirmed || isConfirming ? 'bg-green-500' : isTimedOut ? 'bg-destructive' : 'bg-primary';
   const sliderThumbBg = isTimedOut ? 'border-destructive bg-destructive-foreground' : 'border-primary bg-background';
+  const currentSliderValue = sliderValue[0];
 
   return (
     <div className="flex items-center space-x-3 w-full">
@@ -104,26 +122,26 @@ export default function TimedReservationSlider({
              onValueChange={handleSliderChange}
              onPointerDown={handlePointerDown}
              onPointerUp={handlePointerUp}
-             max={100}
+             max={SLIDER_CONFIRM_THRESHOLD + 5} // Give a little extra room visually
              step={1}
              disabled={disabled || isConfirming || isConfirmed || isTimedOut}
              className={cn(
-                 "[&>span:first-child]:bg-transparent", // Hide the default track background
-                 "[&>span>span]:transition-all [&>span>span]:duration-100", // Smooth thumb transition
-                 `[&>span>span]:${sliderThumbBg}` // Apply dynamic thumb background
+                 "transition-opacity duration-300", // Fade out slider slightly when disabled/confirmed
+                 (disabled || isConfirming || isConfirmed || isTimedOut) && "opacity-70",
+                 "[&>span:first-child]:bg-transparent", // Hide default track background
+                 `[&>span>span]:${sliderThumbBg}`, // Dynamic thumb background
+                 "[&>span>span]:transition-transform [&>span>span]:duration-150", // Smooth thumb manual drag
              )}
-             // Custom styling for the range/track fill
-             style={{ '--slider-track-fill': sliderBg } as React.CSSProperties}
            >
-              {/* Custom Track Fill */}
+              {/* Custom Track Fill - Animated */}
               <span
-                 className="absolute h-full rounded-full transition-colors duration-200"
-                 style={{ width: `${sliderValue[0]}%`, backgroundColor: 'var(--slider-track-fill)' }}
+                 className="absolute h-full rounded-full transition-[width] duration-1000 ease-linear" // Use width transition for auto-slide
+                 style={{ width: `${(currentSliderValue / (SLIDER_CONFIRM_THRESHOLD + 5)) * 100}%`, backgroundColor: sliderBg }}
              />
            </Slider>
           <div
-             className="absolute inset-0 flex items-center justify-center pointer-events-none text-sm font-medium select-none"
-             style={{ color: isConfirmed || isConfirming || sliderValue[0] > 50 ? 'hsl(var(--primary-foreground))' : 'hsl(var(--primary))' }} // Adjust text color based on slider position
+             className="absolute inset-0 flex items-center justify-center pointer-events-none text-sm font-medium select-none transition-colors duration-300"
+             style={{ color: isConfirmed || isConfirming || currentSliderValue > SLIDER_CONFIRM_THRESHOLD / 2 ? 'hsl(var(--primary-foreground))' : 'hsl(var(--primary))' }}
            >
              {isConfirming ? (
                  <>
@@ -138,24 +156,15 @@ export default function TimedReservationSlider({
                      <TimerOff className="h-4 w-4 mr-1" /> Timed Out
                   </>
              ) : (
-               'Slide to Confirm'
+                 <>
+                    Slide to Confirm <MoveRight className="h-4 w-4 ml-1 inline-block animate-pulse" />
+                 </>
              )}
            </div>
        </div>
        <div className="w-12 text-center text-sm font-mono tabular-nums text-muted-foreground">
           {isTimedOut || isConfirmed || isConfirming ? '--' : `${timeLeft}s`}
        </div>
-
-       {/* Override default Slider styles - Tailwind doesn't work directly on pseudo-elements */}
-       <style jsx>{`
-            .slider-track-fill {
-                 background-color: ${sliderBg};
-            }
-            /* You might need more specific selectors depending on ShadCN's Slider implementation details */
-       `}</style>
     </div>
   );
 }
-
-// Need to import cn utility if not already available globally
-import { cn } from '@/lib/utils';

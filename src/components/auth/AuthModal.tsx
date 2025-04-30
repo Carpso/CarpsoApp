@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Nfc, Loader2 } from 'lucide-react';
+import { Phone, Mail, Nfc, Loader2, Smartphone } from 'lucide-react'; // Added Smartphone icon
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthModalProps {
@@ -28,13 +28,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mobileMoneyNumber, setMobileMoneyNumber] = useState(''); // State for Mobile Money
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const { toast } = useToast();
 
-  const handleSignIn = async (method: 'email' | 'phone' | 'rfid') => {
+  const handleSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney') => {
     setIsLoading(true);
     // Simulate API call
-    console.log(`Attempting sign in with ${method}:`, { email, phone });
+    console.log(`Attempting sign in with ${method}:`, { email, phone, mobileMoneyNumber });
     await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Simulate success/failure
@@ -51,10 +52,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     setIsLoading(false);
   };
 
-   const handleSignUp = async (method: 'email' | 'phone') => {
+   const handleSignUp = async (method: 'email' | 'phone' | 'mobileMoney') => {
     setIsLoading(true);
     // Simulate API call
-    console.log(`Attempting sign up with ${method}:`, { email, phone });
+    console.log(`Attempting sign up with ${method}:`, { email, phone, mobileMoneyNumber });
     await new Promise(resolve => setTimeout(resolve, 1500));
 
      // Simulate success/failure
@@ -147,6 +148,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />} Sign In with Phone
               </Button>
 
+               {/* Mobile Money Sign In */}
+                <div className="space-y-2">
+                    <Label htmlFor="signin-mobile-money">Mobile Money Number</Label>
+                    <Input id="signin-mobile-money" type="tel" placeholder="e.g., 07XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
+                </div>
+                <Button onClick={() => handleSignIn('mobileMoney')} disabled={isLoading || !mobileMoneyNumber} variant="outline" className="w-full">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign In with Mobile Money
+                </Button>
+
                {/* RFID Sign In */}
                 <Button onClick={handleRfidScan} disabled={isLoading || rfidStatus === 'scanning'} variant="secondary" className="w-full">
                  {rfidStatus === 'scanning' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Nfc className="mr-2 h-4 w-4" />}
@@ -190,6 +200,16 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                <Button onClick={() => handleSignUp('phone')} disabled={isLoading || !phone} variant="outline" className="w-full">
                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />} Sign Up with Phone
                </Button>
+
+               {/* Mobile Money Sign Up */}
+               <div className="space-y-2">
+                    <Label htmlFor="signup-mobile-money">Mobile Money Number</Label>
+                    <Input id="signup-mobile-money" type="tel" placeholder="e.g., 07XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
+                </div>
+                <Button onClick={() => handleSignUp('mobileMoney')} disabled={isLoading || !mobileMoneyNumber} variant="outline" className="w-full">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign Up with Mobile Money
+                </Button>
+
                 {/* Note: RFID is typically for sign-in, not sign-up unless pre-registered */}
              </div>
            </TabsContent>
