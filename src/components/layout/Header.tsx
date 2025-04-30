@@ -34,7 +34,7 @@ export default function Header() {
             </Link>
             <nav className="flex flex-col space-y-1 px-2">
                <Button variant="ghost" className="justify-start" asChild>
-                   <Link href="/" >Parking Map</Link>
+                   <Link href="/" >Carpso Map</Link> {/* Changed label here */}
                </Button>
                <Button variant="ghost" className="justify-start" asChild>
                  <Link href="/explore" className="flex items-center gap-1">
@@ -68,7 +68,7 @@ export default function Header() {
               href="/"
               className="transition-colors hover:text-foreground/80 text-foreground/60"
             >
-              Parking Map
+              Carpso Map {/* Changed label here */}
             </Link>
             <Link
               href="/explore"
