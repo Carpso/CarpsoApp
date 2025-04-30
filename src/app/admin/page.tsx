@@ -4,15 +4,17 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download } from "lucide-react"; // Added Download icon
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, CarWash, Wifi, BadgeCent, PlusCircle, Trash2 } from "lucide-react"; // Added service icons, PlusCircle, Trash2
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ParkingLot } from '@/services/parking-lot';
-import { getAvailableParkingLots } from '@/services/parking-lot'; // Service to fetch lots
-import { useToast } from '@/hooks/use-toast'; // Import toast
+import type { ParkingLot, ParkingLotService } from '@/services/parking-lot';
+import { getAvailableParkingLots, updateParkingLotServices } from '@/services/parking-lot'; // Added update service
+import { useToast } from '@/hooks/use-toast';
+import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
 // TODO: Protect this route/page to be accessible only by users with the 'Admin' role.
 
@@ -34,15 +36,18 @@ const sampleAnalyticsData: Record<string, { revenue: number; avgOccupancy: numbe
     'all': { revenue: 3087.40, avgOccupancy: 76, activeReservations: 33 }, // Aggregate
 };
 
+// Available services that can be added/managed
+const allAvailableServices: ParkingLotService[] = ['EV Charging', 'Car Wash', 'Mobile Money Agent', 'Valet', 'Restroom', 'Wifi']; // Added Wifi
+
 export default function AdminDashboardPage() {
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string>('all'); // Default to 'all'
   const [isLoadingLots, setIsLoadingLots] = useState(true);
   const [errorLoadingLots, setErrorLoadingLots] = useState<string | null>(null);
+  const [isUpdatingServices, setIsUpdatingServices] = useState(false); // State for service update loading
   const { toast } = useToast(); // Use toast hook
 
-  useEffect(() => {
-    const fetchLots = async () => {
+  const fetchLots = async () => {
       setIsLoadingLots(true);
       setErrorLoadingLots(null);
       try {
@@ -51,12 +56,16 @@ export default function AdminDashboardPage() {
       } catch (err) {
         console.error("Failed to fetch parking lots for admin dashboard:", err);
         setErrorLoadingLots("Could not load parking lots.");
+         toast({ title: "Error Loading Lots", description: "Could not fetch parking lot data.", variant: "destructive" });
       } finally {
         setIsLoadingLots(false);
       }
     };
+
+  useEffect(() => {
     fetchLots();
-  }, []);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Fetch only once on mount
 
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
   const displayedUsers = selectedLotId === 'all'
@@ -70,26 +79,67 @@ export default function AdminDashboardPage() {
 
     // --- Placeholder Download Handlers ---
     const handleDownloadUsers = () => {
-        // TODO: Implement actual CSV generation and download logic
         console.log("Download users clicked for scope:", selectedLotId, displayedUsers);
         toast({ title: "Download Started (Simulation)", description: `Downloading user data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
         // Example: generateCSV(displayedUsers, `users_${selectedLotId}.csv`);
     };
 
     const handleDownloadLots = () => {
-        // TODO: Implement actual CSV generation and download logic
         console.log("Download lots clicked:", parkingLots);
         toast({ title: "Download Started (Simulation)", description: "Downloading parking lot data."});
         // Example: generateCSV(parkingLots, 'parking_lots.csv');
     };
 
      const handleDownloadAnalytics = () => {
-        // TODO: Implement actual CSV/report generation and download logic
         console.log("Download analytics clicked for scope:", selectedLotId, displayedAnalytics);
         toast({ title: "Download Started (Simulation)", description: `Downloading analytics report for ${selectedLot ? selectedLot.name : 'all locations'}.`});
         // Example: generateCSV([displayedAnalytics], `analytics_${selectedLotId}.csv`); // Wrap in array if needed
     };
     // --- End Placeholder Download Handlers ---
+
+
+   // --- Service Management ---
+    const handleServiceToggle = async (service: ParkingLotService, isChecked: boolean) => {
+        if (!selectedLot) return;
+        setIsUpdatingServices(true);
+
+        const currentServices = selectedLot.services || [];
+        const updatedServices = isChecked
+            ? [...currentServices, service]
+            : currentServices.filter(s => s !== service);
+
+        try {
+            const success = await updateParkingLotServices(selectedLot.id, updatedServices);
+            if (success) {
+                // Update local state to reflect changes immediately
+                setParkingLots(prevLots => prevLots.map(lot =>
+                    lot.id === selectedLotId ? { ...lot, services: updatedServices } : lot
+                ));
+                toast({ title: "Services Updated", description: `${service} ${isChecked ? 'added to' : 'removed from'} ${selectedLot.name}.` });
+            } else {
+                throw new Error("Failed to update services on the backend.");
+            }
+        } catch (error) {
+            console.error("Failed to update services:", error);
+            toast({ title: "Update Failed", description: `Could not update services for ${selectedLot.name}.`, variant: "destructive" });
+            // Revert local state if backend update failed (optional but recommended)
+             // await fetchLots(); // Or refetch data
+        } finally {
+            setIsUpdatingServices(false);
+        }
+    };
+   // --- End Service Management ---
+
+
+   const getServiceIcon = (service: ParkingLotService) => {
+     switch (service) {
+       case 'EV Charging': return <EvStation className="h-4 w-4 mr-2" />;
+       case 'Car Wash': return <CarWash className="h-4 w-4 mr-2" />;
+       case 'Mobile Money Agent': return <BadgeCent className="h-4 w-4 mr-2" />;
+       case 'Wifi': return <Wifi className="h-4 w-4 mr-2" />;
+       default: return <Sparkles className="h-4 w-4 mr-2" />; // Default icon
+     }
+   };
 
 
   return (
@@ -103,7 +153,7 @@ export default function AdminDashboardPage() {
                     Admin Dashboard
                 </CardTitle>
                 <CardDescription>
-                    Manage users, parking lots, system settings, and view analytics.
+                    Manage users, lots, services, settings, and view analytics.
                     {selectedLot ? ` (Viewing: ${selectedLot.name})` : ' (Viewing: All Locations)'}
                 </CardDescription>
              </div>
@@ -138,11 +188,12 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
            <Tabs defaultValue="users" className="w-full">
-             <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6">
-               <TabsTrigger value="users"><UserCog className="mr-2 h-4 w-4"/>Users ({selectedLotId === 'all' ? 'All' : 'Filtered'})</TabsTrigger>
+             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 mb-6"> {/* Adjusted grid cols */}
+               <TabsTrigger value="users"><UserCog className="mr-2 h-4 w-4"/>Users</TabsTrigger>
                <TabsTrigger value="lots"><LayoutDashboard className="mr-2 h-4 w-4"/>Parking Lots</TabsTrigger>
-               <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics ({selectedLotId === 'all' ? 'Overall' : 'Filtered'})</TabsTrigger>
-               <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings ({selectedLotId === 'all' ? 'Global' : 'Filtered'})</TabsTrigger>
+               <TabsTrigger value="services"><Sparkles className="mr-2 h-4 w-4"/>Services</TabsTrigger> {/* Added Services Tab */}
+               <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
+               <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings</TabsTrigger>
              </TabsList>
 
              {/* User Management Tab */}
@@ -158,7 +209,7 @@ export default function AdminDashboardPage() {
                             <Button variant="outline" onClick={handleDownloadUsers}>
                                 <Download className="mr-2 h-4 w-4" /> Download List
                             </Button>
-                            <Button variant="outline">Add New User</Button>
+                            <Button variant="outline"> <PlusCircle className="mr-2 h-4 w-4" /> Add User</Button>
                         </div>
                     </div>
                  </CardHeader>
@@ -170,7 +221,6 @@ export default function AdminDashboardPage() {
                              <TableHead>Name</TableHead>
                              <TableHead>Email</TableHead>
                              <TableHead>Role</TableHead>
-                             {/* Optionally show associated lots if viewing 'all' */}
                              {selectedLotId === 'all' && <TableHead>Associated Lots</TableHead>}
                              <TableHead className="text-right">Actions</TableHead>
                            </TableRow>
@@ -182,9 +232,12 @@ export default function AdminDashboardPage() {
                                <TableCell>{user.email}</TableCell>
                                <TableCell>{user.role}</TableCell>
                                {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
-                               <TableCell className="text-right">
+                               <TableCell className="text-right space-x-1">
                                  <Button variant="ghost" size="sm">Edit</Button>
-                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">Delete</Button>
+                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                                    <Trash2 className="h-4 w-4 sm:mr-1" />
+                                    <span className="hidden sm:inline">Delete</span>
+                                 </Button>
                                </TableCell>
                              </TableRow>
                            ))}
@@ -197,7 +250,7 @@ export default function AdminDashboardPage() {
                </Card>
              </TabsContent>
 
-             {/* Parking Lot Management Tab (Stays the same, not scoped by selection) */}
+             {/* Parking Lot Management Tab */}
               <TabsContent value="lots">
                <Card>
                  <CardHeader>
@@ -210,7 +263,7 @@ export default function AdminDashboardPage() {
                              <Button variant="outline" onClick={handleDownloadLots}>
                                  <Download className="mr-2 h-4 w-4" /> Download List
                              </Button>
-                             <Button variant="outline">Add New Lot</Button>
+                             <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4" /> Add Lot</Button>
                          </div>
                     </div>
                  </CardHeader>
@@ -229,9 +282,9 @@ export default function AdminDashboardPage() {
                            <TableRow>
                              <TableHead>Lot Name</TableHead>
                              <TableHead>Capacity</TableHead>
-                             {/* Occupancy data might need real-time fetching */}
                              <TableHead>Current Occupancy</TableHead>
                              <TableHead>Status</TableHead>
+                             <TableHead>Services</TableHead> {/* Added Services Column */}
                              <TableHead className="text-right">Actions</TableHead>
                            </TableRow>
                          </TableHeader>
@@ -240,13 +293,24 @@ export default function AdminDashboardPage() {
                              <TableRow key={lot.id}>
                                <TableCell className="font-medium">{lot.name}</TableCell>
                                <TableCell>{lot.capacity}</TableCell>
-                               {/* Placeholder for occupancy */}
                                <TableCell>{lot.currentOccupancy ?? 'N/A'}</TableCell>
                                <TableCell>{lot.currentOccupancy !== undefined ? `${((lot.currentOccupancy / lot.capacity) * 100).toFixed(0)}% Full` : 'N/A'}</TableCell>
-                               <TableCell className="text-right">
-                                  <Button variant="ghost" size="sm">View Details</Button>
-                                 <Button variant="ghost" size="sm">Edit</Button>
-                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">Disable</Button>
+                               <TableCell> {/* Services Cell */}
+                                   <div className="flex flex-wrap gap-1">
+                                      {(lot.services && lot.services.length > 0) ? lot.services.map(service => (
+                                           <Badge key={service} variant="secondary" size="sm" className="flex items-center whitespace-nowrap">
+                                                {getServiceIcon(service)} {service}
+                                           </Badge>
+                                       )) : <span className="text-xs text-muted-foreground">None</span>}
+                                   </div>
+                                </TableCell>
+                               <TableCell className="text-right space-x-1">
+                                  <Button variant="ghost" size="sm">Details</Button>
+                                  <Button variant="ghost" size="sm">Edit</Button>
+                                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                                     <Trash2 className="h-4 w-4 sm:mr-1" />
+                                     <span className="hidden sm:inline">Disable</span>
+                                  </Button>
                                </TableCell>
                              </TableRow>
                            ))}
@@ -258,6 +322,53 @@ export default function AdminDashboardPage() {
                  </CardContent>
                </Card>
              </TabsContent>
+
+             {/* Services Management Tab */}
+              <TabsContent value="services">
+                <Card>
+                  <CardHeader>
+                     <CardTitle>Manage Lot Services {selectedLot ? ` - ${selectedLot.name}` : ''}</CardTitle>
+                     <CardDescription>
+                       {selectedLot ? `Enable or disable services offered at ${selectedLot.name}.` : 'Please select a specific parking lot to manage its services.'}
+                     </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                      {isLoadingLots ? (
+                          <Skeleton className="h-24 w-full" />
+                      ) : errorLoadingLots ? (
+                          <p className="text-destructive text-center py-4">{errorLoadingLots}</p>
+                      ) : !selectedLot ? (
+                          <p className="text-muted-foreground text-center py-4">Select a parking lot from the dropdown above.</p>
+                      ) : (
+                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                             {allAvailableServices.map((service) => {
+                                const isChecked = selectedLot.services?.includes(service) ?? false;
+                                return (
+                                   <div key={service} className="flex items-center space-x-3 p-3 border rounded-md bg-background hover:bg-accent/10 transition-colors">
+                                       <Checkbox
+                                           id={`service-${service}`}
+                                           checked={isChecked}
+                                           onCheckedChange={(checked) => handleServiceToggle(service, !!checked)}
+                                           disabled={isUpdatingServices}
+                                       />
+                                       <label
+                                           htmlFor={`service-${service}`}
+                                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center cursor-pointer"
+                                       >
+                                            {getServiceIcon(service)} {service}
+                                       </label>
+                                       {isUpdatingServices && isChecked === selectedLot.services?.includes(service) && ( // Show loader only on the item being changed
+                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />
+                                        )}
+                                   </div>
+                                );
+                             })}
+                         </div>
+                      )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
 
              {/* Analytics Tab */}
              <TabsContent value="analytics">
@@ -272,7 +383,6 @@ export default function AdminDashboardPage() {
                    </div>
                  </CardHeader>
                  <CardContent>
-                    {/* Placeholder - Replace with actual charts and data fetching */}
                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                        <Card>
                            <CardHeader><CardTitle className="text-lg">${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader>
@@ -297,7 +407,6 @@ export default function AdminDashboardPage() {
                    <CardDescription>Configure application settings, integrations, and pricing rules {selectedLot ? `specific to ${selectedLot.name}` : 'globally'}.</CardDescription>
                  </CardHeader>
                  <CardContent>
-                    {/* Example setting - Conditionally show based on scope */}
                      <div className="mt-4 space-y-4">
                        {selectedLotId === 'all' && ( // Only show global settings when 'all' is selected
                            <div className="flex items-center justify-between p-4 border rounded-md">
@@ -332,7 +441,7 @@ export default function AdminDashboardPage() {
                           </div>
                           <Button size="sm" variant="outline">Configure</Button>
                        </div>
-                       {/* Add more settings forms here, potentially scoped */}
+                       {/* Add more settings forms here */}
                     </div>
                  </CardContent>
                </Card>
@@ -343,3 +452,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+```

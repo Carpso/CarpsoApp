@@ -15,17 +15,19 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car } from 'lucide-react'; // Added AlertTriangle, Car
+import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car } from 'lucide-react';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import ReportIssueModal from './ReportIssueModal'; // Import the new modal
+import ReportIssueModal from './ReportIssueModal';
 
 interface UserProfileProps {
   isOpen: boolean;
   onClose: () => void;
   userId: string;
   onLogout: () => void;
+  userName?: string | null; // Added from context/props
+  userAvatarUrl?: string | null; // Added from context/props
 }
 
 // Mock data types and functions - Replace with actual API calls
@@ -50,24 +52,30 @@ interface ParkingHistoryEntry {
   id: string;
   spotId: string;
   locationName: string;
-  locationId: string; // Added locationId for reporting context
+  locationId: string;
   startTime: string;
   endTime: string;
   cost: number;
-  status: 'Completed' | 'Active' | 'Upcoming'; // Added status
+  status: 'Completed' | 'Active' | 'Upcoming';
 }
 
 // --- Mock Data Fetching Functions ---
-const fetchUserDetails = async (userId: string): Promise<UserDetails> => {
+// Note: Now receiving userName and avatarUrl from props/context, so fetchUserDetails might only need to fetch supplementary details if any.
+const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null): Promise<UserDetails> => {
   await new Promise(resolve => setTimeout(resolve, 700));
+  // Use provided details if available, otherwise generate mock ones
+  const name = existingName || `User ${userId.substring(0, 5)}`;
+  const avatarUrl = existingAvatar || `https://picsum.photos/seed/${userId}/100/100`;
+
   return {
-    name: `User ${userId.substring(0, 5)}`,
-    email: `user_${userId.substring(0, 5)}@example.com`,
-    phone: '+260 977 123 456', // Example Zambian number format
-    avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
+    name: name,
+    email: `user_${userId.substring(0, 5)}@example.com`, // Still mock email/phone/memberSince
+    phone: '+260 977 123 456',
+    avatarUrl: avatarUrl,
     memberSince: '2024-01-15',
   };
 };
+
 
 const fetchBillingInfo = async (userId: string): Promise<BillingInfo> => {
    await new Promise(resolve => setTimeout(resolve, 500));
@@ -76,17 +84,16 @@ const fetchBillingInfo = async (userId: string): Promise<BillingInfo> => {
        accountBalance: parseFloat(randomBalance.toFixed(2)),
        paymentMethods: [
             { type: 'Card', details: 'Visa **** 4321', isPrimary: true },
-            { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }, // Example MTN Zambia
-            { type: 'MobileMoney', details: 'Airtel 097X XXX XXX', isPrimary: false }, // Example Airtel Zambia
+            { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false },
+            { type: 'MobileMoney', details: 'Airtel 097X XXX XXX', isPrimary: false },
        ],
    };
 };
 
 const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[]> => {
    await new Promise(resolve => setTimeout(resolve, 1000));
-   // Added locationId and status
    return [
-       { id: 'res1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(Date.now() - 30 * 60000).toISOString(), endTime: new Date(Date.now() + 60 * 60000).toISOString(), cost: 0, status: 'Active' }, // Active reservation
+       { id: 'res1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(Date.now() - 30 * 60000).toISOString(), endTime: new Date(Date.now() + 60 * 60000).toISOString(), cost: 0, status: 'Active' },
        { id: 'hist1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: '2024-07-25 10:00', endTime: '2024-07-25 11:30', cost: 3.50, status: 'Completed' },
        { id: 'hist2', spotId: 'lot_B-S22', locationName: 'Airport Lot B', locationId: 'lot_B', startTime: '2024-07-23 14:15', endTime: '2024-07-23 16:00', cost: 5.00, status: 'Completed' },
        { id: 'hist3', spotId: 'lot_A-S12', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: '2024-07-20 09:00', endTime: '2024-07-20 09:45', cost: 1.50, status: 'Completed' },
@@ -95,10 +102,17 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
 // --- End Mock Data Fetching ---
 
 
-export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserProfileProps) {
+export default function UserProfile({
+    isOpen,
+    onClose,
+    userId,
+    onLogout,
+    userName, // Receive from props
+    userAvatarUrl // Receive from props
+}: UserProfileProps) {
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
-  const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null); // Includes reservations
+  const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
@@ -109,10 +123,11 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
       const loadData = async () => {
         setIsLoading(true);
         try {
+          // Pass existing name/avatar to fetch function if needed
           const [details, billing, history] = await Promise.all([
-            fetchUserDetails(userId),
+            fetchUserDetails(userId, userName, userAvatarUrl),
             fetchBillingInfo(userId),
-            fetchParkingHistory(userId), // Fetches history and active reservations
+            fetchParkingHistory(userId),
           ]);
           setUserDetails(details);
           setBillingInfo(billing);
@@ -130,7 +145,7 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
       };
       loadData();
     }
-  }, [isOpen, userId, toast]);
+  }, [isOpen, userId, userName, userAvatarUrl, toast]); // Add userName, userAvatarUrl as dependencies
 
   const handleOpenReportModal = (reservation: ParkingHistoryEntry) => {
       setReportingReservation(reservation);
@@ -139,25 +154,23 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
 
   const handleCloseReportModal = () => {
       setIsReportModalOpen(false);
-      // Delay clearing to allow modal fade out
       setTimeout(() => setReportingReservation(null), 300);
   };
 
   const handleDownloadBilling = () => {
     console.log("Download billing statement clicked:", billingInfo);
     toast({ title: "Download Started (Simulation)", description: "Downloading billing statement."});
-    // Example: generateCSV/PDF(billingInfo, `billing_statement_${userId}.csv`);
   };
 
   const handleDownloadHistory = () => {
     const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
     console.log("Download parking history clicked:", completedHistory);
     toast({ title: "Download Started (Simulation)", description: "Downloading parking history."});
-    // Example: generateCSV(completedHistory, `parking_history_${userId}.csv`);
   };
 
   const activeReservations = parkingHistory?.filter(h => h.status === 'Active') || [];
   const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
+  const userInitial = userDetails?.name ? userDetails.name.charAt(0).toUpperCase() : 'U';
 
   return (
     <>
@@ -183,14 +196,14 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
                   {/* User Info */}
                   <div className="flex items-center space-x-4 mb-6">
                       <Avatar className="h-16 w-16">
-                          <AvatarImage src={userDetails?.avatarUrl} alt={userDetails?.name} />
-                          <AvatarFallback>{userDetails?.name?.charAt(0) || 'U'}</AvatarFallback>
+                          <AvatarImage src={userDetails.avatarUrl} alt={userDetails.name} />
+                          <AvatarFallback>{userInitial}</AvatarFallback>
                       </Avatar>
                       <div className="space-y-1">
-                          <p className="text-lg font-semibold">{userDetails?.name}</p>
-                          <p className="text-sm text-muted-foreground">{userDetails?.email}</p>
-                          <p className="text-sm text-muted-foreground">{userDetails?.phone}</p>
-                          <p className="text-xs text-muted-foreground">Member since: {userDetails?.memberSince}</p>
+                          <p className="text-lg font-semibold">{userDetails.name}</p>
+                          <p className="text-sm text-muted-foreground">{userDetails.email}</p>
+                          <p className="text-sm text-muted-foreground">{userDetails.phone}</p>
+                          <p className="text-xs text-muted-foreground">Member since: {userDetails.memberSince}</p>
                       </div>
                   </div>
 
@@ -206,12 +219,10 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
                                             <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                                                 <Clock className="h-3 w-3" />
                                                 <span>Ends: {new Date(res.endTime).toLocaleTimeString()}</span>
-                                                {/* Add time remaining countdown if desired */}
                                             </div>
                                         </div>
                                         <Badge variant="default" size="sm">Active</Badge>
                                     </div>
-                                     {/* Add View Live Location button here if needed */}
                                      <Button
                                          variant="outline"
                                          size="sm"
@@ -289,7 +300,7 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
                       </div>
                       {completedHistory.length > 0 ? (
                           <div className="space-y-3">
-                              {completedHistory.slice(0, 5).map((entry) => ( // Show recent 5 history items
+                              {completedHistory.slice(0, 5).map((entry) => (
                                   <div key={entry.id} className="p-3 border rounded-md text-sm">
                                       <div className="flex justify-between items-center mb-1">
                                           <span className="font-medium">{entry.locationName} (Spot {entry.spotId.split('-')[1]})</span>
@@ -332,7 +343,7 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
   );
 }
 
-// Skeleton Loader remains the same
+// Skeleton Loader
 const ProfileSkeleton = () => (
     <div className="space-y-6">
         {/* User Info Skeleton */}
@@ -348,7 +359,7 @@ const ProfileSkeleton = () => (
          {/* Reservations Skeleton */}
         <div className="space-y-3">
             <Skeleton className="h-5 w-36 mb-2" />
-            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-24 w-full" /> {/* Increased height for button */}
         </div>
         <Separator/>
         {/* Billing Skeleton */}
@@ -371,3 +382,4 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
+```

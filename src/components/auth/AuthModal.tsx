@@ -14,13 +14,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Nfc, Loader2, Smartphone } from 'lucide-react'; // Added Smartphone icon
+import { Phone, Mail, Nfc, Loader2, Smartphone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (userId: string) => void; // Callback on successful authentication
+  // Update callback to include more user details for context
+  onAuthSuccess: (userId: string, name?: string, avatarUrl?: string, role?: string) => void;
 }
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
@@ -28,23 +29,63 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mobileMoneyNumber, setMobileMoneyNumber] = useState(''); // State for Mobile Money
+  const [name, setName] = useState(''); // Added for sign up
+  const [mobileMoneyNumber, setMobileMoneyNumber] = useState('');
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const { toast } = useToast();
 
+  // --- MOCK AUTH FUNCTIONS (Replace with real backend calls) ---
+
+  // Mock Sign In: Returns basic user info
+  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: string } }> => {
+    console.log(`Simulating sign in with ${method}:`, { email, phone, mobileMoneyNumber });
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const success = Math.random() > 0.3; // 70% success rate
+    if (success) {
+       const userId = `user_${Math.random().toString(36).substring(7)}`;
+       // Simulate fetching basic user details on sign-in
+       return {
+           success: true,
+           user: {
+                id: userId,
+                name: email.split('@')[0] || phone || `User ${userId.substring(0, 4)}`, // Mock name
+                avatarUrl: `https://picsum.photos/seed/${userId}/100/100`, // Mock avatar
+                role: email.includes('admin') ? 'Admin' : email.includes('owner') ? 'ParkingLotOwner' : 'User' // Mock role based on email
+            }
+       };
+    }
+    return { success: false };
+  };
+
+  // Mock Sign Up: Returns basic user info
+  const mockSignUp = async (method: 'email' | 'phone' | 'mobileMoney'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: string } }> => {
+     console.log(`Simulating sign up with ${method}:`, { name, email, phone, mobileMoneyNumber });
+     await new Promise(resolve => setTimeout(resolve, 1500));
+     const success = Math.random() > 0.3;
+     if (success) {
+         const userId = `user_${Math.random().toString(36).substring(7)}`;
+         return {
+             success: true,
+             user: {
+                 id: userId,
+                 name: name || email.split('@')[0] || phone || `User ${userId.substring(0, 4)}`, // Use provided name or mock
+                 avatarUrl: `https://picsum.photos/seed/${userId}/100/100`, // Mock avatar
+                 role: 'User' // New users are always 'User' role initially
+             }
+         };
+     }
+     return { success: false };
+  };
+  // --- END MOCK AUTH FUNCTIONS ---
+
+
   const handleSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney') => {
     setIsLoading(true);
-    // Simulate API call
-    console.log(`Attempting sign in with ${method}:`, { email, phone, mobileMoneyNumber });
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const result = await mockSignIn(method);
 
-    // Simulate success/failure
-    const success = Math.random() > 0.3; // 70% success rate
-
-    if (success) {
-      const userId = `user_${Math.random().toString(36).substring(7)}`;
-      toast({ title: "Sign In Successful", description: "Welcome back!" });
-      onAuthSuccess(userId);
+    if (result.success && result.user) {
+      toast({ title: "Sign In Successful", description: `Welcome back, ${result.user.name}!` });
+      onAuthSuccess(result.user.id, result.user.name, result.user.avatarUrl, result.user.role); // Pass user details
       onClose();
     } else {
       toast({ title: "Sign In Failed", description: "Invalid credentials or user not found.", variant: "destructive" });
@@ -53,19 +94,24 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   };
 
    const handleSignUp = async (method: 'email' | 'phone' | 'mobileMoney') => {
+     if (method === 'email' && !name) {
+        toast({ title: "Missing Information", description: "Please enter your name.", variant: "destructive" });
+        return;
+     }
+
     setIsLoading(true);
-    // Simulate API call
-    console.log(`Attempting sign up with ${method}:`, { email, phone, mobileMoneyNumber });
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const result = await mockSignUp(method);
 
-     // Simulate success/failure
-    const success = Math.random() > 0.3;
-
-    if (success) {
-       const userId = `user_${Math.random().toString(36).substring(7)}`;
+    if (result.success && result.user) {
        toast({ title: "Sign Up Successful", description: "Your account has been created." });
-       onAuthSuccess(userId);
+       onAuthSuccess(result.user.id, result.user.name, result.user.avatarUrl, result.user.role); // Pass user details
        onClose();
+       // Clear form fields after successful signup
+        setName('');
+        setEmail('');
+        setPassword('');
+        setPhone('');
+        setMobileMoneyNumber('');
     } else {
        toast({ title: "Sign Up Failed", description: "Could not create account. Please try again.", variant: "destructive" });
     }
@@ -75,23 +121,18 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
   const handleRfidScan = async () => {
       setRfidStatus('scanning');
-      // Simulate RFID scanning process (e.g., listening for an event)
        console.log("Scanning for RFID tag...");
       await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Simulate scan result
       const found = Math.random() > 0.4;
       if (found) {
           setRfidStatus('scanned');
            console.log("RFID tag scanned successfully.");
-          // Automatically attempt sign-in with the scanned tag data (simulated)
-          await handleSignIn('rfid');
+          await handleSignIn('rfid'); // Attempt sign-in with simulated tag data
       } else {
           setRfidStatus('error');
           console.error("RFID scan failed or timed out.");
           toast({title: "RFID Scan Failed", description: "No RFID tag detected. Please try again.", variant: "destructive"});
       }
-      // Reset status after a delay if not successful sign-in
       if(rfidStatus !== 'idle') {
           setTimeout(() => {
                if (rfidStatus === 'scanning' || rfidStatus === 'error') setRfidStatus('idle');
@@ -99,8 +140,23 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       }
   }
 
+   // Reset form state when dialog closes
+   const handleDialogClose = (open: boolean) => {
+       if (!open) {
+            setName('');
+            setEmail('');
+            setPassword('');
+            setPhone('');
+            setMobileMoneyNumber('');
+            setRfidStatus('idle');
+            setIsLoading(false); // Ensure loading state is reset
+            onClose(); // Call the original onClose handler
+       }
+   }
+
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Sign In / Sign Up</DialogTitle>
@@ -169,6 +225,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
           {/* Sign Up Tab */}
            <TabsContent value="signup">
              <div className="space-y-4 py-4">
+                 {/* Name Field */}
+                 <div className="space-y-2">
+                   <Label htmlFor="signup-name">Full Name</Label>
+                   <Input id="signup-name" type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} disabled={isLoading}/>
+                 </div>
+
                {/* Email/Password Sign Up */}
                <div className="space-y-2">
                  <Label htmlFor="signup-email">Email</Label>
@@ -178,8 +240,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                  <Label htmlFor="signup-password">Password</Label>
                  <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading}/>
                </div>
-                {/* Add confirm password if needed */}
-               <Button onClick={() => handleSignUp('email')} disabled={isLoading || !email || !password} className="w-full">
+               <Button onClick={() => handleSignUp('email')} disabled={isLoading || !email || !password || !name} className="w-full">
                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
                </Button>
 
@@ -209,14 +270,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                 <Button onClick={() => handleSignUp('mobileMoney')} disabled={isLoading || !mobileMoneyNumber} variant="outline" className="w-full">
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign Up with Mobile Money
                 </Button>
-
-                {/* Note: RFID is typically for sign-in, not sign-up unless pre-registered */}
              </div>
            </TabsContent>
         </Tabs>
 
         <DialogFooter>
-            {/* Optionally add social logins or other methods here */}
+            {/* Optional social logins or other methods here */}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,19 +1,16 @@
 // src/components/layout/Header.tsx
-'use client'; // Need client component for state/hooks (though state is managed in parent for now)
+'use client';
 
 import Link from 'next/link';
-import { Car, ShieldCheck, Menu, UserCircle } from 'lucide-react'; // Added UserCircle
+import { Car, ShieldCheck, Menu, UserCircle, Compass } from 'lucide-react'; // Added Compass
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-// Note: Authentication state (isAuthenticated, userId, handlers) would typically come from a context or parent component.
-// For this example, we'll simulate it or assume it's passed down if needed.
+// Note: Auth state is handled via context now (AppStateProvider)
 
-export default function Header({
-   // These would be props if state isn't global/contextual
-   // isAuthenticated = false,
-   // onLoginClick,
-   // onProfileClick,
-}) {
+export default function Header() {
+  // Auth state would come from context if needed here, but primary buttons are in ParkingLotManager
+  // const { isAuthenticated } = useContext(AppStateContext)!;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
@@ -24,32 +21,33 @@ export default function Header({
               variant="ghost"
               size="icon"
               className="md:hidden mr-2"
-              aria-label="Toggle Menu" // Added aria-label
+              aria-label="Toggle Menu"
             >
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle Menu</span>
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px]">
-            <Link href="/" className="flex items-center space-x-2 mb-6 px-4 pt-4"> {/* Added top padding */}
+            <Link href="/" className="flex items-center space-x-2 mb-6 px-4 pt-4">
                 <Car className="h-6 w-6 text-primary" />
                 <span className="font-bold">Carpso</span>
             </Link>
-            <nav className="flex flex-col space-y-1 px-2"> {/* Adjusted padding and spacing */}
+            <nav className="flex flex-col space-y-1 px-2">
                <Button variant="ghost" className="justify-start" asChild>
                    <Link href="/" >Parking Map</Link>
                </Button>
                <Button variant="ghost" className="justify-start" asChild>
-                 <Link href="/predict" >Predict Availability</Link>
+                 <Link href="/explore" className="flex items-center gap-1">
+                    <Compass className="h-4 w-4" /> Explore
+                 </Link>
                </Button>
-              {/* TODO: Show this link only for Admin role */}
+              {/* TODO: Conditionally show Admin link based on role from context */}
                <Button variant="ghost" className="justify-start" asChild>
                    <Link href="/admin" className="flex items-center gap-1">
                       <ShieldCheck className="h-4 w-4" />
                       Admin Dashboard
                    </Link>
                </Button>
-                {/* Add other potential links like Profile, Settings here */}
             </nav>
           </SheetContent>
         </Sheet>
@@ -73,12 +71,13 @@ export default function Header({
               Parking Map
             </Link>
             <Link
-              href="/predict"
-              className="transition-colors hover:text-foreground/80 text-foreground/60"
+              href="/explore"
+              className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1"
             >
-              Predict Availability
+               <Compass className="h-4 w-4" />
+               Explore
             </Link>
-             {/* TODO: Show this link only for Admin role */}
+             {/* TODO: Conditionally show Admin link based on role from context */}
             <Link
               href="/admin"
               className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1"
@@ -89,19 +88,9 @@ export default function Header({
         </nav>
 
 
-        {/* Auth / Profile Button Area */}
+        {/* Auth / Profile Button Area - managed in ParkingLotManager */}
         <div className="flex items-center justify-end space-x-2 ml-auto">
-           {/* Placeholder Button - Logic is now handled in ParkingLotManager */}
-            {/*
-             {isAuthenticated ? (
-                <Button variant="ghost" size="icon" onClick={onProfileClick} aria-label="View Profile">
-                   <UserCircle className="h-5 w-5" />
-                </Button>
-            ) : (
-                <Button onClick={onLoginClick}>Sign In</Button>
-            )}
-             */}
-             {/* The actual button rendering is controlled by ParkingLotManager */}
+           {/* The actual button rendering is controlled by ParkingLotManager using context */}
         </div>
       </div>
     </header>

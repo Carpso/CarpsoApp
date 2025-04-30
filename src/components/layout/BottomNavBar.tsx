@@ -3,18 +3,37 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, BrainCircuit, ShieldCheck, UserCircle } from 'lucide-react'; // Added UserCircle
+import { Home, Compass, ShieldCheck, UserCircle } from 'lucide-react'; // Replaced BrainCircuit with Compass, kept UserCircle
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button'; // Import Button
-import React from 'react'; // Import React for potential context usage
+import { Button } from '@/components/ui/button';
+import React from 'react';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar components
 
-// Assume auth state might come from context or props in a real app
-// Example using hypothetical context:
-// import { useAuth } from '@/context/AuthContext';
+// Assume auth state and user details might come from context or props
+// Example:
+// interface BottomNavBarProps {
+//   isAuthenticated: boolean;
+//   userRole: string;
+//   userName?: string; // Add user name
+//   userAvatarUrl?: string; // Add avatar URL
+//   onAuthClick: () => void;
+//   onProfileClick: () => void;
+// }
+
+// For simulation (replace with actual props/context)
+interface BottomNavBarProps {
+  isAuthenticated: boolean;
+  userRole: string; // Assuming 'Admin', 'ParkingLotOwner', 'User'
+  userName?: string | null;
+  userAvatarUrl?: string | null;
+  onAuthClick: () => void;
+  onProfileClick: () => void;
+}
+
 
 const navItemsBase = [
   { href: '/', label: 'Map', icon: Home },
-  { href: '/predict', label: 'Predict', icon: BrainCircuit },
+  { href: '/explore', label: 'Explore', icon: Compass }, // New Explore tab
 ];
 
 // Define admin item separately
@@ -23,25 +42,26 @@ const adminItem = { href: '/admin', label: 'Admin', icon: ShieldCheck };
 // Define profile item (acts as a button trigger)
 const profileItem = { id: 'profile', label: 'Profile', icon: UserCircle };
 
-export default function BottomNavBar() {
-  const pathname = usePathname();
-  // const { isAuthenticated, userRole, openAuthModal, openProfileModal } = useAuth(); // Example context usage
 
-  // --- Simulation for demonstration ---
-  // In a real app, get these from your auth state management (context, Zustand, Redux, props)
-  const isAuthenticated = false; // Simulate logged out state
-  const userRole = 'User'; // Simulate basic user role
-  const openAuthModal = () => console.log('Open Auth Modal triggered'); // Placeholder action
-  const openProfileModal = () => console.log('Open Profile Modal triggered'); // Placeholder action
-  // --- End Simulation ---
+export default function BottomNavBar({
+    isAuthenticated,
+    userRole,
+    userName,
+    userAvatarUrl,
+    onAuthClick,
+    onProfileClick
+}: BottomNavBarProps) {
+  const pathname = usePathname();
 
   const navItems = [...navItemsBase];
 
-  // Conditionally add Admin link
-  // TODO: Replace 'Admin' with your actual admin role identifier
-  if (isAuthenticated && userRole === 'Admin') {
+  // Conditionally add Admin link based on role
+  if (isAuthenticated && (userRole === 'Admin' || userRole === 'ParkingLotOwner')) { // Also show for Owner for now
     navItems.push(adminItem);
   }
+
+  const profileButtonLabel = isAuthenticated ? (userName ? userName.split(' ')[0] : 'Profile') : 'Sign In';
+  const userInitial = userName ? userName.charAt(0).toUpperCase() : 'U';
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
@@ -52,7 +72,7 @@ export default function BottomNavBar() {
           return (
             <Link
               key={item.href}
-              href={item.href!} // Added non-null assertion, ensure href exists for links
+              href={item.href!}
               className={cn(
                 'flex flex-col items-center justify-center text-center transition-colors w-16 h-16 rounded-md',
                 isActive
@@ -73,18 +93,26 @@ export default function BottomNavBar() {
            variant="ghost"
            className={cn(
                'flex flex-col items-center justify-center text-center transition-colors w-16 h-16 rounded-md',
-                // Apply active style if a profile-related route is active (adjust as needed)
-                // isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground/80',
+                // Optional: Highlight if profile-related route is active
+                // pathname.startsWith('/profile') ? 'text-primary' : 'text-muted-foreground hover:text-foreground/80',
                 'text-muted-foreground hover:text-foreground/80',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:bg-accent focus-visible:text-accent-foreground'
            )}
-           onClick={isAuthenticated ? openProfileModal : openAuthModal}
+           onClick={isAuthenticated ? onProfileClick : onAuthClick}
            aria-label={isAuthenticated ? 'Open Profile' : 'Sign In or Sign Up'}
         >
-             <profileItem.icon className={cn('h-5 w-5 mb-1')} />
-             <span className="text-xs">{isAuthenticated ? profileItem.label : 'Sign In'}</span>
+             {isAuthenticated ? (
+                  <Avatar className="h-5 w-5 mb-1">
+                      <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User'} className="object-cover" />
+                      <AvatarFallback className="text-[10px] bg-muted">{userInitial}</AvatarFallback>
+                  </Avatar>
+             ) : (
+                 <profileItem.icon className={cn('h-5 w-5 mb-1')} />
+             )}
+             <span className="text-xs truncate max-w-[50px]">{profileButtonLabel}</span>
         </Button>
       </div>
     </nav>
   );
 }
+```
