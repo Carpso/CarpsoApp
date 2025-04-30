@@ -1,8 +1,7 @@
 import Link from 'next/link';
-import { Car, ShieldCheck } from 'lucide-react'; // Added ShieldCheck for Admin
+import { Car, ShieldCheck, Menu } from 'lucide-react'; // Removed duplicate Menu import
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu } from 'lucide-react';
 
 export default function Header() {
   return (
