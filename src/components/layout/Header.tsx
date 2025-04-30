@@ -34,7 +34,8 @@ export default function Header() {
             </Link>
             <nav className="flex flex-col space-y-1 px-2">
                <Button variant="ghost" className="justify-start" asChild>
-                   <Link href="/" >Carpso Map</Link> {/* Changed label here */}
+                   {/* Removed extra space before "Carpso Map" */}
+                   <Link href="/">Carpso Map</Link>
                </Button>
                <Button variant="ghost" className="justify-start" asChild>
                  <Link href="/explore" className="flex items-center gap-1">
