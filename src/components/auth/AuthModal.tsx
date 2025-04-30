@@ -133,11 +133,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
           console.error("RFID scan failed or timed out.");
           toast({title: "RFID Scan Failed", description: "No RFID tag detected. Please try again.", variant: "destructive"});
       }
-      if(rfidStatus !== 'idle') {
-          setTimeout(() => {
-               if (rfidStatus === 'scanning' || rfidStatus === 'error') setRfidStatus('idle');
-          }, 2000);
-      }
+      // Reset status after a short delay if still scanning or error
+      setTimeout(() => {
+           if (rfidStatus === 'scanning' || rfidStatus === 'error') setRfidStatus('idle');
+      }, 2000);
   }
 
    // Reset form state when dialog closes

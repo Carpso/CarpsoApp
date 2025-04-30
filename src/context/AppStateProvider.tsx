@@ -72,4 +72,3 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
 };
 
 export default AppStateProvider;
-```
