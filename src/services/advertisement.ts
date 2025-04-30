@@ -26,6 +26,10 @@ export interface Advertisement {
    * ID of the parking lot this ad targets (optional, undefined/null/empty for global ads).
    */
   targetLocationId?: string;
+   /**
+    * Name of the target parking lot (for display purposes, might be added during fetch).
+    */
+   targetLotName?: string;
   /**
    * Optional service this ad is associated with (e.g., promote EV charging).
    */
@@ -98,13 +102,27 @@ let sampleAdvertisements: Advertisement[] = [
 export async function getAdvertisements(locationId?: string): Promise<Advertisement[]> {
   await new Promise(resolve => setTimeout(resolve, 400)); // Simulate network delay
   console.log(`Fetching ads for locationId: ${locationId}`);
+
+  let filteredAds: Advertisement[];
+
   if (locationId) {
-    return sampleAdvertisements.filter(ad => ad.targetLocationId === locationId || !ad.targetLocationId); // Include global ads
+    // Filter ads that target the specific location OR are global (no targetLocationId)
+    filteredAds = sampleAdvertisements.filter(ad => ad.targetLocationId === locationId || !ad.targetLocationId);
+  } else {
+    // If no locationId is specified, return all ads (for admin or potentially global views)
+    filteredAds = [...sampleAdvertisements];
   }
-  // Filter only active ads by default when fetching all? Or handle status elsewhere.
-  // For now, returning all for simplicity in admin view.
-  return [...sampleAdvertisements].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Filter by status - only return 'active' ads unless maybe in admin context?
+  // For Explore page, we likely only want active ads.
+  // For Admin page, we might want all statuses.
+  // Let's assume this function is generic for now and returns based on location filter primarily.
+  // Filtering by status can happen in the component calling this service if needed.
+
+  // Return sorted by creation date (newest first)
+  return filteredAds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
+
 
 /**
  * Simulates creating a new advertisement.
@@ -137,7 +155,7 @@ export async function createAdvertisement(adData: Partial<Omit<Advertisement, 'i
  * @param updateData The fields to update.
  * @returns A promise resolving to the updated advertisement or null if not found.
  */
-export async function updateAdvertisement(adId: string, updateData: Partial<Omit<Advertisement, 'id' | 'createdAt'>>): Promise<Advertisement | null> {
+export async function updateAdvertisement(adId: string, updateData: Partial<Omit<Advertisement, 'id' | 'createdAt' | 'targetLotName'>>): Promise<Advertisement | null> {
   await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
   const adIndex = sampleAdvertisements.findIndex(ad => ad.id === adId);
   if (adIndex === -1) {
@@ -147,11 +165,14 @@ export async function updateAdvertisement(adId: string, updateData: Partial<Omit
     ...sampleAdvertisements[adIndex],
     ...updateData,
     updatedAt: new Date().toISOString(),
+    // Ensure targetLotName is not persisted from the form state
+    targetLotName: undefined,
   };
   sampleAdvertisements[adIndex] = updatedAd;
   console.log("Updated ad:", updatedAd);
   return updatedAd;
 }
+
 
 /**
  * Simulates deleting an advertisement.
@@ -170,5 +191,3 @@ export async function deleteAdvertisement(adId: string): Promise<boolean> {
   }
   return success;
 }
-
-    

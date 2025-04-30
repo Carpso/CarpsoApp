@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bathroom, ConciergeBell } from "lucide-react"; // Replaced CarWash with SprayCan, Added Bathroom, ConciergeBell
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, ChargingStation, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bathroom, ConciergeBell } from "lucide-react"; // Replaced EvStation with ChargingStation, Added Bathroom, ConciergeBell
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Added Textarea
@@ -95,7 +95,12 @@ export default function AdminDashboardPage() {
           // If 'all' is selected, fetch all ads (or handle based on role later)
           // Otherwise, fetch ads for the specific location
           const ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
-          setAdvertisements(ads);
+          // Add location name to each ad for display purposes
+          const adsWithLocationNames = ads.map(ad => {
+              const targetLot = parkingLots.find(lot => lot.id === ad.targetLocationId);
+              return { ...ad, targetLotName: targetLot?.name };
+          });
+          setAdvertisements(adsWithLocationNames);
       } catch (err) {
           console.error("Failed to fetch advertisements:", err);
           setErrorLoadingAds("Could not load advertisements.");
@@ -108,9 +113,16 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     fetchLots();
-    fetchAds(selectedLotId); // Fetch initial ads
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLotId]); // Re-fetch ads when selectedLotId changes
+    // Fetch ads after lots are potentially fetched and parkingLots state is updated
+  }, []);
+
+   useEffect(() => {
+     // Only fetch ads if parkingLots data is available
+     if (parkingLots.length > 0) {
+         fetchAds(selectedLotId);
+     }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [selectedLotId, parkingLots]); // Re-fetch ads when selectedLotId or parkingLots change
 
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
   const displayedUsers = selectedLotId === 'all'
@@ -206,7 +218,10 @@ export default function AdminDashboardPage() {
                 // Ensure targetLocationId is set correctly, especially if creating while 'all' is selected
                 // If 'All Locations' is selected in the dropdown, set targetLocationId to empty string or undefined
                  targetLocationId: currentAd.targetLocationId === 'all' ? '' : (currentAd.targetLocationId || (selectedLotId !== 'all' ? selectedLotId : '')),
+                 // Remove temporary targetLotName before saving
+                 targetLotName: undefined,
             };
+
 
             if (currentAd.id) {
                 // Update existing ad
@@ -217,21 +232,8 @@ export default function AdminDashboardPage() {
             }
 
             if (savedAd) {
-                // Update local state - either add or replace
-                setAdvertisements(prevAds => {
-                    const existingIndex = prevAds.findIndex(a => a.id === savedAd!.id);
-                    if (existingIndex > -1) {
-                        const newAds = [...prevAds];
-                        newAds[existingIndex] = savedAd!;
-                        return newAds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Keep sorted
-                    } else {
-                        // Add new ad only if it matches the current filter
-                        if (selectedLotId === 'all' || savedAd!.targetLocationId === selectedLotId || !savedAd!.targetLocationId) {
-                             return [savedAd!, ...prevAds].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Keep sorted
-                        }
-                        return prevAds; // Don't add if it doesn't match filter
-                    }
-                });
+                 // Re-fetch ads to get the updated list including the new/edited one with its potential location name
+                 await fetchAds(selectedLotId);
                 toast({ title: "Advertisement Saved", description: `"${savedAd.title}" has been ${currentAd.id ? 'updated' : 'created'}.` });
                 setIsAdModalOpen(false); // Close modal on success
             } else {
@@ -268,7 +270,7 @@ export default function AdminDashboardPage() {
 
    const getServiceIcon = (service: ParkingLotService | undefined, className: string = "h-4 w-4 mr-2") => {
      switch (service) {
-       case 'EV Charging': return <EvStation className={className} />;
+       case 'EV Charging': return <ChargingStation className={className} />; // Replaced EvStation
        case 'Car Wash': return <SprayCan className={className} />; // Replaced CarWash
        case 'Mobile Money Agent': return <BadgeCent className={className} />;
        case 'Wifi': return <Wifi className={className} />;
@@ -549,7 +551,7 @@ export default function AdminDashboardPage() {
                             </TableHeader>
                             <TableBody>
                                 {advertisements.map((ad) => {
-                                     const targetLotName = parkingLots.find(lot => lot.id === ad.targetLocationId)?.name || 'All Locations';
+                                     const targetLotName = ad.targetLotName || (ad.targetLocationId ? 'Unknown Lot' : 'All Locations');
                                      const statusColor = ad.status === 'active' ? 'text-green-600' : ad.status === 'inactive' ? 'text-orange-600' : 'text-gray-500';
                                      return (
                                         <TableRow key={ad.id}>
