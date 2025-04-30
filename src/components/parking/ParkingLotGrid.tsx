@@ -1,28 +1,40 @@
+// src/components/parking/ParkingLotGrid.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
-import { getParkingSpotStatus } from '@/services/parking-sensor'; // Assuming this exists and works
+import { getParkingSpotStatus } from '@/services/parking-sensor';
 import ParkingSpot from './ParkingSpot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
-
+import { Loader2, Info } from 'lucide-react';
 
 const TOTAL_SPOTS = 20; // Example total number of spots
 
 export default function ParkingLotGrid() {
   const [spots, setSpots] = useState<ParkingSpotStatus[]>([]);
-  const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
+  const [selectedSpot, setSelectedSpot] = useState<ParkingSpotStatus | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isReserving, setIsReserving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchSpotStatuses = async () => {
-      setIsLoading(true);
+      // Only set loading true on initial load
+      if (spots.length === 0) setIsLoading(true);
       try {
         const spotPromises = Array.from({ length: TOTAL_SPOTS }, (_, i) =>
           getParkingSpotStatus(`A${i + 1}`) // Example Spot ID format
@@ -37,7 +49,8 @@ export default function ParkingLotGrid() {
           variant: "destructive",
         });
       } finally {
-        setIsLoading(false);
+         // Only set loading false on initial load
+        if (isLoading) setIsLoading(false);
       }
     };
 
@@ -45,32 +58,56 @@ export default function ParkingLotGrid() {
     // Optional: Set up interval polling for real-time updates
     const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds
     return () => clearInterval(intervalId); // Cleanup interval on unmount
-  }, [toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // Removed `spots` and `isLoading` dependency to avoid loop
 
-  const handleSelectSpot = (spotId: string) => {
-    setSelectedSpotId(prev => prev === spotId ? null : spotId); // Toggle selection
+  const handleSelectSpot = (spot: ParkingSpotStatus) => {
+     if (!spot.isOccupied) {
+      setSelectedSpot(spot);
+      setIsDialogOpen(true);
+    } else {
+         toast({
+             title: "Spot Occupied",
+             description: `Spot ${spot.spotId} is currently occupied.`,
+             variant: "default", // Use default or a custom 'info' variant if created
+         });
+    }
   };
 
   const handleReserve = async () => {
-      if (!selectedSpotId) return;
+      if (!selectedSpot) return;
       setIsReserving(true);
       // Simulate reservation API call
       await new Promise(resolve => setTimeout(resolve, 1500));
+
       setIsReserving(false);
+      setIsDialogOpen(false); // Close dialog on successful reservation
+
       toast({
         title: "Reservation Successful",
-        description: `Spot ${selectedSpotId} reserved successfully!`,
+        description: `Spot ${selectedSpot.spotId} reserved successfully!`,
       });
-      // Optionally re-fetch data to show the spot as occupied
-      const updatedSpots = spots.map(spot =>
-        spot.spotId === selectedSpotId ? { ...spot, isOccupied: true } : spot
+
+      // Optimistically update the spot status
+      setSpots(prevSpots =>
+        prevSpots.map(spot =>
+          spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true } : spot
+        )
       );
-      setSpots(updatedSpots);
-      setSelectedSpotId(null); // Clear selection after reservation
+      setSelectedSpot(null); // Clear selection
   };
 
+  const handleDialogClose = () => {
+      setIsDialogOpen(false);
+      // Delay clearing selected spot slightly to allow dialog fade-out
+      setTimeout(() => {
+          if (!isReserving) { // Don't clear if reservation is in progress
+             setSelectedSpot(null);
+          }
+      }, 300);
+  }
+
   const availableSpots = spots.filter(spot => !spot.isOccupied).length;
-  const selectedSpotDetails = spots.find(spot => spot.spotId === selectedSpotId);
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
@@ -78,13 +115,14 @@ export default function ParkingLotGrid() {
 
        <Card className="mb-8">
          <CardHeader>
-             <CardTitle>Select a Spot</CardTitle>
+             <CardTitle>Select an Available Spot</CardTitle>
+             <CardDescription>Click on a green spot to view details and reserve.</CardDescription>
          </CardHeader>
          <CardContent>
             {isLoading ? (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3">
                 {Array.from({ length: TOTAL_SPOTS }).map((_, index) => (
-                    <Skeleton key={index} className="h-20 w-full" />
+                    <Skeleton key={index} className="h-20 w-full aspect-square" />
                 ))}
                 </div>
             ) : (
@@ -93,49 +131,53 @@ export default function ParkingLotGrid() {
                     <ParkingSpot
                     key={spot.spotId}
                     spot={spot}
-                    isSelected={selectedSpotId === spot.spotId}
-                    onSelect={handleSelectSpot}
+                    // isSelected={selectedSpot?.spotId === spot.spotId} // No visual selection needed on grid now
+                    onSelect={() => handleSelectSpot(spot)} // Pass the full spot object
                     />
                 ))}
                 </div>
             )}
          </CardContent>
-         <CardFooter className="flex flex-col sm:flex-row justify-between items-center pt-4">
-           <div className="mb-4 sm:mb-0 text-sm text-muted-foreground">
+         <CardFooter className="flex justify-center items-center pt-4">
+           <div className="text-sm text-muted-foreground">
                {isLoading ? 'Loading spots...' : `${availableSpots} / ${TOTAL_SPOTS} spots available`}
            </div>
-            <Button
-              onClick={handleReserve}
-              disabled={!selectedSpotId || isReserving || selectedSpotDetails?.isOccupied} // Also disable if somehow selected spot is occupied
-              className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
-            >
-              {isReserving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Reserving...
-                </>
-              ) : (
-                 selectedSpotId ? `Reserve Spot ${selectedSpotId}` : 'Select a Spot to Reserve'
-              )}
-            </Button>
+            {/* Reservation button moved to AlertDialog */}
          </CardFooter>
        </Card>
 
-       {/* Reservation Summary/Payment could go here */}
-       {/* {selectedSpotId && !selectedSpotDetails?.isOccupied && (
-           <Card>
-             <CardHeader><CardTitle>Confirm Reservation</CardTitle></CardHeader>
-             <CardContent>
-               <p>You selected spot: <span className="font-semibold">{selectedSpotId}</span></p>
-               <p>Price: $5.00</p> // Example price
-             </CardContent>
-             <CardFooter>
-               <Button onClick={handleReserve} disabled={isReserving}>
-                 {isReserving ? 'Processing...' : 'Confirm & Pay'}
-               </Button>
-             </CardFooter>
-           </Card>
-       )} */}
+       {/* Reservation Confirmation Dialog */}
+        <AlertDialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You are about to reserve spot <span className="font-semibold">{selectedSpot?.spotId}</span>.
+                {/* Add more details like price, duration limits, etc. here */}
+                <p className="mt-2">Estimated cost: $5.00 (Example)</p>
+                <p className="text-xs text-muted-foreground mt-1">Reservations are held for 15 minutes.</p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleDialogClose} disabled={isReserving}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleReserve}
+                disabled={isReserving || selectedSpot?.isOccupied} // Double check occupancy
+                className="bg-accent hover:bg-accent/90 text-accent-foreground"
+              >
+                {isReserving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Reserving...
+                  </>
+                ) : (
+                  'Confirm Reservation'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
     </div>
   );
 }
