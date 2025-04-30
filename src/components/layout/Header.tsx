@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Car } from 'lucide-react';
+import { Car, ShieldCheck } from 'lucide-react'; // Added ShieldCheck for Admin
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
@@ -28,6 +28,14 @@ export default function Header() {
             >
               Predict Availability
             </Link>
+             {/* TODO: Show this link only for Admin role */}
+            <Link
+              href="/admin"
+              className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1"
+            >
+               <ShieldCheck className="h-4 w-4" />
+               Admin Dashboard
+            </Link>
           </nav>
         </div>
         {/* Mobile Nav */}
@@ -54,6 +62,11 @@ export default function Header() {
               <Link href="/predict" className="text-muted-foreground hover:text-foreground">
                 Predict Availability
               </Link>
+              {/* TODO: Show this link only for Admin role */}
+               <Link href="/admin" className="text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <ShieldCheck className="h-4 w-4" />
+                  Admin Dashboard
+               </Link>
             </nav>
           </SheetContent>
         </Sheet>
