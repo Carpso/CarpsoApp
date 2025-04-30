@@ -15,9 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard } from 'lucide-react'; // Added Smartphone, CreditCard
+import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard, Download } from 'lucide-react'; // Added Download icon
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast'; // Import toast
 
 interface UserProfileProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ interface UserDetails {
 }
 
 interface BillingInfo {
-  accountBalance: number; // Positive for credit, negative for arrears
+  accountBalance: number; // Positive for credit, negative for outstanding balance
   paymentMethods: {
       type: 'Card' | 'MobileMoney';
       details: string; // e.g., 'Visa **** 1234' or 'MTN 07XX XXX XXX'
@@ -94,6 +95,7 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
   const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
   const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast(); // Use toast hook
 
   useEffect(() => {
     if (isOpen && userId) {
@@ -110,15 +112,35 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
           setParkingHistory(history);
         } catch (error) {
           console.error("Failed to load user profile data:", error);
-          // Handle error state, maybe show a toast
+          toast({ // Show toast on error
+              title: "Error Loading Profile",
+              description: "Could not fetch your profile data. Please try again later.",
+              variant: "destructive",
+          });
         } finally {
           setIsLoading(false);
         }
       };
       loadData();
     }
-  }, [isOpen, userId]);
+  }, [isOpen, userId, toast]); // Added toast to dependency array
 
+
+    // --- Placeholder Download Handlers ---
+    const handleDownloadBilling = () => {
+        // TODO: Implement actual CSV/PDF generation and download logic
+        console.log("Download billing statement clicked:", billingInfo);
+        toast({ title: "Download Started (Simulation)", description: "Downloading billing statement."});
+        // Example: generateCSV/PDF(billingInfo, `billing_statement_${userId}.csv`);
+    };
+
+    const handleDownloadHistory = () => {
+        // TODO: Implement actual CSV generation and download logic
+        console.log("Download parking history clicked:", parkingHistory);
+        toast({ title: "Download Started (Simulation)", description: "Downloading parking history."});
+        // Example: generateCSV(parkingHistory, `parking_history_${userId}.csv`);
+    };
+    // --- End Placeholder Download Handlers ---
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -133,6 +155,11 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
         <ScrollArea className="flex-grow pr-6 -mr-6"> {/* Add padding for scrollbar */}
             {isLoading ? (
                  <ProfileSkeleton />
+            ) : !userDetails ? ( // Added check for failed load
+                <div className="text-center text-muted-foreground py-10">
+                    <AlertCircle className="mx-auto h-8 w-8 mb-2" />
+                    Could not load profile data.
+                </div>
             ) : (
              <>
                  {/* User Info */}
@@ -151,20 +178,26 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
 
                 {/* Billing Info */}
                 <div className="mb-6 space-y-4">
-                    <h3 className="text-md font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" /> Billing</h3>
+                    <div className="flex justify-between items-center">
+                         <h3 className="text-md font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" /> Billing</h3>
+                          <Button variant="ghost" size="sm" onClick={handleDownloadBilling}>
+                              <Download className="h-4 w-4" />
+                              <span className="sr-only">Download Billing Statement</span>
+                          </Button>
+                    </div>
                      <div className="flex justify-between items-center p-3 border rounded-md bg-secondary/50">
                          <div>
                             <p className="text-sm text-muted-foreground">Account Balance</p>
                             <p className={`text-xl font-bold ${billingInfo && billingInfo.accountBalance < 0 ? 'text-destructive' : 'text-primary'}`}>
-                                ${billingInfo?.accountBalance.toFixed(2)}
+                                ${billingInfo?.accountBalance?.toFixed(2) ?? '0.00'} {/* Handle nullish balance */}
                             </p>
                          </div>
                          {billingInfo && billingInfo.accountBalance < 0 ? (
                               <Badge variant="destructive" className="flex items-center gap-1">
-                                  <AlertCircle className="h-3 w-3" /> Arrears
+                                  <AlertCircle className="h-3 w-3" /> Outstanding
                               </Badge>
                          ) : (
-                              <Badge variant="default" className="flex items-center gap-1 bg-green-600 text-white"> {/* Ensure contrast */}
+                              <Badge variant="default" className="flex items-center gap-1 bg-green-600 text-white hover:bg-green-700"> {/* Ensure contrast and hover */}
                                   <CheckCircle className="h-3 w-3" /> Paid Up
                               </Badge>
                          )}
@@ -196,7 +229,13 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
 
                 {/* Parking History */}
                 <div className="mb-6">
-                    <h3 className="text-md font-semibold mb-3 flex items-center gap-2"><List className="h-4 w-4" /> Parking History</h3>
+                     <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-md font-semibold flex items-center gap-2"><List className="h-4 w-4" /> Parking History</h3>
+                         <Button variant="ghost" size="sm" onClick={handleDownloadHistory}>
+                             <Download className="h-4 w-4" />
+                             <span className="sr-only">Download Parking History</span>
+                         </Button>
+                    </div>
                     {parkingHistory && parkingHistory.length > 0 ? (
                         <div className="space-y-3">
                             {parkingHistory.map((entry) => (
@@ -211,6 +250,7 @@ export default function UserProfile({ isOpen, onClose, userId, onLogout }: UserP
                                     </div>
                                 </div>
                             ))}
+                             <Button variant="link" size="sm" className="w-full text-center">View Full History</Button>
                         </div>
                     ) : (
                         <p className="text-sm text-muted-foreground">No parking history found.</p>

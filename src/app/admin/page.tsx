@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2 } from "lucide-react";
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download } from "lucide-react"; // Added Download icon
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from '@/components/ui/skeleton';
 import type { ParkingLot } from '@/services/parking-lot';
 import { getAvailableParkingLots } from '@/services/parking-lot'; // Service to fetch lots
+import { useToast } from '@/hooks/use-toast'; // Import toast
 
 // TODO: Protect this route/page to be accessible only by users with the 'Admin' role.
 
@@ -38,6 +39,7 @@ export default function AdminDashboardPage() {
   const [selectedLotId, setSelectedLotId] = useState<string>('all'); // Default to 'all'
   const [isLoadingLots, setIsLoadingLots] = useState(true);
   const [errorLoadingLots, setErrorLoadingLots] = useState<string | null>(null);
+  const { toast } = useToast(); // Use toast hook
 
   useEffect(() => {
     const fetchLots = async () => {
@@ -64,6 +66,30 @@ export default function AdminDashboardPage() {
    const displayedAnalytics = selectedLotId === 'all'
     ? sampleAnalyticsData['all']
     : sampleAnalyticsData[selectedLotId] || sampleAnalyticsData['all']; // Fallback to 'all' if specific lot data missing
+
+
+    // --- Placeholder Download Handlers ---
+    const handleDownloadUsers = () => {
+        // TODO: Implement actual CSV generation and download logic
+        console.log("Download users clicked for scope:", selectedLotId, displayedUsers);
+        toast({ title: "Download Started (Simulation)", description: `Downloading user data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // Example: generateCSV(displayedUsers, `users_${selectedLotId}.csv`);
+    };
+
+    const handleDownloadLots = () => {
+        // TODO: Implement actual CSV generation and download logic
+        console.log("Download lots clicked:", parkingLots);
+        toast({ title: "Download Started (Simulation)", description: "Downloading parking lot data."});
+        // Example: generateCSV(parkingLots, 'parking_lots.csv');
+    };
+
+     const handleDownloadAnalytics = () => {
+        // TODO: Implement actual CSV/report generation and download logic
+        console.log("Download analytics clicked for scope:", selectedLotId, displayedAnalytics);
+        toast({ title: "Download Started (Simulation)", description: `Downloading analytics report for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // Example: generateCSV([displayedAnalytics], `analytics_${selectedLotId}.csv`); // Wrap in array if needed
+    };
+    // --- End Placeholder Download Handlers ---
 
 
   return (
@@ -125,10 +151,15 @@ export default function AdminDashboardPage() {
                  <CardHeader>
                    <CardTitle>User Management {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
                    <CardDescription>View, edit, or remove users and manage their roles {selectedLot ? ` associated with ${selectedLot.name}` : 'across all locations'}.</CardDescription>
-                    <div className="flex items-center gap-2 pt-4">
+                    <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search users..." className="max-w-sm" />
                         <Button>Search</Button>
-                        <Button variant="outline" className="ml-auto">Add New User</Button>
+                        <div className="ml-auto flex gap-2">
+                            <Button variant="outline" onClick={handleDownloadUsers}>
+                                <Download className="mr-2 h-4 w-4" /> Download List
+                            </Button>
+                            <Button variant="outline">Add New User</Button>
+                        </div>
                     </div>
                  </CardHeader>
                  <CardContent>
@@ -172,10 +203,15 @@ export default function AdminDashboardPage() {
                  <CardHeader>
                    <CardTitle>Parking Lot Management</CardTitle>
                    <CardDescription>Monitor status and manage all parking lots.</CardDescription>
-                    <div className="flex items-center gap-2 pt-4">
+                    <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search lots..." className="max-w-sm" />
                         <Button>Search</Button>
-                         <Button variant="outline" className="ml-auto">Add New Lot</Button>
+                         <div className="ml-auto flex gap-2">
+                             <Button variant="outline" onClick={handleDownloadLots}>
+                                 <Download className="mr-2 h-4 w-4" /> Download List
+                             </Button>
+                             <Button variant="outline">Add New Lot</Button>
+                         </div>
                     </div>
                  </CardHeader>
                  <CardContent>
@@ -229,6 +265,11 @@ export default function AdminDashboardPage() {
                  <CardHeader>
                    <CardTitle>System Analytics {selectedLot ? ` - ${selectedLot.name}` : ' - Overall'}</CardTitle>
                    <CardDescription>View performance and financial reports {selectedLot ? `for ${selectedLot.name}` : 'for all locations'}.</CardDescription>
+                   <div className="pt-4 flex justify-end">
+                      <Button variant="outline" onClick={handleDownloadAnalytics}>
+                          <Download className="mr-2 h-4 w-4" /> Download Report
+                      </Button>
+                   </div>
                  </CardHeader>
                  <CardContent>
                     {/* Placeholder - Replace with actual charts and data fetching */}
