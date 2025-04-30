@@ -2,21 +2,27 @@
 'use client'; // Required for state and effects
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, CarWash, Wifi, BadgeCent, PlusCircle, Trash2 } from "lucide-react"; // Added service icons, PlusCircle, Trash2
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, EvStation, CarWash, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar } from "lucide-react"; // Added Megaphone, ImageIcon, Calendar
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea"; // Added Textarea
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
 import type { ParkingLot, ParkingLotService } from '@/services/parking-lot';
-import { getAvailableParkingLots, updateParkingLotServices } from '@/services/parking-lot'; // Added update service
+import { getAvailableParkingLots, updateParkingLotServices } from '@/services/parking-lot';
 import { useToast } from '@/hooks/use-toast';
-import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
-import { Badge } from '@/components/ui/badge'; // Import Badge
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog"; // Added Dialog components
+import { Label } from "@/components/ui/label"; // Added Label
+import type { Advertisement } from '@/services/advertisement'; // Import Advertisement type
+import { getAdvertisements, createAdvertisement, updateAdvertisement, deleteAdvertisement } from '@/services/advertisement'; // Import Ad services
+import Image from "next/image"; // Import Next Image for preview
 
-// TODO: Protect this route/page to be accessible only by users with the 'Admin' role.
+// TODO: Protect this route/page to be accessible only by users with 'Admin' or 'ParkingLotOwner' roles.
 
 // Placeholder data - replace with actual data fetching based on selectedLotId
 const sampleUsers = [
@@ -37,15 +43,34 @@ const sampleAnalyticsData: Record<string, { revenue: number; avgOccupancy: numbe
 };
 
 // Available services that can be added/managed
-const allAvailableServices: ParkingLotService[] = ['EV Charging', 'Car Wash', 'Mobile Money Agent', 'Valet', 'Restroom', 'Wifi']; // Added Wifi
+const allAvailableServices: ParkingLotService[] = ['EV Charging', 'Car Wash', 'Mobile Money Agent', 'Valet', 'Restroom', 'Wifi'];
+
+// Initial state for the Ad form
+const initialAdFormState: Partial<Advertisement> = {
+    title: '',
+    description: '',
+    imageUrl: '',
+    targetLocationId: '', // Will be set based on selection or 'all' for admins
+    startDate: '',
+    endDate: '',
+    associatedService: undefined,
+};
 
 export default function AdminDashboardPage() {
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string>('all'); // Default to 'all'
   const [isLoadingLots, setIsLoadingLots] = useState(true);
   const [errorLoadingLots, setErrorLoadingLots] = useState<string | null>(null);
-  const [isUpdatingServices, setIsUpdatingServices] = useState(false); // State for service update loading
-  const { toast } = useToast(); // Use toast hook
+  const [isUpdatingServices, setIsUpdatingServices] = useState(false);
+  const [advertisements, setAdvertisements] = useState<Advertisement[]>([]); // State for advertisements
+  const [isLoadingAds, setIsLoadingAds] = useState(false); // Loading state for ads
+  const [errorLoadingAds, setErrorLoadingAds] = useState<string | null>(null); // Error state for ads
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false); // State for Add/Edit Ad modal
+  const [currentAd, setCurrentAd] = useState<Partial<Advertisement>>(initialAdFormState); // State for the ad being edited/created
+  const [isSavingAd, setIsSavingAd] = useState(false); // Loading state for saving ad
+  const [isDeletingAd, setIsDeletingAd] = useState(false); // Loading state for deleting ad
+
+  const { toast } = useToast();
 
   const fetchLots = async () => {
       setIsLoadingLots(true);
@@ -62,10 +87,30 @@ export default function AdminDashboardPage() {
       }
     };
 
+  // Fetch Advertisements based on selected lot
+  const fetchAds = async (locationId: string | null) => {
+      setIsLoadingAds(true);
+      setErrorLoadingAds(null);
+      try {
+          // If 'all' is selected, fetch all ads (or handle based on role later)
+          // Otherwise, fetch ads for the specific location
+          const ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
+          setAdvertisements(ads);
+      } catch (err) {
+          console.error("Failed to fetch advertisements:", err);
+          setErrorLoadingAds("Could not load advertisements.");
+          toast({ title: "Error Loading Ads", description: "Could not fetch advertisement data.", variant: "destructive" });
+      } finally {
+          setIsLoadingAds(false);
+      }
+  };
+
+
   useEffect(() => {
     fetchLots();
+    fetchAds(selectedLotId); // Fetch initial ads
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Fetch only once on mount
+  }, [selectedLotId]); // Re-fetch ads when selectedLotId changes
 
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
   const displayedUsers = selectedLotId === 'all'
@@ -81,19 +126,18 @@ export default function AdminDashboardPage() {
     const handleDownloadUsers = () => {
         console.log("Download users clicked for scope:", selectedLotId, displayedUsers);
         toast({ title: "Download Started (Simulation)", description: `Downloading user data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
-        // Example: generateCSV(displayedUsers, `users_${selectedLotId}.csv`);
     };
-
     const handleDownloadLots = () => {
         console.log("Download lots clicked:", parkingLots);
         toast({ title: "Download Started (Simulation)", description: "Downloading parking lot data."});
-        // Example: generateCSV(parkingLots, 'parking_lots.csv');
     };
-
      const handleDownloadAnalytics = () => {
         console.log("Download analytics clicked for scope:", selectedLotId, displayedAnalytics);
         toast({ title: "Download Started (Simulation)", description: `Downloading analytics report for ${selectedLot ? selectedLot.name : 'all locations'}.`});
-        // Example: generateCSV([displayedAnalytics], `analytics_${selectedLotId}.csv`); // Wrap in array if needed
+    };
+    const handleDownloadAds = () => {
+        console.log("Download ads clicked for scope:", selectedLotId, advertisements);
+        toast({ title: "Download Started (Simulation)", description: `Downloading advertisement data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
     };
     // --- End Placeholder Download Handlers ---
 
@@ -102,33 +146,117 @@ export default function AdminDashboardPage() {
     const handleServiceToggle = async (service: ParkingLotService, isChecked: boolean) => {
         if (!selectedLot) return;
         setIsUpdatingServices(true);
-
         const currentServices = selectedLot.services || [];
         const updatedServices = isChecked
             ? [...currentServices, service]
             : currentServices.filter(s => s !== service);
-
         try {
             const success = await updateParkingLotServices(selectedLot.id, updatedServices);
             if (success) {
-                // Update local state to reflect changes immediately
                 setParkingLots(prevLots => prevLots.map(lot =>
                     lot.id === selectedLotId ? { ...lot, services: updatedServices } : lot
                 ));
                 toast({ title: "Services Updated", description: `${service} ${isChecked ? 'added to' : 'removed from'} ${selectedLot.name}.` });
-            } else {
-                throw new Error("Failed to update services on the backend.");
-            }
+            } else { throw new Error("Backend update failed."); }
         } catch (error) {
             console.error("Failed to update services:", error);
             toast({ title: "Update Failed", description: `Could not update services for ${selectedLot.name}.`, variant: "destructive" });
-            // Revert local state if backend update failed (optional but recommended)
-             // await fetchLots(); // Or refetch data
         } finally {
             setIsUpdatingServices(false);
         }
     };
    // --- End Service Management ---
+
+    // --- Advertisement Management ---
+    const handleOpenAdModal = (ad: Advertisement | null = null) => {
+        if (ad) {
+            // Editing existing ad
+            setCurrentAd(ad);
+        } else {
+            // Creating new ad - Ensure targetLocationId is set correctly
+            setCurrentAd({
+                ...initialAdFormState,
+                targetLocationId: selectedLotId !== 'all' ? selectedLotId : '' // Pre-fill if a specific lot is selected
+            });
+        }
+        setIsAdModalOpen(true);
+    };
+
+    const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setCurrentAd(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSaveAd = async () => {
+        if (!currentAd.title || !currentAd.description || (!currentAd.id && selectedLotId === 'all' && !currentAd.targetLocationId)) {
+            toast({ title: "Missing Information", description: "Please fill in title, description, and target location (if applicable).", variant: "destructive" });
+            return;
+        }
+        setIsSavingAd(true);
+        try {
+            let savedAd: Advertisement | null = null;
+            const adDataToSave = {
+                ...currentAd,
+                // Ensure targetLocationId is set correctly, especially if creating while 'all' is selected
+                targetLocationId: currentAd.id ? currentAd.targetLocationId : (currentAd.targetLocationId || (selectedLotId !== 'all' ? selectedLotId : '')),
+            };
+
+            if (currentAd.id) {
+                // Update existing ad
+                savedAd = await updateAdvertisement(currentAd.id, adDataToSave);
+            } else {
+                // Create new ad
+                savedAd = await createAdvertisement(adDataToSave);
+            }
+
+            if (savedAd) {
+                // Update local state - either add or replace
+                setAdvertisements(prevAds => {
+                    const existingIndex = prevAds.findIndex(a => a.id === savedAd!.id);
+                    if (existingIndex > -1) {
+                        const newAds = [...prevAds];
+                        newAds[existingIndex] = savedAd!;
+                        return newAds;
+                    } else {
+                        // Add new ad only if it matches the current filter
+                        if (selectedLotId === 'all' || savedAd!.targetLocationId === selectedLotId) {
+                             return [savedAd!, ...prevAds];
+                        }
+                        return prevAds; // Don't add if it doesn't match filter
+                    }
+                });
+                toast({ title: "Advertisement Saved", description: `"${savedAd.title}" has been ${currentAd.id ? 'updated' : 'created'}.` });
+                setIsAdModalOpen(false); // Close modal on success
+            } else {
+                throw new Error("Failed to save advertisement on the backend.");
+            }
+        } catch (error) {
+            console.error("Failed to save advertisement:", error);
+            toast({ title: "Save Failed", description: "Could not save the advertisement.", variant: "destructive" });
+        } finally {
+            setIsSavingAd(false);
+        }
+    };
+
+    const handleDeleteAd = async (adId: string) => {
+        // Optional: Add a confirmation dialog here
+        setIsDeletingAd(true);
+        try {
+            const success = await deleteAdvertisement(adId);
+            if (success) {
+                 setAdvertisements(prevAds => prevAds.filter(ad => ad.id !== adId));
+                 toast({ title: "Advertisement Deleted", description: "The advertisement has been removed." });
+            } else {
+                 throw new Error("Failed to delete advertisement on the backend.");
+            }
+        } catch (error) {
+            console.error("Failed to delete advertisement:", error);
+            toast({ title: "Deletion Failed", description: "Could not delete the advertisement.", variant: "destructive" });
+        } finally {
+            setIsDeletingAd(false);
+        }
+    };
+    // --- End Advertisement Management ---
 
 
    const getServiceIcon = (service: ParkingLotService) => {
@@ -153,7 +281,7 @@ export default function AdminDashboardPage() {
                     Admin Dashboard
                 </CardTitle>
                 <CardDescription>
-                    Manage users, lots, services, settings, and view analytics.
+                    Manage users, lots, services, ads, settings, and view analytics.
                     {selectedLot ? ` (Viewing: ${selectedLot.name})` : ' (Viewing: All Locations)'}
                 </CardDescription>
              </div>
@@ -188,10 +316,11 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
            <Tabs defaultValue="users" className="w-full">
-             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 mb-6"> {/* Adjusted grid cols */}
+             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6"> {/* Adjusted grid cols */}
                <TabsTrigger value="users"><UserCog className="mr-2 h-4 w-4"/>Users</TabsTrigger>
-               <TabsTrigger value="lots"><LayoutDashboard className="mr-2 h-4 w-4"/>Parking Lots</TabsTrigger>
-               <TabsTrigger value="services"><Sparkles className="mr-2 h-4 w-4"/>Services</TabsTrigger> {/* Added Services Tab */}
+               <TabsTrigger value="lots"><LayoutDashboard className="mr-2 h-4 w-4"/>Lots</TabsTrigger>
+               <TabsTrigger value="services"><Sparkles className="mr-2 h-4 w-4"/>Services</TabsTrigger>
+               <TabsTrigger value="ads"><Megaphone className="mr-2 h-4 w-4"/>Ads</TabsTrigger> {/* Added Ads Tab */}
                <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
                <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings</TabsTrigger>
              </TabsList>
@@ -284,7 +413,7 @@ export default function AdminDashboardPage() {
                              <TableHead>Capacity</TableHead>
                              <TableHead>Current Occupancy</TableHead>
                              <TableHead>Status</TableHead>
-                             <TableHead>Services</TableHead> {/* Added Services Column */}
+                             <TableHead>Services</TableHead>
                              <TableHead className="text-right">Actions</TableHead>
                            </TableRow>
                          </TableHeader>
@@ -295,7 +424,7 @@ export default function AdminDashboardPage() {
                                <TableCell>{lot.capacity}</TableCell>
                                <TableCell>{lot.currentOccupancy ?? 'N/A'}</TableCell>
                                <TableCell>{lot.currentOccupancy !== undefined ? `${((lot.currentOccupancy / lot.capacity) * 100).toFixed(0)}% Full` : 'N/A'}</TableCell>
-                               <TableCell> {/* Services Cell */}
+                               <TableCell>
                                    <div className="flex flex-wrap gap-1">
                                       {(lot.services && lot.services.length > 0) ? lot.services.map(service => (
                                            <Badge key={service} variant="secondary" size="sm" className="flex items-center whitespace-nowrap">
@@ -357,7 +486,7 @@ export default function AdminDashboardPage() {
                                        >
                                             {getServiceIcon(service)} {service}
                                        </label>
-                                       {isUpdatingServices && isChecked === selectedLot.services?.includes(service) && ( // Show loader only on the item being changed
+                                       {isUpdatingServices && isChecked === selectedLot.services?.includes(service) && (
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />
                                         )}
                                    </div>
@@ -368,6 +497,103 @@ export default function AdminDashboardPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+             {/* Advertisement Management Tab */}
+             <TabsContent value="ads">
+               <Card>
+                 <CardHeader>
+                   <CardTitle>Advertisement Management {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
+                   <CardDescription>Create and manage advertisements shown to users.</CardDescription>
+                   <div className="flex flex-wrap items-center gap-2 pt-4">
+                        <Input placeholder="Search ads by title..." className="max-w-sm" />
+                        <Button>Search</Button>
+                        <div className="ml-auto flex gap-2">
+                            <Button variant="outline" onClick={handleDownloadAds}>
+                                <Download className="mr-2 h-4 w-4" /> Download List
+                            </Button>
+                             <Button variant="default" onClick={() => handleOpenAdModal()}>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
+                             </Button>
+                        </div>
+                   </div>
+                 </CardHeader>
+                 <CardContent>
+                   {isLoadingAds ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-16 w-full" />
+                            <Skeleton className="h-16 w-full" />
+                        </div>
+                   ) : errorLoadingAds ? (
+                        <p className="text-destructive text-center py-4">{errorLoadingAds}</p>
+                   ) : advertisements.length > 0 ? (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="w-[80px]">Image</TableHead>
+                                    <TableHead>Title</TableHead>
+                                    {selectedLotId === 'all' && <TableHead>Target Location</TableHead>}
+                                    <TableHead>Runs</TableHead>
+                                    <TableHead>Associated Service</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {advertisements.map((ad) => {
+                                     const targetLotName = parkingLots.find(lot => lot.id === ad.targetLocationId)?.name || 'All';
+                                     return (
+                                        <TableRow key={ad.id}>
+                                            <TableCell>
+                                                 <Image
+                                                    src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`}
+                                                    alt={ad.title}
+                                                    width={80}
+                                                    height={40}
+                                                    className="rounded object-cover aspect-[2/1]"
+                                                />
+                                            </TableCell>
+                                            <TableCell className="font-medium">{ad.title}</TableCell>
+                                            {selectedLotId === 'all' && <TableCell>{targetLotName}</TableCell>}
+                                            <TableCell className="text-xs">
+                                                 {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'N/A'} -
+                                                 {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}
+                                            </TableCell>
+                                             <TableCell className="text-xs">
+                                                {ad.associatedService ? (
+                                                    <Badge variant="outline" size="sm" className="flex items-center w-fit">
+                                                        {getServiceIcon(ad.associatedService)} {ad.associatedService}
+                                                    </Badge>
+                                                ) : <span className="text-muted-foreground">None</span>}
+                                            </TableCell>
+                                            <TableCell className="text-right space-x-1">
+                                                <Button variant="ghost" size="sm" onClick={() => handleOpenAdModal(ad)}>Edit</Button>
+                                                 <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={() => handleDeleteAd(ad.id)}
+                                                    disabled={isDeletingAd}
+                                                >
+                                                    {isDeletingAd ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4 sm:mr-1" />}
+                                                    <span className="hidden sm:inline">Delete</span>
+                                                 </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                     );
+                                })}
+                            </TableBody>
+                        </Table>
+                   ) : (
+                       <div className="text-center py-10 text-muted-foreground">
+                            <Megaphone className="mx-auto h-10 w-10 mb-2" />
+                            <p>No advertisements found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
+                            <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
+                            </Button>
+                       </div>
+                   )}
+                 </CardContent>
+               </Card>
+             </TabsContent>
 
 
              {/* Analytics Tab */}
@@ -449,7 +675,109 @@ export default function AdminDashboardPage() {
            </Tabs>
         </CardContent>
       </Card>
+
+      {/* Add/Edit Advertisement Modal */}
+       <Dialog open={isAdModalOpen} onOpenChange={setIsAdModalOpen}>
+           <DialogContent className="sm:max-w-lg">
+               <DialogHeader>
+                   <DialogTitle>{currentAd.id ? 'Edit' : 'Create'} Advertisement</DialogTitle>
+                   <DialogDescription>
+                       Fill in the details for the advertisement. It will be shown in the Explore tab.
+                   </DialogDescription>
+               </DialogHeader>
+               <div className="grid gap-4 py-4">
+                    {/* Title */}
+                    <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="title" className="text-right">Title*</Label>
+                       <Input id="title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
+                   </div>
+                   {/* Description */}
+                   <div className="grid grid-cols-4 items-start gap-4">
+                       <Label htmlFor="description" className="text-right pt-2">Description*</Label>
+                       <Textarea id="description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} />
+                   </div>
+                   {/* Image URL */}
+                   <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="imageUrl" className="text-right">Image URL</Label>
+                       <Input id="imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} />
+                   </div>
+                    {/* Image Preview */}
+                   {currentAd.imageUrl && (
+                       <div className="grid grid-cols-4 items-center gap-4">
+                           <div className="col-start-2 col-span-3">
+                               <Image
+                                    src={currentAd.imageUrl}
+                                    alt="Ad Preview"
+                                    width={150}
+                                    height={75}
+                                    className="rounded object-cover aspect-[2/1] border"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; /* Hide if image fails */ }}
+                                />
+                           </div>
+                       </div>
+                   )}
+                   {/* Target Location (Only if Admin and creating/editing) */}
+                   {selectedLotId === 'all' && ( // Assuming only Admins see 'all'
+                       <div className="grid grid-cols-4 items-center gap-4">
+                           <Label htmlFor="targetLocationId" className="text-right">Location*</Label>
+                           <Select name="targetLocationId" value={currentAd.targetLocationId || ''} onValueChange={(value) => setCurrentAd(prev => ({ ...prev, targetLocationId: value }))} disabled={isSavingAd}>
+                               <SelectTrigger className="col-span-3">
+                                   <SelectValue placeholder="Select target location" />
+                               </SelectTrigger>
+                               <SelectContent>
+                                   <SelectItem value="">All Locations</SelectItem>
+                                   {parkingLots.map(lot => (
+                                       <SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>
+                                   ))}
+                               </SelectContent>
+                           </Select>
+                       </div>
+                   )}
+                   {/* Associated Service */}
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="associatedService" className="text-right">Link to Service (Optional)</Label>
+                        <Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => setCurrentAd(prev => ({ ...prev, associatedService: value as ParkingLotService | undefined || undefined }))} disabled={isSavingAd}>
+                            <SelectTrigger className="col-span-3">
+                                <SelectValue placeholder="Link to a specific service..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="">None</SelectItem>
+                                {allAvailableServices.map(service => (
+                                    <SelectItem key={service} value={service}>
+                                         <span className="flex items-center gap-2">
+                                            {getServiceIcon(service)} {service}
+                                         </span>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                   {/* Start Date */}
+                   <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="startDate" className="text-right">Start Date</Label>
+                       <Input id="startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
+                   </div>
+                   {/* End Date */}
+                   <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="endDate" className="text-right">End Date</Label>
+                       <Input id="endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
+                   </div>
+               </div>
+               <DialogFooter>
+                   <DialogClose asChild>
+                       <Button type="button" variant="outline" disabled={isSavingAd}>Cancel</Button>
+                   </DialogClose>
+                   <Button type="submit" onClick={handleSaveAd} disabled={isSavingAd}>
+                       {isSavingAd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                       {currentAd.id ? 'Save Changes' : 'Create Ad'}
+                   </Button>
+               </DialogFooter>
+           </DialogContent>
+       </Dialog>
+
     </div>
   );
 }
-```
+
+    

@@ -1,8 +1,14 @@
 // src/app/explore/page.tsx
+'use client'; // Needed for useEffect, useState
+
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, EvStation, CarWash, Wifi } from "lucide-react"; // Added service icons
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, EvStation, CarWash, Wifi, Loader2, ServerCrash } from "lucide-react"; // Added Loader2, ServerCrash
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
+import { Skeleton } from '@/components/ui/skeleton';
+import type { Advertisement } from '@/services/advertisement'; // Import Advertisement type
+import { getAdvertisements } from '@/services/advertisement'; // Import service to fetch ads
 
 // Mock Data - Replace with actual data fetching
 const mockEvents = [
@@ -23,35 +29,94 @@ const mockServices = [
 
 
 export default function ExplorePage() {
+    const [ads, setAds] = useState<Advertisement[]>([]);
+    const [isLoadingAds, setIsLoadingAds] = useState(true);
+    const [errorLoadingAds, setErrorLoadingAds] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchExploreAds = async () => {
+            setIsLoadingAds(true);
+            setErrorLoadingAds(null);
+            try {
+                // Fetch all active advertisements (no specific location filter here)
+                const fetchedAds = await getAdvertisements();
+                setAds(fetchedAds);
+            } catch (err) {
+                console.error("Failed to fetch advertisements for explore page:", err);
+                setErrorLoadingAds("Could not load promotions and updates.");
+            } finally {
+                setIsLoadingAds(false);
+            }
+        };
+        fetchExploreAds();
+    }, []);
+
+
+    // Combine mock events with fetched ads for display (or replace mocks entirely)
+    const allPromotions = [
+        ...ads.map(ad => ({ // Transform fetched ads to match display structure
+             id: ad.id,
+             title: ad.title,
+             location: ad.targetLocationId || 'All Locations', // Use target or default
+             date: ad.endDate ? `Until ${new Date(ad.endDate).toLocaleDateString()}` : 'Ongoing',
+             description: ad.description,
+             image: ad.imageUrl || `https://picsum.photos/seed/${ad.id}/300/150`, // Use provided or placeholder image
+             isAd: true, // Flag to potentially style differently
+        })),
+        ...mockEvents.map(event => ({ ...event, isAd: false })), // Keep mock events for now
+    ];
+
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
       <h1 className="text-3xl font-bold mb-6 flex items-center gap-2">
         <Sparkles className="h-7 w-7 text-primary" /> Explore Nearby
       </h1>
-      <p className="text-muted-foreground mb-8">Discover events, auctions, and services happening at Carpso parking locations.</p>
+      <p className="text-muted-foreground mb-8">Discover events, promotions, and services happening at Carpso parking locations.</p>
 
-      {/* Events Section */}
+      {/* Events & Promotions Section (Now includes Ads) */}
       <section className="mb-10">
         <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-            <CalendarDays className="h-6 w-6 text-accent" /> Upcoming Events & Promotions
+            <CalendarDays className="h-6 w-6 text-accent" /> Updates & Promotions
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockEvents.map(event => (
-                <Card key={event.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                    <Image src={event.image} alt={event.title} width={300} height={150} className="w-full h-40 object-cover"/>
-                    <CardHeader>
-                        <CardTitle>{event.title}</CardTitle>
-                        <CardDescription className="flex items-center gap-1 text-xs">
-                            <MapPin className="h-3 w-3" /> {event.location} &bull; {event.date}
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-muted-foreground">{event.description}</p>
-                    </CardContent>
-                </Card>
-            ))}
-             {mockEvents.length === 0 && <p className="text-muted-foreground md:col-span-2 lg:col-span-3">No current events or promotions.</p>}
-        </div>
+        {isLoadingAds ? (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 <Skeleton className="h-60 w-full" />
+                 <Skeleton className="h-60 w-full" />
+                 <Skeleton className="h-60 w-full" />
+             </div>
+        ) : errorLoadingAds ? (
+            <div className="text-center py-10 text-destructive bg-destructive/10 rounded-md">
+                <ServerCrash className="mx-auto h-10 w-10 mb-2" />
+                <p>{errorLoadingAds}</p>
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allPromotions.map(item => (
+                    <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                        <Image src={item.image} alt={item.title} width={300} height={150} className="w-full h-40 object-cover"/>
+                        <CardHeader>
+                            <div className="flex justify-between items-start">
+                                <CardTitle>{item.title}</CardTitle>
+                                {item.isAd && <Badge variant="secondary" size="sm">Ad</Badge>}
+                            </div>
+                            <CardDescription className="flex items-center gap-1 text-xs pt-1">
+                                <MapPin className="h-3 w-3" /> {item.location} &bull; {item.date}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground">{item.description}</p>
+                            {/* Optionally add a CTA button for ads */}
+                            {/* {item.isAd && <Button size="sm" variant="link" className="mt-2 text-xs p-0 h-auto">Learn More</Button>} */}
+                        </CardContent>
+                    </Card>
+                ))}
+                 {allPromotions.length === 0 && (
+                     <p className="text-muted-foreground md:col-span-2 lg:col-span-3 text-center py-6">
+                        No current updates or promotions found.
+                     </p>
+                 )}
+            </div>
+        )}
       </section>
 
        {/* Auctions Section */}
@@ -74,7 +139,7 @@ export default function ExplorePage() {
                     </CardContent>
                 </Card>
             ))}
-            {mockAuctions.length === 0 && <p className="text-muted-foreground md:col-span-2">No upcoming auctions or notices.</p>}
+            {mockAuctions.length === 0 && <p className="text-muted-foreground md:col-span-2 text-center py-6">No upcoming auctions or notices.</p>}
         </div>
       </section>
 
@@ -92,15 +157,14 @@ export default function ExplorePage() {
                         <MapPin className="h-3 w-3"/> {service.location}
                     </CardDescription>
                     <p className="text-xs text-muted-foreground flex-grow">{service.description}</p>
-                    {/* Optionally add a button/link */}
-                    {/* <Button size="sm" variant="link" className="mt-2 text-xs">Learn More</Button> */}
                 </Card>
             ))}
-            {mockServices.length === 0 && <p className="text-muted-foreground sm:col-span-2 lg:col-span-4">No featured services available.</p>}
+            {mockServices.length === 0 && <p className="text-muted-foreground sm:col-span-2 lg:col-span-4 text-center py-6">No featured services available.</p>}
         </div>
       </section>
 
     </div>
   );
 }
-```
+
+    
