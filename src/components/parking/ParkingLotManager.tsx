@@ -1,4 +1,3 @@
-// src/components/parking/ParkingLotManager.tsx
 'use client';
 
 import React, { useState, useEffect, useContext } from 'react';
@@ -15,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
+import { Sparkles } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ParkingLotManager() {
   const {
@@ -232,6 +233,7 @@ export default function ParkingLotManager() {
              onAuthClick={() => setIsAuthModalOpen(true)}
              onProfileClick={() => setIsProfileOpen(true)}
          />
+         {/* Explore Feature */}
     </div>
   );
 }

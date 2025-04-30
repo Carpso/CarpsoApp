@@ -1,4 +1,3 @@
-// src/components/parking/ParkingLotGrid.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -39,6 +38,7 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
   const [isPredictionLoading, setIsPredictionLoading] = useState(false);
   const [showLiveLocation, setShowLiveLocation] = useState(false); // State for Live Location modal
   const [liveLocationSpotId, setLiveLocationSpotId] = useState<string | null>(null); // Spot ID for Live Location
+  const [predictionInterval, setPredictionInterval] = useState<NodeJS.Timeout | null>(null);
 
   const { toast } = useToast();
 
@@ -68,6 +68,33 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.id, location.name, location.capacity, toast]); // Dependencies include location details
 
+  const predictSpotAvailability = useCallback(async (spot: ParkingSpotStatus) => {
+       setIsPredictionLoading(true); // Start loading prediction
+       setPrediction(null); // Clear previous prediction
+       try {
+           // Simulate historical data and trends
+           const historicalData = `Spot ${spot.spotId} usage: Mon-Fri 8am-6pm usually busy, weekends lighter.`;
+           const trends = `Current time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None nearby.`;
+           const predictionResult = await predictParkingAvailability({
+               spotId: spot.spotId,
+               historicalData: historicalData,
+               trends: trends,
+           });
+           setPrediction(predictionResult);
+       } catch (err) {
+           console.error('Prediction failed for selected spot:', err);
+           // Optionally show a small error message for prediction failure
+           toast({
+               title: "Prediction Info",
+               description: "Could not fetch prediction data for this spot.",
+               variant: "default",
+           })
+       } finally {
+           setIsPredictionLoading(false);
+       }
+  }, [toast]);
+
+
   useEffect(() => {
     fetchSpotStatuses(); // Fetch initially and on location change
     const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds
@@ -78,29 +105,21 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
      if (!spot.isOccupied) {
          setSelectedSpot(spot);
          setIsDialogOpen(true);
-         setIsPredictionLoading(true); // Start loading prediction
-         setPrediction(null); // Clear previous prediction
-         try {
-             // Simulate historical data and trends
-             const historicalData = `Spot ${spot.spotId} usage: Mon-Fri 8am-6pm usually busy, weekends lighter.`;
-             const trends = `Current time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None nearby.`;
-             const predictionResult = await predictParkingAvailability({
-                 spotId: spot.spotId,
-                 historicalData: historicalData,
-                 trends: trends,
-             });
-             setPrediction(predictionResult);
-         } catch (err) {
-             console.error('Prediction failed for selected spot:', err);
-             // Optionally show a small error message for prediction failure
-             toast({
-                 title: "Prediction Info",
-                 description: "Could not fetch prediction data for this spot.",
-                 variant: "default",
-             })
-         } finally {
-             setIsPredictionLoading(false);
+         // Start auto prediction
+         predictSpotAvailability(spot); // Initial prediction
+
+          // Clear existing interval if it exists
+         if (predictionInterval) {
+             clearInterval(predictionInterval);
          }
+
+         // Set up interval for periodic prediction (every 10 seconds)
+         const intervalId = setInterval(() => {
+             predictSpotAvailability(spot);
+         }, 10000);
+
+         setPredictionInterval(intervalId); // Store the interval ID
+
      } else {
          toast({
              title: "Spot Occupied",
@@ -157,6 +176,10 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
           setTimeout(() => {
              setSelectedSpot(null);
              setPrediction(null); // Clear prediction
+              if (predictionInterval) {
+                    clearInterval(predictionInterval);
+                    setPredictionInterval(null);
+              }
           }, 300);
       } else {
           setIsDialogOpen(true);
@@ -173,6 +196,10 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
        setTimeout(() => {
            setSelectedSpot(null);
            setPrediction(null); // Clear prediction
+           if (predictionInterval) {
+               clearInterval(predictionInterval);
+               setPredictionInterval(null);
+           }
         }, 300);
   };
 

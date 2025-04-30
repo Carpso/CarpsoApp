@@ -253,42 +253,46 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
            </div>
 
            {/* Photo Upload */}
-           <div className="grid grid-cols-4 items-center gap-4">
-             <Label htmlFor="photo" className="text-right col-span-1">
-               Photo (Optional)
-             </Label>
-             <div className="col-span-3 flex items-center gap-3">
-                 <Button
-                     type="button"
-                     variant="outline"
-                     size="sm"
-                     onClick={() => fileInputRef.current?.click()}
-                     disabled={isLoading}
-                     className="flex-shrink-0"
-                 >
-                     {photoPreview ? <ImagePlus className="mr-2 h-4 w-4"/> : <Camera className="mr-2 h-4 w-4" />}
-                     {photoPreview ? 'Change Photo' : 'Add Photo'}
-                 </Button>
-                 <Input
-                     id="photo"
-                     type="file"
-                     accept="image/*"
-                     capture="environment" // Encourage using the camera directly on mobile
-                     ref={fileInputRef}
-                     onChange={handleFileChange}
-                     className="hidden" // Hide the default input
-                     disabled={isLoading}
-                 />
-                 {photoPreview ? (
-                    <div className="relative h-10 w-16 rounded border overflow-hidden">
-                        <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
+            <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="photo" className="text-right col-span-1">
+                    Photo (Optional)
+                </Label>
+                <div className="col-span-3 flex flex-col">
+                    <div className="flex items-center gap-3">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isLoading}
+                            className="flex-shrink-0"
+                        >
+                            {photoPreview ? <ImagePlus className="mr-2 h-4 w-4" /> : <Camera className="mr-2 h-4 w-4" />}
+                            {photoPreview ? 'Change Photo' : 'Add Photo'}
+                        </Button>
+                        <Input
+                            id="photo"
+                            type="file"
+                            accept="image/*"
+                            capture="environment" // Encourage using the camera directly on mobile
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden" // Hide the default input
+                            disabled={isLoading}
+                        />
+                        {photoPreview ? (
+                            <div className="relative h-10 w-16 rounded border overflow-hidden">
+                                <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
+                            </div>
+                        ) : (
+                            <span className="text-xs text-muted-foreground"></span>
+                        )}
                     </div>
-                 ) : (
-                     <span className="text-xs text-muted-foreground">Attach a photo of the vehicle/plate.</span>
-                 )}
-
-             </div>
-           </div>
+                    <span className="text-xs text-muted-foreground ml-1 mt-1">
+                         Accepted formats: JPG, PNG.
+                    </span>
+                </div>
+            </div>
 
            {/* Information Note */}
             <Alert variant="default" className="col-span-4 mt-2 bg-blue-50 border-blue-200">

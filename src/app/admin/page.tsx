@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 'use client'; // Required for state and effects
 
 import React, { useState, useEffect } from 'react';
@@ -21,6 +20,8 @@ import { Label } from "@/components/ui/label"; // Added Label
 import type { Advertisement } from '@/services/advertisement'; // Import Advertisement type
 import { getAdvertisements, createAdvertisement, updateAdvertisement, deleteAdvertisement } from '@/services/advertisement'; // Import Ad services
 import Image from "next/image"; // Import Next Image for preview
+import { AppStateContext } from '@/context/AppStateProvider';
+import { useContext } from 'react';
 
 // TODO: Protect this route/page to be accessible only by users with 'Admin' or 'ParkingLotOwner' roles.
 
@@ -69,15 +70,22 @@ export default function AdminDashboardPage() {
   const [currentAd, setCurrentAd] = useState<Partial<Advertisement>>(initialAdFormState); // State for the ad being edited/created
   const [isSavingAd, setIsSavingAd] = useState(false); // Loading state for saving ad
   const [isDeletingAd, setIsDeletingAd] = useState(false); // Loading state for deleting ad
-
   const { toast } = useToast();
+  const { userRole, userId } = useContext(AppStateContext)!; // get role
+
+  const isParkingLotOwner = userRole === 'ParkingLotOwner';
 
   const fetchLots = async () => {
       setIsLoadingLots(true);
       setErrorLoadingLots(null);
       try {
-        const lots = await getAvailableParkingLots();
-        setParkingLots(lots);
+          let lots = await getAvailableParkingLots();
+
+          if (isParkingLotOwner && userId) {
+              // Filter lots based on the parking lot owner's association
+              lots = lots.filter(lot => sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lot.id));
+          }
+          setParkingLots(lots);
       } catch (err) {
         console.error("Failed to fetch parking lots for admin dashboard:", err);
         setErrorLoadingLots("Could not load parking lots.");
@@ -94,7 +102,13 @@ export default function AdminDashboardPage() {
       try {
           // If 'all' is selected, fetch all ads (or handle based on role later)
           // Otherwise, fetch ads for the specific location
-          const ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
+          let ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
+
+           if (isParkingLotOwner && userId) {
+               const associatedLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
+                ads = ads.filter(ad => associatedLots.includes(ad.targetLocationId) || !ad.targetLocationId);
+            }
+
           // Add location name to each ad for display purposes
           const adsWithLocationNames = ads.map(ad => {
               const targetLot = parkingLots.find(lot => lot.id === ad.targetLocationId);
@@ -119,10 +133,15 @@ export default function AdminDashboardPage() {
    useEffect(() => {
      // Only fetch ads if parkingLots data is available
      if (parkingLots.length > 0) {
-         fetchAds(selectedLotId);
+          let initialLotId = selectedLotId;
+           if (isParkingLotOwner && parkingLots.length > 0 && !selectedLotId) {
+               initialLotId = parkingLots[0].id; // default select first lot
+               setSelectedLotId(initialLotId);
+           }
+         fetchAds(initialLotId);
      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [selectedLotId, parkingLots]); // Re-fetch ads when selectedLotId or parkingLots change
+   }, [selectedLotId, parkingLots, userId, userRole]); // Re-fetch ads when selectedLotId or parkingLots change
 
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
   const displayedUsers = selectedLotId === 'all'
@@ -181,6 +200,15 @@ export default function AdminDashboardPage() {
 
     // --- Advertisement Management ---
     const handleOpenAdModal = (ad: Advertisement | null = null) => {
+         if (ad && isParkingLotOwner && ad.targetLocationId !== selectedLotId && selectedLotId !== 'all') {
+              toast({
+                  title: "Unauthorized",
+                  description: "You can only edit ads associated with your parking lot.",
+                  variant: "destructive",
+              });
+              return;
+          }
+
         if (ad) {
             // Editing existing ad
             setCurrentAd(ad);
@@ -210,6 +238,16 @@ export default function AdminDashboardPage() {
             toast({ title: "Missing Information", description: "Please fill in title, description, and target location (if applicable).", variant: "destructive" });
             return;
         }
+
+         if (isParkingLotOwner && selectedLotId === 'all' && currentAd.targetLocationId && !currentAd.id) {
+            toast({
+                title: "Unauthorized",
+                description: "As a Parking Lot Owner, you cannot create ads for 'All Locations'. Please select a specific lot.",
+                variant: "destructive",
+            });
+            return;
+        }
+
         setIsSavingAd(true);
         try {
             let savedAd: Advertisement | null = null;
@@ -248,6 +286,14 @@ export default function AdminDashboardPage() {
     };
 
     const handleDeleteAd = async (adId: string) => {
+        if (isParkingLotOwner && advertisements.find(ad => ad.id === adId)?.targetLocationId !== selectedLotId && selectedLotId !== 'all') {
+            toast({
+                title: "Unauthorized",
+                description: "You can only delete ads associated with your parking lot.",
+                variant: "destructive",
+            });
+            return;
+        }
         // Optional: Add a confirmation dialog here
         setIsDeletingAd(true);
         try {
@@ -280,6 +326,33 @@ export default function AdminDashboardPage() {
      }
    };
 
+   const isAuthorizedForLot = (lotId: string) => {
+        return !isParkingLotOwner || sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lotId) || lotId === 'all';
+    };
+
+   const getDisplayLots = () => {
+        return isParkingLotOwner ? parkingLots.filter(lot => isAuthorizedForLot(lot.id)) : parkingLots;
+    };
+
+   const calculateAverageRevenue = () => {
+        if (!parkingLots || parkingLots.length === 0) {
+            return 0;
+        }
+
+        // Filter available lots based on the user role
+         const lots = getDisplayLots();
+
+        // Sum the revenue from the available lots
+        const totalRevenue = lots.reduce((sum, lot) => {
+            const lotAnalytics = sampleAnalyticsData[lot.id] || { revenue: 0 };
+            return sum + lotAnalytics.revenue;
+        }, 0);
+
+        // Calculate the average
+        return totalRevenue / lots.length;
+    };
+
+    const averageRevenue = calculateAverageRevenue();
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
@@ -295,8 +368,12 @@ export default function AdminDashboardPage() {
                     Manage users, lots, services, ads, settings, and view analytics.
                     {selectedLot ? ` (Viewing: ${selectedLot.name})` : ' (Viewing: All Locations)'}
                 </CardDescription>
+                 {isParkingLotOwner && (
+                    <Badge variant="secondary">Parking Lot Owner</Badge>
+                )}
              </div>
              {/* Parking Lot Selector */}
+             {isAuthorizedForLot('all') && (
              <div className="min-w-[250px]">
                  {isLoadingLots ? (
                      <Skeleton className="h-10 w-full" />
@@ -323,6 +400,7 @@ export default function AdminDashboardPage() {
                     </Select>
                  )}
              </div>
+             )}
           </div>
         </CardHeader>
         <CardContent>
@@ -522,9 +600,16 @@ export default function AdminDashboardPage() {
                             <Button variant="outline" onClick={handleDownloadAds}>
                                 <Download className="mr-2 h-4 w-4" /> Download List
                             </Button>
-                             <Button variant="default" onClick={() => handleOpenAdModal()}>
-                                <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
-                             </Button>
+                             {!isParkingLotOwner && (
+                                  <Button variant="default" onClick={() => handleOpenAdModal()}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
+                                 </Button>
+                             )}
+                             {isParkingLotOwner && (
+                                 <Button variant="default" onClick={() => handleOpenAdModal()}>
+                                     <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
+                                 </Button>
+                             )}
                         </div>
                    </div>
                  </CardHeader>
@@ -602,9 +687,16 @@ export default function AdminDashboardPage() {
                        <div className="text-center py-10 text-muted-foreground">
                             <Megaphone className="mx-auto h-10 w-10 mb-2" />
                             <p>No advertisements found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
-                            <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
-                                <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
-                            </Button>
+                            { !isParkingLotOwner && (
+                                  <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
+                                </Button>
+                             )}
+                              {isParkingLotOwner && (
+                                 <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
+                                     <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
+                                 </Button>
+                              )}
                        </div>
                    )}
                  </CardContent>
@@ -636,6 +728,17 @@ export default function AdminDashboardPage() {
                            <CardHeader><CardTitle className="text-lg">{displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader>
                        </Card>
                    </div>
+                    {selectedLotId === 'all' && (
+                         <Card className="mt-6">
+                            <CardHeader>
+                                 <CardTitle>Average Revenue Across All Lots</CardTitle>
+                                  <CardDescription>Average revenue per lot today.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <p className="text-2xl font-bold">${averageRevenue.toFixed(2)}</p>
+                            </CardContent>
+                         </Card>
+                    )}
                    <p className="text-muted-foreground mt-6 text-center">More detailed charts and reports coming soon.</p>
                  </CardContent>
                </Card>
@@ -746,7 +849,9 @@ export default function AdminDashboardPage() {
                                <SelectValue placeholder="Select target location" />
                            </SelectTrigger>
                            <SelectContent>
-                               <SelectItem value="all">All Locations</SelectItem>
+                               { !isParkingLotOwner && (
+                                    <SelectItem value="all">All Locations</SelectItem>
+                               )}
                                {parkingLots.map(lot => (
                                    <SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>
                                ))}
