@@ -1,6 +1,7 @@
+// src/components/parking/ParkingLotGrid.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react'; // Added useContext
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
 import type { ParkingLot } from '@/services/parking-lot';
 import { getParkingSpotStatus } from '@/services/parking-sensor';
@@ -17,18 +18,22 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle } from 'lucide-react';
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock } from 'lucide-react'; // Added DollarSign, Clock
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
 import LiveLocationView from './LiveLocationView'; // Import LiveLocationView
+import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 
 interface ParkingLotGridProps {
   location: ParkingLot;
   onSpotReserved: (spotId: string, locationId: string) => void; // Callback when a spot is reserved
+  userTier?: 'Basic' | 'Premium'; // Optional user tier for pricing
 }
 
-export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotGridProps) {
+export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'Basic' }: ParkingLotGridProps) {
+  const { userId } = useContext(AppStateContext)!; // Get userId from context
   const [spots, setSpots] = useState<ParkingSpotStatus[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpotStatus | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -39,6 +44,9 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
   const [showLiveLocation, setShowLiveLocation] = useState(false); // State for Live Location modal
   const [liveLocationSpotId, setLiveLocationSpotId] = useState<string | null>(null); // Spot ID for Live Location
   const [predictionInterval, setPredictionInterval] = useState<NodeJS.Timeout | null>(null);
+  const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
+  const [costRule, setCostRule] = useState<string | null>(null);
+  const [isCostLoading, setIsCostLoading] = useState(false);
 
   const { toast } = useToast();
 
@@ -68,31 +76,38 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.id, location.name, location.capacity, toast]); // Dependencies include location details
 
-  const predictSpotAvailability = useCallback(async (spot: ParkingSpotStatus) => {
-       setIsPredictionLoading(true); // Start loading prediction
-       setPrediction(null); // Clear previous prediction
-       try {
-           // Simulate historical data and trends
-           const historicalData = `Spot ${spot.spotId} usage: Mon-Fri 8am-6pm usually busy, weekends lighter.`;
-           const trends = `Current time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None nearby.`;
-           const predictionResult = await predictParkingAvailability({
-               spotId: spot.spotId,
-               historicalData: historicalData,
-               trends: trends,
-           });
-           setPrediction(predictionResult);
-       } catch (err) {
-           console.error('Prediction failed for selected spot:', err);
-           // Optionally show a small error message for prediction failure
-           toast({
-               title: "Prediction Info",
-               description: "Could not fetch prediction data for this spot.",
-               variant: "default",
-           })
-       } finally {
-           setIsPredictionLoading(false);
-       }
-  }, [toast]);
+  const fetchPredictionAndCost = useCallback(async (spot: ParkingSpotStatus) => {
+      setIsPredictionLoading(true);
+      setIsCostLoading(true);
+      setPrediction(null);
+      setEstimatedCost(null);
+      setCostRule(null);
+
+      try {
+          // Fetch Prediction
+          const historicalData = `Spot ${spot.spotId} usage: Mon-Fri 8am-6pm busy, weekends lighter. Frequent user: ${userId || 'N/A'}`;
+          const trends = `Time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None. User Tier: ${userTier}`;
+          const predictionResult = await predictParkingAvailability({ spotId: spot.spotId, historicalData, trends });
+          setPrediction(predictionResult);
+      } catch (err) {
+          console.error('Prediction failed:', err);
+          toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default" });
+      } finally {
+          setIsPredictionLoading(false);
+      }
+
+      try {
+          // Fetch Estimated Cost (simulate for 1 hour)
+          const costResult = await calculateEstimatedCost(location, 60, userId, userTier);
+          setEstimatedCost(costResult.cost);
+          setCostRule(costResult.appliedRule);
+      } catch (err) {
+           console.error('Cost calculation failed:', err);
+           toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default" });
+      } finally {
+           setIsCostLoading(false);
+      }
+  }, [location, userId, userTier, toast]); // Added dependencies
 
 
   useEffect(() => {
@@ -105,28 +120,30 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
      if (!spot.isOccupied) {
          setSelectedSpot(spot);
          setIsDialogOpen(true);
-         // Start auto prediction
-         predictSpotAvailability(spot); // Initial prediction
 
-          // Clear existing interval if it exists
+         // Initial fetch for prediction and cost
+         fetchPredictionAndCost(spot);
+
+         // Clear existing interval if it exists
          if (predictionInterval) {
              clearInterval(predictionInterval);
          }
 
-         // Set up interval for periodic prediction (every 10 seconds)
+         // Set up interval for periodic updates (e.g., every 15 seconds)
          const intervalId = setInterval(() => {
-             predictSpotAvailability(spot);
-         }, 10000);
+             fetchPredictionAndCost(spot); // Re-fetch both prediction and cost
+         }, 15000); // Increased interval slightly
 
          setPredictionInterval(intervalId); // Store the interval ID
 
      } else {
          toast({
              title: "Spot Occupied",
-             description: `Spot ${spot.spotId} is currently occupied.`,
+             description: `Spot ${spot.spotId} is currently occupied. Click again to view live location.`, // Updated description
              variant: "default",
+             duration: 3000,
          });
-         // Allow viewing live location if occupied (placeholder functionality)
+         // Allow viewing live location if occupied
          setLiveLocationSpotId(spot.spotId);
          setShowLiveLocation(true);
      }
@@ -147,7 +164,7 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
         title: "Reservation Successful",
         description: (
              <div className="flex flex-col gap-2">
-               <span>Spot {selectedSpot.spotId} reserved successfully!</span>
+               <span>Spot {selectedSpot.spotId} reserved successfully! Estimated cost: ~${estimatedCost?.toFixed(2)}/hr.</span>
                <Button variant="outline" size="sm" onClick={() => {
                    setLiveLocationSpotId(selectedSpot.spotId);
                    setShowLiveLocation(true);
@@ -156,7 +173,7 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
                </Button>
             </div>
         ),
-        duration: 5000, // Keep toast longer to allow clicking the button
+        duration: 7000, // Keep toast longer
       });
 
       // Optimistically update the spot status
@@ -176,6 +193,8 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
           setTimeout(() => {
              setSelectedSpot(null);
              setPrediction(null); // Clear prediction
+             setEstimatedCost(null); // Clear cost
+             setCostRule(null);
               if (predictionInterval) {
                     clearInterval(predictionInterval);
                     setPredictionInterval(null);
@@ -196,6 +215,8 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
        setTimeout(() => {
            setSelectedSpot(null);
            setPrediction(null); // Clear prediction
+           setEstimatedCost(null); // Clear cost
+           setCostRule(null);
            if (predictionInterval) {
                clearInterval(predictionInterval);
                setPredictionInterval(null);
@@ -250,6 +271,22 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
               <AlertDialogDescription>
                 You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
+                 {/* Estimated Cost Display */}
+                 <div className="mt-3 text-sm border-t pt-3">
+                    <h4 className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</h4>
+                    {isCostLoading ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Calculating cost...
+                        </div>
+                    ) : estimatedCost !== null ? (
+                         <div className="space-y-1">
+                            <p>Rate: <span className="font-semibold">${estimatedCost.toFixed(2)} / hour</span></p>
+                            <p className="text-xs text-muted-foreground">Based on: {costRule || 'Standard rate'}</p>
+                         </div>
+                    ) : (
+                        <p className="text-muted-foreground text-xs flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Cost estimate unavailable.</p>
+                    )}
+                 </div>
                 {/* Prediction Display */}
                 <div className="mt-3 text-sm border-t pt-3">
                    <h4 className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</h4>
@@ -259,7 +296,7 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
                        </div>
                    ) : prediction ? (
                        <div className="space-y-1">
-                           <p>Likelihood Available: <span className="font-semibold">{(prediction.predictedAvailability * 100).toFixed(0)}%</span></p>
+                           <p>Likely Available Soon: <span className="font-semibold">{(prediction.predictedAvailability * 100).toFixed(0)}%</span></p>
                            <p>Confidence: <span className="font-semibold capitalize">{prediction.confidenceLevel}</span></p>
                            <p className="text-xs text-muted-foreground">Factors: {prediction.factors}</p>
                        </div>
@@ -267,8 +304,7 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
                        <p className="text-muted-foreground text-xs flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Prediction data unavailable.</p>
                    )}
                 </div>
-                {/* Add more details like price, duration limits, etc. here */}
-                 <p className="mt-2 text-xs text-muted-foreground">Reservations held for a limited time. Confirm below.</p>
+                 <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Reservations held for a limited time. Confirm below.</p>
               </AlertDialogDescription>
             </AlertDialogHeader>
              {/* Timed Reservation Slider */}
@@ -296,6 +332,12 @@ export default function ParkingLotGrid({ location, onSpotReserved }: ParkingLotG
            }}
            spotId={liveLocationSpotId}
            locationName={location.name}
+           // Pass available sources if known for the specific lot/spot
+           availableSources={{
+               // Example: Lot A has IP cams, Lot C might have stills
+               ipCameraUrl: location.id === 'lot_A' ? `https://picsum.photos/seed/${liveLocationSpotId}-ipcam/640/480?blur=1` : undefined,
+               stillImageUrl: location.id === 'lot_C' ? `https://picsum.photos/seed/${liveLocationSpotId}-altstill/640/480` : undefined, // Optional different still URL
+           }}
         />
     </>
   );

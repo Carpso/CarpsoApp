@@ -1,7 +1,7 @@
 // src/components/profile/UserProfile.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -15,11 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car } from 'lucide-react';
+import { List, DollarSign, Clock, LogOut, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift } from 'lucide-react'; // Added gamification icons
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import ReportIssueModal from './ReportIssueModal';
+import { Switch } from '@/components/ui/switch'; // Import Switch
+import { Label } from '@/components/ui/label'; // Import Label
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service'; // Import gamification services and types
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip
+
 
 interface UserProfileProps {
   isOpen: boolean;
@@ -28,6 +33,7 @@ interface UserProfileProps {
   onLogout: () => void;
   userName?: string | null; // Added from context/props
   userAvatarUrl?: string | null; // Added from context/props
+  userRole?: string | null; // Added role
 }
 
 // Mock data types and functions - Replace with actual API calls
@@ -37,6 +43,7 @@ interface UserDetails {
   phone?: string;
   avatarUrl?: string;
   memberSince: string;
+  role: string; // Add role to user details
 }
 
 interface BillingInfo {
@@ -46,6 +53,8 @@ interface BillingInfo {
       details: string;
       isPrimary: boolean;
   }[];
+  subscriptionTier?: 'Basic' | 'Premium'; // Add subscription tier
+  guaranteedSpotsAvailable?: number; // Example premium feature
 }
 
 interface ParkingHistoryEntry {
@@ -60,26 +69,27 @@ interface ParkingHistoryEntry {
 }
 
 // --- Mock Data Fetching Functions ---
-// Note: Now receiving userName and avatarUrl from props/context, so fetchUserDetails might only need to fetch supplementary details if any.
-const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null): Promise<UserDetails> => {
+const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
   await new Promise(resolve => setTimeout(resolve, 700));
-  // Use provided details if available, otherwise generate mock ones
   const name = existingName || `User ${userId.substring(0, 5)}`;
   const avatarUrl = existingAvatar || `https://picsum.photos/seed/${userId}/100/100`;
+  const role = existingRole || 'User';
 
   return {
     name: name,
-    email: `user_${userId.substring(0, 5)}@example.com`, // Still mock email/phone/memberSince
+    email: `user_${userId.substring(0, 5)}@example.com`,
     phone: '+260 977 123 456',
     avatarUrl: avatarUrl,
     memberSince: '2024-01-15',
+    role: role,
   };
 };
 
-
-const fetchBillingInfo = async (userId: string): Promise<BillingInfo> => {
+const fetchBillingInfo = async (userId: string, role: string): Promise<BillingInfo> => {
    await new Promise(resolve => setTimeout(resolve, 500));
    const randomBalance = (Math.random() * 10) - 5;
+   const isPremium = role === 'PremiumUser' || Math.random() > 0.7; // Assume Premium if role matches or randomly
+
    return {
        accountBalance: parseFloat(randomBalance.toFixed(2)),
        paymentMethods: [
@@ -87,6 +97,8 @@ const fetchBillingInfo = async (userId: string): Promise<BillingInfo> => {
             { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false },
             { type: 'MobileMoney', details: 'Airtel 097X XXX XXX', isPrimary: false },
        ],
+       subscriptionTier: isPremium ? 'Premium' : 'Basic',
+       guaranteedSpotsAvailable: isPremium ? 3 : 0, // Premium users get 3 guaranteed spots (example)
    };
 };
 
@@ -101,6 +113,22 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
 };
 // --- End Mock Data Fetching ---
 
+// Helper to get Lucide icon component based on name string
+const getIconFromName = (iconName: string | undefined): React.ElementType => {
+    switch (iconName) {
+        case 'Sparkles': return SparklesIcon;
+        case 'Award': return Award;
+        case 'Users': return Users;
+        case 'Trophy': return Trophy;
+        case 'Star': return Star;
+        case 'Megaphone': return AlertTriangle; // Reusing for reporter badge
+        case 'CheckCircle': return CheckCircle;
+        case 'Gift': return Gift;
+        // Add more cases as needed
+        default: return SparklesIcon; // Default icon
+    }
+};
+
 
 export default function UserProfile({
     isOpen,
@@ -108,14 +136,17 @@ export default function UserProfile({
     userId,
     onLogout,
     userName, // Receive from props
-    userAvatarUrl // Receive from props
+    userAvatarUrl, // Receive from props
+    userRole // Receive from props
 }: UserProfileProps) {
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
   const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
+  const [gamification, setGamification] = useState<UserGamification | null>(null); // State for gamification data
   const [isLoading, setIsLoading] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
+  const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -123,15 +154,18 @@ export default function UserProfile({
       const loadData = async () => {
         setIsLoading(true);
         try {
-          // Pass existing name/avatar to fetch function if needed
-          const [details, billing, history] = await Promise.all([
-            fetchUserDetails(userId, userName, userAvatarUrl),
-            fetchBillingInfo(userId),
+          const roleToUse = userRole || 'User'; // Ensure role is defined
+          // Fetch all data concurrently
+          const [details, billing, history, gamificationData] = await Promise.all([
+            fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
+            fetchBillingInfo(userId, roleToUse), // Pass role for potential premium checks
             fetchParkingHistory(userId),
+            getUserGamification(userId), // Fetch gamification data
           ]);
           setUserDetails(details);
           setBillingInfo(billing);
           setParkingHistory(history);
+          setGamification(gamificationData);
         } catch (error) {
           console.error("Failed to load user profile data:", error);
           toast({
@@ -145,7 +179,7 @@ export default function UserProfile({
       };
       loadData();
     }
-  }, [isOpen, userId, userName, userAvatarUrl, toast]); // Add userName, userAvatarUrl as dependencies
+  }, [isOpen, userId, userName, userAvatarUrl, userRole, toast]); // Added dependencies
 
   const handleOpenReportModal = (reservation: ParkingHistoryEntry) => {
       setReportingReservation(reservation);
@@ -168,12 +202,39 @@ export default function UserProfile({
     toast({ title: "Download Started (Simulation)", description: "Downloading parking history."});
   };
 
+   const handleCarpoolToggle = async (checked: boolean) => {
+       if (!userId) return;
+       setIsUpdatingCarpool(true);
+       try {
+           const success = await updateCarpoolEligibility(userId, checked);
+           if (success) {
+               // Update local state optimistically or re-fetch
+               setGamification(prev => ({ ...prev!, isCarpoolEligible: checked }));
+                toast({
+                    title: "Carpool Status Updated",
+                    description: checked ? "You are now eligible for carpooling benefits!" : "Carpooling benefits disabled.",
+                });
+                // Optionally award badge (handled in service for this mock)
+           } else {
+               throw new Error("Failed to update carpool status.");
+           }
+       } catch (error) {
+           console.error("Failed to update carpool status:", error);
+           toast({ title: "Update Failed", description: "Could not update carpool status.", variant: "destructive" });
+       } finally {
+           setIsUpdatingCarpool(false);
+       }
+   };
+
   const activeReservations = parkingHistory?.filter(h => h.status === 'Active') || [];
   const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
   const userInitial = userDetails?.name ? userDetails.name.charAt(0).toUpperCase() : 'U';
+  const currentTier = billingInfo?.subscriptionTier || 'Basic';
+  const isPremium = currentTier === 'Premium';
 
   return (
     <>
+    <TooltipProvider> {/* Wrap with TooltipProvider */}
       <Sheet open={isOpen} onOpenChange={onClose}>
         <SheetContent className="sm:max-w-md w-full flex flex-col">
           <SheetHeader className="text-left">
@@ -194,18 +255,82 @@ export default function UserProfile({
               ) : (
               <>
                   {/* User Info */}
-                  <div className="flex items-center space-x-4 mb-6">
+                  <div className="flex items-start space-x-4 mb-6">
                       <Avatar className="h-16 w-16">
                           <AvatarImage src={userDetails.avatarUrl} alt={userDetails.name} />
                           <AvatarFallback>{userInitial}</AvatarFallback>
                       </Avatar>
-                      <div className="space-y-1">
-                          <p className="text-lg font-semibold">{userDetails.name}</p>
+                      <div className="space-y-1 flex-grow">
+                          <div className="flex justify-between items-center">
+                            <p className="text-lg font-semibold">{userDetails.name}</p>
+                             <Badge variant={isPremium ? "default" : "secondary"} className={isPremium ? "bg-yellow-500 text-black" : ""}>
+                               {isPremium && <Star className="h-3 w-3 mr-1" />}
+                               {currentTier} Tier
+                             </Badge>
+                          </div>
                           <p className="text-sm text-muted-foreground">{userDetails.email}</p>
                           <p className="text-sm text-muted-foreground">{userDetails.phone}</p>
+                          <p className="text-xs text-muted-foreground">Role: {userDetails.role}</p>
                           <p className="text-xs text-muted-foreground">Member since: {userDetails.memberSince}</p>
                       </div>
                   </div>
+
+                   {/* Gamification Section */}
+                   <div className="mb-6 space-y-3">
+                       <h3 className="text-md font-semibold flex items-center gap-2"><Trophy className="h-4 w-4 text-yellow-600" /> Rewards & Badges</h3>
+                       <div className="flex items-center justify-between p-3 border rounded-md bg-secondary/50">
+                           <div className="flex items-center gap-2">
+                               <SparklesIcon className="h-5 w-5 text-primary" />
+                               <span className="font-medium">Points:</span>
+                           </div>
+                           <span className="text-lg font-bold text-primary">{gamification?.points ?? 0}</span>
+                       </div>
+                       <div>
+                           <p className="text-sm font-medium mb-2">Earned Badges:</p>
+                           {gamification?.badges && gamification.badges.length > 0 ? (
+                               <div className="flex flex-wrap gap-2">
+                                   {gamification.badges.map(badge => {
+                                       const IconComponent = getIconFromName(badge.iconName);
+                                       return (
+                                            <Tooltip key={badge.id}>
+                                               <TooltipTrigger asChild>
+                                                    <Badge variant="outline" className="flex items-center gap-1 p-2 cursor-default">
+                                                        <IconComponent className="h-4 w-4 text-yellow-600" />
+                                                        <span>{badge.name}</span>
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                               <TooltipContent>
+                                                   <p className="text-sm font-medium">{badge.name}</p>
+                                                   <p className="text-xs text-muted-foreground">{badge.description}</p>
+                                                   <p className="text-xs text-muted-foreground">Earned: {new Date(badge.earnedDate).toLocaleDateString()}</p>
+                                                </TooltipContent>
+                                           </Tooltip>
+                                       );
+                                   })}
+                               </div>
+                           ) : (
+                               <p className="text-xs text-muted-foreground">No badges earned yet. Keep parking!</p>
+                           )}
+                       </div>
+                       {/* Carpooling Toggle */}
+                       <div className="flex items-center justify-between p-3 border rounded-md">
+                            <div className="space-y-0.5">
+                               <Label htmlFor="carpool-switch" className="text-sm font-medium flex items-center gap-1.5">
+                                   <Users className="h-4 w-4" /> Enable Carpooling Benefits
+                                </Label>
+                               <p className="text-xs text-muted-foreground">
+                                   Get potential discounts by indicating you carpool.
+                               </p>
+                            </div>
+                            <Switch
+                                id="carpool-switch"
+                                checked={gamification?.isCarpoolEligible ?? false}
+                                onCheckedChange={handleCarpoolToggle}
+                                disabled={isUpdatingCarpool}
+                            />
+                       </div>
+                   </div>
+
 
                   {/* My Reservations */}
                   <div className="mb-6 space-y-3">
@@ -249,6 +374,29 @@ export default function UserProfile({
                                 <span className="sr-only">Download Billing Statement</span>
                             </Button>
                       </div>
+                       {/* Subscription / Premium Features */}
+                        <Card className="bg-secondary/30">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base flex justify-between items-center">
+                                    Subscription: {currentTier}
+                                     <Button variant="link" size="sm" className="text-xs h-auto p-0">
+                                         {isPremium ? "Manage Plan" : "Upgrade"}
+                                     </Button>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {isPremium ? (
+                                    <div className="space-y-1 text-xs">
+                                        <p className="flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-600" /> Lower transaction fees</p>
+                                        <p className="flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-600" /> {billingInfo?.guaranteedSpotsAvailable ?? 0} Guaranteed Spot passes/month</p>
+                                        <p className="flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-600" /> Priority Support</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">Upgrade to Premium for exclusive benefits!</p>
+                                )}
+                            </CardContent>
+                        </Card>
+
                       <div className="flex justify-between items-center p-3 border rounded-md bg-secondary/50">
                           <div>
                               <p className="text-sm text-muted-foreground">Account Balance</p>
@@ -331,6 +479,7 @@ export default function UserProfile({
           </SheetFooter>
         </SheetContent>
       </Sheet>
+      </TooltipProvider> {/* Close TooltipProvider */}
 
       {/* Report Issue Modal */}
       <ReportIssueModal
@@ -347,15 +496,32 @@ export default function UserProfile({
 const ProfileSkeleton = () => (
     <div className="space-y-6">
         {/* User Info Skeleton */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-start space-x-4">
             <Skeleton className="h-16 w-16 rounded-full" />
-            <div className="space-y-2">
-                <Skeleton className="h-6 w-32" />
+            <div className="space-y-2 flex-grow">
+                 <div className="flex justify-between items-center">
+                    <Skeleton className="h-6 w-32" />
+                    <Skeleton className="h-5 w-20" />
+                 </div>
                 <Skeleton className="h-4 w-40" />
                 <Skeleton className="h-4 w-36" />
                 <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-3 w-28" />
             </div>
         </div>
+         {/* Gamification Skeleton */}
+         <div className="space-y-3">
+             <Skeleton className="h-5 w-36 mb-2" />
+             <Skeleton className="h-12 w-full" />
+             <div className="pt-2 space-y-1">
+                 <Skeleton className="h-4 w-24 mb-2" />
+                 <div className="flex gap-2">
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-20" />
+                 </div>
+             </div>
+             <Skeleton className="h-16 w-full" /> {/* Carpool toggle */}
+         </div>
          {/* Reservations Skeleton */}
         <div className="space-y-3">
             <Skeleton className="h-5 w-36 mb-2" />
@@ -365,13 +531,14 @@ const ProfileSkeleton = () => (
         {/* Billing Skeleton */}
          <div className="space-y-4">
              <Skeleton className="h-5 w-20 mb-2" />
-             <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-24 w-full" /> {/* Subscription card */}
+             <Skeleton className="h-16 w-full" /> {/* Balance card */}
              <div className="space-y-2 pt-2">
                  <Skeleton className="h-4 w-28 mb-2" />
                  <Skeleton className="h-10 w-full" />
                  <Skeleton className="h-10 w-full" />
              </div>
-             <Skeleton className="h-9 w-full" />
+             <Skeleton className="h-9 w-full" /> {/* Manage button */}
          </div>
          <Separator/>
          {/* History Skeleton */}

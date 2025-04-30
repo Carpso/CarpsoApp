@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell } from "lucide-react"; // Replaced Bathroom with Bath
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag } from "lucide-react"; // Added DollarSign, Clock, Users, Tag
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea"; // Added Textarea
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,13 +15,17 @@ import { getAvailableParkingLots, updateParkingLotServices } from '@/services/pa
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog"; // Added Dialog components
-import { Label } from "@/components/ui/label"; // Added Label
-import type { Advertisement } from '@/services/advertisement'; // Import Advertisement type
-import { getAdvertisements, createAdvertisement, updateAdvertisement, deleteAdvertisement } from '@/services/advertisement'; // Import Ad services
-import Image from "next/image"; // Import Next Image for preview
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import type { Advertisement } from '@/services/advertisement';
+import { getAdvertisements, createAdvertisement, updateAdvertisement, deleteAdvertisement } from '@/services/advertisement';
+import type { PricingRule } from '@/services/pricing-service'; // Import PricingRule type
+import { getAllPricingRules, savePricingRule, deletePricingRule } from '@/services/pricing-service'; // Import pricing services
+import Image from "next/image";
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useContext } from 'react';
+import { Input as ShadInput } from "@/components/ui/input"; // Alias ShadCN input to avoid conflict
+import { MultiSelect } from '@/components/ui/multi-select'; // Assuming a MultiSelect component exists
 
 // TODO: Protect this route/page to be accessible only by users with 'Admin' or 'ParkingLotOwner' roles.
 
@@ -45,75 +49,92 @@ const sampleAnalyticsData: Record<string, { revenue: number; avgOccupancy: numbe
 
 // Available services that can be added/managed
 const allAvailableServices: ParkingLotService[] = ['EV Charging', 'Car Wash', 'Mobile Money Agent', 'Valet', 'Restroom', 'Wifi'];
+const userTiers = ['Basic', 'Premium']; // Available subscription tiers
+const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Initial state for the Ad form
 const initialAdFormState: Partial<Advertisement> = {
     title: '',
     description: '',
     imageUrl: '',
-    targetLocationId: '', // Will be set based on selection or 'all' for admins
+    targetLocationId: '',
     startDate: '',
     endDate: '',
     associatedService: undefined,
+    status: 'active',
+};
+
+// Initial state for the Pricing Rule form
+const initialPricingRuleFormState: Partial<PricingRule> = {
+    ruleId: '',
+    lotId: '',
+    description: '',
+    baseRatePerHour: undefined,
+    flatRate: undefined,
+    flatRateDurationMinutes: undefined,
+    discountPercentage: undefined,
+    timeCondition: { daysOfWeek: [], startTime: '', endTime: '' },
+    eventCondition: '',
+    userTierCondition: [],
+    priority: 100,
 };
 
 export default function AdminDashboardPage() {
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
-  const [selectedLotId, setSelectedLotId] = useState<string>('all'); // Default to 'all'
+  const [selectedLotId, setSelectedLotId] = useState<string>('all');
   const [isLoadingLots, setIsLoadingLots] = useState(true);
   const [errorLoadingLots, setErrorLoadingLots] = useState<string | null>(null);
   const [isUpdatingServices, setIsUpdatingServices] = useState(false);
-  const [advertisements, setAdvertisements] = useState<Advertisement[]>([]); // State for advertisements
-  const [isLoadingAds, setIsLoadingAds] = useState(false); // Loading state for ads
-  const [errorLoadingAds, setErrorLoadingAds] = useState<string | null>(null); // Error state for ads
-  const [isAdModalOpen, setIsAdModalOpen] = useState(false); // State for Add/Edit Ad modal
-  const [currentAd, setCurrentAd] = useState<Partial<Advertisement>>(initialAdFormState); // State for the ad being edited/created
-  const [isSavingAd, setIsSavingAd] = useState(false); // Loading state for saving ad
-  const [isDeletingAd, setIsDeletingAd] = useState(false); // Loading state for deleting ad
+  const [advertisements, setAdvertisements] = useState<Advertisement[]>([]);
+  const [isLoadingAds, setIsLoadingAds] = useState(false);
+  const [errorLoadingAds, setErrorLoadingAds] = useState<string | null>(null);
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+  const [currentAd, setCurrentAd] = useState<Partial<Advertisement>>(initialAdFormState);
+  const [isSavingAd, setIsSavingAd] = useState(false);
+  const [isDeletingAd, setIsDeletingAd] = useState(false);
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]); // State for pricing rules
+  const [isLoadingRules, setIsLoadingRules] = useState(false);
+  const [errorLoadingRules, setErrorLoadingRules] = useState<string | null>(null);
+  const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
+  const [currentRule, setCurrentRule] = useState<Partial<PricingRule>>(initialPricingRuleFormState);
+  const [isSavingRule, setIsSavingRule] = useState(false);
+  const [isDeletingRule, setIsDeletingRule] = useState(false);
   const { toast } = useToast();
-  const { userRole, userId } = useContext(AppStateContext)!; // get role
+  const { userRole, userId } = useContext(AppStateContext)!;
 
   const isParkingLotOwner = userRole === 'ParkingLotOwner';
+  const isAdmin = userRole === 'Admin';
 
-  const fetchLots = async () => {
+  // --- Data Fetching ---
+  const fetchLots = useCallback(async () => {
       setIsLoadingLots(true);
       setErrorLoadingLots(null);
       try {
           let lots = await getAvailableParkingLots();
-
           if (isParkingLotOwner && userId) {
-              // Filter lots based on the parking lot owner's association
-              lots = lots.filter(lot => sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lot.id));
+              const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
+              lots = lots.filter(lot => ownerLots.includes(lot.id));
           }
           setParkingLots(lots);
       } catch (err) {
-        console.error("Failed to fetch parking lots for admin dashboard:", err);
+        console.error("Failed to fetch parking lots:", err);
         setErrorLoadingLots("Could not load parking lots.");
          toast({ title: "Error Loading Lots", description: "Could not fetch parking lot data.", variant: "destructive" });
       } finally {
         setIsLoadingLots(false);
       }
-    };
+    }, [isParkingLotOwner, userId, toast]);
 
-  // Fetch Advertisements based on selected lot
-  const fetchAds = async (locationId: string | null) => {
+  const fetchAds = useCallback(async (locationId: string) => {
       setIsLoadingAds(true);
       setErrorLoadingAds(null);
       try {
-          // If 'all' is selected, fetch all ads (or handle based on role later)
-          // Otherwise, fetch ads for the specific location
           let ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
-
            if (isParkingLotOwner && userId) {
-               const associatedLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
-                ads = ads.filter(ad => associatedLots.includes(ad.targetLocationId) || !ad.targetLocationId);
-            }
-
-          // Add location name to each ad for display purposes
-          const adsWithLocationNames = ads.map(ad => {
-              const targetLot = parkingLots.find(lot => lot.id === ad.targetLocationId);
-              return { ...ad, targetLotName: targetLot?.name };
-          });
+               const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
+               ads = ads.filter(ad => !ad.targetLocationId || ownerLots.includes(ad.targetLocationId)); // Show global or owned lot ads
+           }
+          const adsWithLocationNames = ads.map(ad => ({ ...ad, targetLotName: parkingLots.find(lot => lot.id === ad.targetLocationId)?.name }));
           setAdvertisements(adsWithLocationNames);
       } catch (err) {
           console.error("Failed to fetch advertisements:", err);
@@ -122,60 +143,85 @@ export default function AdminDashboardPage() {
       } finally {
           setIsLoadingAds(false);
       }
-  };
+  }, [isParkingLotOwner, userId, parkingLots, toast]);
+
+  const fetchPricingRules = useCallback(async () => {
+      setIsLoadingRules(true);
+      setErrorLoadingRules(null);
+      try {
+          let rules = await getAllPricingRules();
+          if (isParkingLotOwner && userId) {
+               const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
+               rules = rules.filter(rule => !rule.lotId || ownerLots.includes(rule.lotId)); // Show global or owned lot rules
+          }
+          setPricingRules(rules.map(rule => ({ ...rule, lotName: parkingLots.find(lot => lot.id === rule.lotId)?.name }))); // Add lot name
+      } catch (err) {
+          console.error("Failed to fetch pricing rules:", err);
+          setErrorLoadingRules("Could not load pricing rules.");
+          toast({ title: "Error Loading Rules", description: "Could not fetch pricing rule data.", variant: "destructive" });
+      } finally {
+          setIsLoadingRules(false);
+      }
+  }, [isParkingLotOwner, userId, parkingLots, toast]);
 
 
   useEffect(() => {
     fetchLots();
-    // Fetch ads after lots are potentially fetched and parkingLots state is updated
-  }, []);
+  }, [fetchLots]);
 
-   useEffect(() => {
-     // Only fetch ads if parkingLots data is available
-     if (parkingLots.length > 0) {
-          let initialLotId = selectedLotId;
-           if (isParkingLotOwner && parkingLots.length > 0 && !selectedLotId) {
-               initialLotId = parkingLots[0].id; // default select first lot
-               setSelectedLotId(initialLotId);
-           }
-         fetchAds(initialLotId);
-     }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [selectedLotId, parkingLots, userId, userRole]); // Re-fetch ads when selectedLotId or parkingLots change
+  useEffect(() => {
+    if (parkingLots.length > 0) {
+         fetchAds(selectedLotId);
+         fetchPricingRules(); // Fetch rules after lots are available
+    }
+  }, [selectedLotId, parkingLots, fetchAds, fetchPricingRules]); // Re-fetch ads/rules when scope changes
 
+  // --- Component State & Logic ---
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
   const displayedUsers = selectedLotId === 'all'
-    ? sampleUsers
-    : sampleUsers.filter(user => user.associatedLots.includes(selectedLotId) || user.associatedLots.includes('*'));
+    ? (isAdmin ? sampleUsers : []) // Only Admin sees all users
+    : sampleUsers.filter(user => (isAdmin || isParkingLotOwner) && (user.associatedLots.includes(selectedLotId) || user.associatedLots.includes('*')));
 
    const displayedAnalytics = selectedLotId === 'all'
-    ? sampleAnalyticsData['all']
-    : sampleAnalyticsData[selectedLotId] || sampleAnalyticsData['all']; // Fallback to 'all' if specific lot data missing
+    ? (isAdmin ? sampleAnalyticsData['all'] : { revenue: 0, avgOccupancy: 0, activeReservations: 0 }) // Only Admin sees all analytics
+    : sampleAnalyticsData[selectedLotId] || { revenue: 0, avgOccupancy: 0, activeReservations: 0 };
+
+   const displayedPricingRules = selectedLotId === 'all'
+       ? pricingRules // Show all accessible rules
+       : pricingRules.filter(rule => rule.lotId === selectedLotId || !rule.lotId); // Show specific lot or global rules
 
 
     // --- Placeholder Download Handlers ---
     const handleDownloadUsers = () => {
         console.log("Download users clicked for scope:", selectedLotId, displayedUsers);
         toast({ title: "Download Started (Simulation)", description: `Downloading user data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // TODO: Implement actual CSV/spreadsheet generation and download
     };
     const handleDownloadLots = () => {
         console.log("Download lots clicked:", parkingLots);
         toast({ title: "Download Started (Simulation)", description: "Downloading parking lot data."});
+        // TODO: Implement actual CSV/spreadsheet generation and download
     };
      const handleDownloadAnalytics = () => {
         console.log("Download analytics clicked for scope:", selectedLotId, displayedAnalytics);
         toast({ title: "Download Started (Simulation)", description: `Downloading analytics report for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // TODO: Implement actual CSV/spreadsheet generation and download
     };
     const handleDownloadAds = () => {
         console.log("Download ads clicked for scope:", selectedLotId, advertisements);
         toast({ title: "Download Started (Simulation)", description: `Downloading advertisement data for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // TODO: Implement actual CSV/spreadsheet generation and download
+    };
+    const handleDownloadRules = () => {
+        console.log("Download rules clicked for scope:", selectedLotId, displayedPricingRules);
+        toast({ title: "Download Started (Simulation)", description: `Downloading pricing rules for ${selectedLot ? selectedLot.name : 'all locations'}.`});
+        // TODO: Implement actual CSV/spreadsheet generation and download
     };
     // --- End Placeholder Download Handlers ---
 
-
    // --- Service Management ---
     const handleServiceToggle = async (service: ParkingLotService, isChecked: boolean) => {
-        if (!selectedLot) return;
+        if (!selectedLot || (!isAdmin && !isParkingLotOwner)) return; // Authorization check
         setIsUpdatingServices(true);
         const currentServices = selectedLot.services || [];
         const updatedServices = isChecked
@@ -184,9 +230,14 @@ export default function AdminDashboardPage() {
         try {
             const success = await updateParkingLotServices(selectedLot.id, updatedServices);
             if (success) {
+                // Update local state immediately
                 setParkingLots(prevLots => prevLots.map(lot =>
                     lot.id === selectedLotId ? { ...lot, services: updatedServices } : lot
                 ));
+                 // Update the services for the currently displayed rules if the lot matches
+                 setPricingRules(prevRules => prevRules.map(rule =>
+                     rule.lotId === selectedLotId ? { ...rule, lot: { ...(rule as any).lot, services: updatedServices } } : rule
+                 ));
                 toast({ title: "Services Updated", description: `${service} ${isChecked ? 'added to' : 'removed from'} ${selectedLot.name}.` });
             } else { throw new Error("Backend update failed."); }
         } catch (error) {
@@ -200,83 +251,66 @@ export default function AdminDashboardPage() {
 
     // --- Advertisement Management ---
     const handleOpenAdModal = (ad: Advertisement | null = null) => {
-         if (ad && isParkingLotOwner && ad.targetLocationId !== selectedLotId && selectedLotId !== 'all') {
-              toast({
-                  title: "Unauthorized",
-                  description: "You can only edit ads associated with your parking lot.",
-                  variant: "destructive",
-              });
+         if (ad && isParkingLotOwner && ad.targetLocationId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(ad.targetLocationId)) {
+              toast({ title: "Unauthorized", description: "You can only edit ads associated with your parking lots.", variant: "destructive" });
               return;
           }
+         // Ensure owner cannot edit global ads unless they are also Admin
+         if (ad && isParkingLotOwner && !isAdmin && !ad.targetLocationId) {
+              toast({ title: "Unauthorized", description: "You cannot edit global advertisements.", variant: "destructive" });
+              return;
+         }
 
         if (ad) {
-            // Editing existing ad
             setCurrentAd(ad);
         } else {
-            // Creating new ad - Ensure targetLocationId is set correctly
             setCurrentAd({
                 ...initialAdFormState,
                 targetLocationId: selectedLotId !== 'all' ? selectedLotId : '', // Pre-fill if a specific lot is selected
-                status: 'active' // Default to active for new ads
             });
         }
         setIsAdModalOpen(true);
     };
 
     const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setCurrentAd(prev => ({ ...prev, [name]: value }));
+        setCurrentAd(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
-
      const handleAdSelectChange = (name: keyof Advertisement, value: string) => {
          setCurrentAd(prev => ({ ...prev, [name]: value }));
      };
 
-
     const handleSaveAd = async () => {
-        if (!currentAd.title || !currentAd.description || (selectedLotId === 'all' && !currentAd.targetLocationId && !currentAd.id)) {
-            toast({ title: "Missing Information", description: "Please fill in title, description, and target location (if applicable).", variant: "destructive" });
+        if (!currentAd.title || !currentAd.description) {
+            toast({ title: "Missing Information", description: "Please fill in title and description.", variant: "destructive" });
             return;
         }
-
-         if (isParkingLotOwner && selectedLotId === 'all' && currentAd.targetLocationId && !currentAd.id) {
-            toast({
-                title: "Unauthorized",
-                description: "As a Parking Lot Owner, you cannot create ads for 'All Locations'. Please select a specific lot.",
-                variant: "destructive",
-            });
+         // Admin can create global ads (targetLocationId = '')
+         // Owner can only create ads for their lots (targetLocationId must be one of their lots)
+         if (isParkingLotOwner && !isAdmin && (!currentAd.targetLocationId || !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(currentAd.targetLocationId))) {
+            toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots as the target location.", variant: "destructive" });
             return;
-        }
+         }
 
         setIsSavingAd(true);
         try {
             let savedAd: Advertisement | null = null;
             const adDataToSave = {
                 ...currentAd,
-                // Ensure targetLocationId is set correctly, especially if creating while 'all' is selected
-                // If 'All Locations' is selected in the dropdown, set targetLocationId to empty string or undefined
-                 targetLocationId: currentAd.targetLocationId === 'all' ? '' : (currentAd.targetLocationId || (selectedLotId !== 'all' ? selectedLotId : '')),
-                 // Remove temporary targetLotName before saving
-                 targetLotName: undefined,
+                targetLocationId: currentAd.targetLocationId === 'all' ? '' : currentAd.targetLocationId, // Ensure 'all' maps to empty string
+                targetLotName: undefined, // Don't save temporary name
             };
 
-
             if (currentAd.id) {
-                // Update existing ad
                 savedAd = await updateAdvertisement(currentAd.id, adDataToSave);
             } else {
-                // Create new ad
                 savedAd = await createAdvertisement(adDataToSave);
             }
 
             if (savedAd) {
-                 // Re-fetch ads to get the updated list including the new/edited one with its potential location name
-                 await fetchAds(selectedLotId);
+                 await fetchAds(selectedLotId); // Re-fetch ads for the current scope
                 toast({ title: "Advertisement Saved", description: `"${savedAd.title}" has been ${currentAd.id ? 'updated' : 'created'}.` });
-                setIsAdModalOpen(false); // Close modal on success
-            } else {
-                throw new Error("Failed to save advertisement on the backend.");
-            }
+                setIsAdModalOpen(false);
+            } else { throw new Error("Backend save failed."); }
         } catch (error) {
             console.error("Failed to save advertisement:", error);
             toast({ title: "Save Failed", description: "Could not save the advertisement.", variant: "destructive" });
@@ -286,73 +320,200 @@ export default function AdminDashboardPage() {
     };
 
     const handleDeleteAd = async (adId: string) => {
-        if (isParkingLotOwner && advertisements.find(ad => ad.id === adId)?.targetLocationId !== selectedLotId && selectedLotId !== 'all') {
-            toast({
-                title: "Unauthorized",
-                description: "You can only delete ads associated with your parking lot.",
-                variant: "destructive",
-            });
-            return;
-        }
-        // Optional: Add a confirmation dialog here
+         const adToDelete = advertisements.find(ad => ad.id === adId);
+         if (!adToDelete) return;
+
+         // Authorization check
+         if (isParkingLotOwner && !isAdmin && adToDelete.targetLocationId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(adToDelete.targetLocationId)) {
+             toast({ title: "Unauthorized", description: "You can only delete ads associated with your parking lots.", variant: "destructive" }); return;
+         }
+         if (isParkingLotOwner && !isAdmin && !adToDelete.targetLocationId) {
+              toast({ title: "Unauthorized", description: "You cannot delete global advertisements.", variant: "destructive" }); return;
+         }
+        // Optional: Confirmation dialog
+
         setIsDeletingAd(true);
         try {
             const success = await deleteAdvertisement(adId);
             if (success) {
                  setAdvertisements(prevAds => prevAds.filter(ad => ad.id !== adId));
-                 toast({ title: "Advertisement Deleted", description: "The advertisement has been removed." });
-            } else {
-                 throw new Error("Failed to delete advertisement on the backend.");
-            }
+                 toast({ title: "Advertisement Deleted" });
+            } else { throw new Error("Backend delete failed."); }
         } catch (error) {
             console.error("Failed to delete advertisement:", error);
-            toast({ title: "Deletion Failed", description: "Could not delete the advertisement.", variant: "destructive" });
+            toast({ title: "Deletion Failed", variant: "destructive" });
         } finally {
             setIsDeletingAd(false);
         }
     };
     // --- End Advertisement Management ---
 
+    // --- Pricing Rule Management ---
+    const handleOpenRuleModal = (rule: PricingRule | null = null) => {
+         // Authorization: Only Admins can edit global rules or rules for lots they don't own
+         if (rule && !isAdmin && rule.lotId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(rule.lotId)) {
+              toast({ title: "Unauthorized", description: "You can only manage rules for your assigned lots.", variant: "destructive" }); return;
+         }
+         if (rule && !isAdmin && !rule.lotId) {
+             toast({ title: "Unauthorized", description: "Only Admins can manage global rules.", variant: "destructive" }); return;
+         }
 
+        if (rule) {
+            setCurrentRule({
+                ...rule,
+                // Ensure timeCondition exists for the form
+                timeCondition: rule.timeCondition || { daysOfWeek: [], startTime: '', endTime: '' },
+                userTierCondition: rule.userTierCondition || [],
+            });
+        } else {
+             // Creating new rule
+             const newRuleId = `rule_${Date.now()}`;
+            setCurrentRule({
+                ...initialPricingRuleFormState,
+                ruleId: newRuleId, // Generate a temporary ID or handle on backend
+                lotId: selectedLotId !== 'all' ? selectedLotId : '', // Pre-fill if specific lot selected
+                priority: 100, // Default priority
+            });
+        }
+        setIsRuleModalOpen(true);
+    };
+
+    const handleRuleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value, type } = e.target;
+        setCurrentRule(prev => ({
+            ...prev,
+            [name]: type === 'number' ? (value === '' ? undefined : Number(value)) : value
+        }));
+    };
+
+     const handleRuleSelectChange = (name: keyof PricingRule, value: string | string[]) => {
+        setCurrentRule(prev => ({ ...prev, [name]: value }));
+    };
+
+     const handleRuleTimeConditionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target; // name will be 'startTime' or 'endTime'
+        setCurrentRule(prev => ({
+            ...prev,
+            timeCondition: { ...prev?.timeCondition, [name]: value }
+        }));
+    };
+
+     const handleRuleDaysOfWeekChange = (selectedDays: string[]) => {
+         setCurrentRule(prev => ({
+             ...prev,
+             timeCondition: { ...(prev?.timeCondition || {}), daysOfWeek: selectedDays as any }
+         }));
+     };
+      const handleRuleUserTiersChange = (selectedTiers: string[]) => {
+         setCurrentRule(prev => ({
+             ...prev,
+             userTierCondition: selectedTiers as ('Basic' | 'Premium')[]
+         }));
+     };
+
+
+    const handleSaveRule = async () => {
+        if (!currentRule.description || !currentRule.priority) {
+            toast({ title: "Missing Information", description: "Please fill in description and priority.", variant: "destructive" });
+            return;
+        }
+        // Validation: Must have at least one rate type or discount
+        if (currentRule.baseRatePerHour === undefined && currentRule.flatRate === undefined && currentRule.discountPercentage === undefined) {
+             toast({ title: "Invalid Rule", description: "Rule must define a base rate, flat rate, or discount percentage.", variant: "destructive" });
+             return;
+        }
+         // Authorization: Owner cannot create global rules
+         if (isParkingLotOwner && !isAdmin && (!currentRule.lotId || !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(currentRule.lotId))) {
+            toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots or leave blank only if you are an Admin.", variant: "destructive" });
+            return;
+         }
+
+        setIsSavingRule(true);
+        try {
+            // Prepare data for saving (ensure empty strings/arrays are handled if needed by backend)
+            const ruleToSave: PricingRule = {
+                ...(currentRule as PricingRule), // Assume complete structure by now
+                lotId: currentRule.lotId === 'all' || currentRule.lotId === '' ? undefined : currentRule.lotId, // Map empty/all to undefined
+                // Clean up empty conditions before saving? Depends on backend expectations.
+                 timeCondition: (currentRule.timeCondition?.daysOfWeek?.length || currentRule.timeCondition?.startTime || currentRule.timeCondition?.endTime) ? currentRule.timeCondition : undefined,
+                 userTierCondition: currentRule.userTierCondition?.length ? currentRule.userTierCondition : undefined,
+                 eventCondition: currentRule.eventCondition || undefined,
+            };
+
+            const savedRule = await savePricingRule(ruleToSave);
+
+            if (savedRule) {
+                 await fetchPricingRules(); // Re-fetch rules
+                toast({ title: "Pricing Rule Saved", description: `Rule "${savedRule.description}" has been saved.` });
+                setIsRuleModalOpen(false);
+            } else { throw new Error("Backend save failed."); }
+        } catch (error) {
+            console.error("Failed to save pricing rule:", error);
+            toast({ title: "Save Failed", description: "Could not save the pricing rule.", variant: "destructive" });
+        } finally {
+            setIsSavingRule(false);
+        }
+    };
+
+     const handleDeleteRule = async (ruleId: string) => {
+          const ruleToDelete = pricingRules.find(r => r.ruleId === ruleId);
+         if (!ruleToDelete) return;
+         // Authorization check
+         if (!isAdmin && ruleToDelete.lotId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(ruleToDelete.lotId)) {
+             toast({ title: "Unauthorized", description: "You can only delete rules for your assigned lots.", variant: "destructive" }); return;
+         }
+          if (!isAdmin && !ruleToDelete.lotId) {
+             toast({ title: "Unauthorized", description: "Only Admins can delete global rules.", variant: "destructive" }); return;
+         }
+        // Optional: Confirmation dialog
+
+         setIsDeletingRule(true);
+         try {
+             const success = await deletePricingRule(ruleId);
+             if (success) {
+                 setPricingRules(prevRules => prevRules.filter(r => r.ruleId !== ruleId));
+                 toast({ title: "Pricing Rule Deleted" });
+             } else { throw new Error("Backend delete failed."); }
+         } catch (error) {
+             console.error("Failed to delete pricing rule:", error);
+             toast({ title: "Deletion Failed", variant: "destructive" });
+         } finally {
+             setIsDeletingRule(false);
+         }
+     };
+    // --- End Pricing Rule Management ---
+
+
+   // --- Helper Functions ---
    const getServiceIcon = (service: ParkingLotService | undefined, className: string = "h-4 w-4 mr-2") => {
      switch (service) {
        case 'EV Charging': return <Fuel className={className} />;
        case 'Car Wash': return <SprayCan className={className} />;
        case 'Mobile Money Agent': return <BadgeCent className={className} />;
        case 'Wifi': return <Wifi className={className} />;
-       case 'Restroom': return <Bath className={className} />; // Replaced Bathroom with Bath
+       case 'Restroom': return <Bath className={className} />;
        case 'Valet': return <ConciergeBell className={className} />;
-       default: return <Sparkles className={className} />; // Default icon
+       default: return <Sparkles className={className} />;
      }
    };
 
    const isAuthorizedForLot = (lotId: string) => {
-        return !isParkingLotOwner || sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lotId) || lotId === 'all';
+        return isAdmin || !isParkingLotOwner || sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lotId) || lotId === 'all';
     };
 
    const getDisplayLots = () => {
-        return isParkingLotOwner ? parkingLots.filter(lot => isAuthorizedForLot(lot.id)) : parkingLots;
+        return parkingLots.filter(lot => isAuthorizedForLot(lot.id));
     };
 
    const calculateAverageRevenue = () => {
-        if (!parkingLots || parkingLots.length === 0) {
-            return 0;
-        }
-
-        // Filter available lots based on the user role
          const lots = getDisplayLots();
-
-        // Sum the revenue from the available lots
-        const totalRevenue = lots.reduce((sum, lot) => {
-            const lotAnalytics = sampleAnalyticsData[lot.id] || { revenue: 0 };
-            return sum + lotAnalytics.revenue;
-        }, 0);
-
-        // Calculate the average
+         if (!lots || lots.length === 0) return 0;
+        const totalRevenue = lots.reduce((sum, lot) => sum + (sampleAnalyticsData[lot.id]?.revenue || 0), 0);
         return totalRevenue / lots.length;
     };
-
     const averageRevenue = calculateAverageRevenue();
+   // --- End Helper Functions ---
+
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
@@ -362,18 +523,16 @@ export default function AdminDashboardPage() {
              <div>
                 <CardTitle className="flex items-center gap-2 text-2xl font-bold">
                     <ShieldCheck className="h-6 w-6 text-primary" />
-                    Admin Dashboard
+                    {isAdmin ? "Admin" : "Owner"} Dashboard
                 </CardTitle>
                 <CardDescription>
-                    Manage users, lots, services, ads, settings, and view analytics.
+                    Manage users, lots, services, ads, pricing, and view analytics.
                     {selectedLot ? ` (Viewing: ${selectedLot.name})` : ' (Viewing: All Locations)'}
                 </CardDescription>
-                 {isParkingLotOwner && (
-                    <Badge variant="secondary">Parking Lot Owner</Badge>
-                )}
+                 <Badge variant="secondary">{userRole}</Badge>
              </div>
              {/* Parking Lot Selector */}
-             {isAuthorizedForLot('all') && (
+             {(isAdmin || isParkingLotOwner) && (
              <div className="min-w-[250px]">
                  {isLoadingLots ? (
                      <Skeleton className="h-10 w-full" />
@@ -383,18 +542,19 @@ export default function AdminDashboardPage() {
                     <Select
                         value={selectedLotId}
                         onValueChange={(value) => setSelectedLotId(value)}
+                        disabled={!isAdmin && parkingLots.length <= 1} // Disable if owner only has 1 lot
                     >
                         <SelectTrigger>
                             <SelectValue placeholder="Select location scope..." />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Locations</SelectItem>
-                            {parkingLots.map((lot) => (
-                            <SelectItem key={lot.id} value={lot.id}>
-                                <span className="flex items-center gap-2">
-                                    <MapPin className="h-4 w-4 text-muted-foreground" /> {lot.name}
-                                </span>
-                            </SelectItem>
+                            {isAdmin && <SelectItem value="all">All Locations</SelectItem>}
+                            {getDisplayLots().map((lot) => (
+                                <SelectItem key={lot.id} value={lot.id}>
+                                    <span className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4 text-muted-foreground" /> {lot.name}
+                                    </span>
+                                </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
@@ -405,11 +565,12 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
            <Tabs defaultValue="users" className="w-full">
-             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6"> {/* Adjusted grid cols */}
+             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 md:grid-cols-7 mb-6 overflow-x-auto"> {/* Adjusted grid cols */}
                <TabsTrigger value="users"><UserCog className="mr-2 h-4 w-4"/>Users</TabsTrigger>
                <TabsTrigger value="lots"><LayoutDashboard className="mr-2 h-4 w-4"/>Lots</TabsTrigger>
                <TabsTrigger value="services"><Sparkles className="mr-2 h-4 w-4"/>Services</TabsTrigger>
-               <TabsTrigger value="ads"><Megaphone className="mr-2 h-4 w-4"/>Ads</TabsTrigger> {/* Added Ads Tab */}
+               <TabsTrigger value="ads"><Megaphone className="mr-2 h-4 w-4"/>Ads</TabsTrigger>
+               <TabsTrigger value="pricing"><DollarSign className="mr-2 h-4 w-4"/>Pricing</TabsTrigger> {/* Added Pricing Tab */}
                <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
                <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings</TabsTrigger>
              </TabsList>
@@ -419,51 +580,57 @@ export default function AdminDashboardPage() {
                <Card>
                  <CardHeader>
                    <CardTitle>User Management {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
-                   <CardDescription>View, edit, or remove users and manage their roles {selectedLot ? ` associated with ${selectedLot.name}` : 'across all locations'}.</CardDescription>
+                   <CardDescription>View, edit, or remove users and manage their roles {selectedLot ? ` associated with ${selectedLot.name}` : (isAdmin ? 'across all locations' : '(Admin only)')}.</CardDescription>
                     <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search users..." className="max-w-sm" />
                         <Button>Search</Button>
-                        <div className="ml-auto flex gap-2">
-                            <Button variant="outline" onClick={handleDownloadUsers}>
-                                <Download className="mr-2 h-4 w-4" /> Download List
-                            </Button>
-                            <Button variant="outline"> <PlusCircle className="mr-2 h-4 w-4" /> Add User</Button>
-                        </div>
+                        {isAdmin && (
+                            <div className="ml-auto flex gap-2">
+                                <Button variant="outline" onClick={handleDownloadUsers}>
+                                    <Download className="mr-2 h-4 w-4" /> Download List
+                                </Button>
+                                <Button variant="outline"> <PlusCircle className="mr-2 h-4 w-4" /> Add User</Button>
+                            </div>
+                        )}
                     </div>
                  </CardHeader>
                  <CardContent>
-                    {displayedUsers.length > 0 ? (
-                       <Table>
-                         <TableHeader>
-                           <TableRow>
-                             <TableHead>Name</TableHead>
-                             <TableHead>Email</TableHead>
-                             <TableHead>Role</TableHead>
-                             {selectedLotId === 'all' && <TableHead>Associated Lots</TableHead>}
-                             <TableHead className="text-right">Actions</TableHead>
-                           </TableRow>
-                         </TableHeader>
-                         <TableBody>
-                           {displayedUsers.map((user) => (
-                             <TableRow key={user.id}>
-                               <TableCell className="font-medium">{user.name}</TableCell>
-                               <TableCell>{user.email}</TableCell>
-                               <TableCell>{user.role}</TableCell>
-                               {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
-                               <TableCell className="text-right space-x-1">
-                                 <Button variant="ghost" size="sm">Edit</Button>
-                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                                    <Trash2 className="h-4 w-4 sm:mr-1" />
-                                    <span className="hidden sm:inline">Delete</span>
-                                 </Button>
-                               </TableCell>
-                             </TableRow>
-                           ))}
-                         </TableBody>
-                       </Table>
-                   ) : (
-                        <p className="text-muted-foreground text-center py-4">No users found matching the current filter.</p>
-                   )}
+                    {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
+                       displayedUsers.length > 0 ? (
+                           <Table>
+                             <TableHeader>
+                               <TableRow>
+                                 <TableHead>Name</TableHead>
+                                 <TableHead>Email</TableHead>
+                                 <TableHead>Role</TableHead>
+                                 {selectedLotId === 'all' && <TableHead>Associated Lots</TableHead>}
+                                 <TableHead className="text-right">Actions</TableHead>
+                               </TableRow>
+                             </TableHeader>
+                             <TableBody>
+                               {displayedUsers.map((user) => (
+                                 <TableRow key={user.id}>
+                                   <TableCell className="font-medium">{user.name}</TableCell>
+                                   <TableCell>{user.email}</TableCell>
+                                   <TableCell>{user.role}</TableCell>
+                                   {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
+                                   <TableCell className="text-right space-x-1">
+                                     <Button variant="ghost" size="sm">Edit</Button>
+                                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                                        <Trash2 className="h-4 w-4 sm:mr-1" />
+                                        <span className="hidden sm:inline">Delete</span>
+                                     </Button>
+                                   </TableCell>
+                                 </TableRow>
+                               ))}
+                             </TableBody>
+                           </Table>
+                       ) : (
+                            <p className="text-muted-foreground text-center py-4">No users found matching the current filter.</p>
+                       )
+                    ) : (
+                        <p className="text-muted-foreground text-center py-4">User management is available for specific lots or by Admins for all locations.</p>
+                    )}
                  </CardContent>
                </Card>
              </TabsContent>
@@ -473,28 +640,28 @@ export default function AdminDashboardPage() {
                <Card>
                  <CardHeader>
                    <CardTitle>Parking Lot Management</CardTitle>
-                   <CardDescription>Monitor status and manage all parking lots.</CardDescription>
+                   <CardDescription>Monitor status and manage parking lots you have access to.</CardDescription>
                     <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search lots..." className="max-w-sm" />
                         <Button>Search</Button>
-                         <div className="ml-auto flex gap-2">
-                             <Button variant="outline" onClick={handleDownloadLots}>
-                                 <Download className="mr-2 h-4 w-4" /> Download List
-                             </Button>
-                             <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4" /> Add Lot</Button>
-                         </div>
+                         {(isAdmin) && ( // Only Admin can add lots / download all
+                             <div className="ml-auto flex gap-2">
+                                 <Button variant="outline" onClick={handleDownloadLots}>
+                                     <Download className="mr-2 h-4 w-4" /> Download List
+                                 </Button>
+                                 <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4" /> Add Lot</Button>
+                             </div>
+                         )}
                     </div>
                  </CardHeader>
                  <CardContent>
                     {isLoadingLots ? (
                          <div className="space-y-2">
-                             <Skeleton className="h-10 w-full" />
-                             <Skeleton className="h-10 w-full" />
-                             <Skeleton className="h-10 w-full" />
+                             <Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" />
                          </div>
                     ) : errorLoadingLots ? (
                          <p className="text-destructive text-center py-4">{errorLoadingLots}</p>
-                    ) : parkingLots.length > 0 ? (
+                    ) : getDisplayLots().length > 0 ? (
                        <Table>
                          <TableHeader>
                            <TableRow>
@@ -507,7 +674,7 @@ export default function AdminDashboardPage() {
                            </TableRow>
                          </TableHeader>
                          <TableBody>
-                           {parkingLots.map((lot) => (
+                           {getDisplayLots().map((lot) => (
                              <TableRow key={lot.id}>
                                <TableCell className="font-medium">{lot.name}</TableCell>
                                <TableCell>{lot.capacity}</TableCell>
@@ -524,18 +691,18 @@ export default function AdminDashboardPage() {
                                 </TableCell>
                                <TableCell className="text-right space-x-1">
                                   <Button variant="ghost" size="sm">Details</Button>
-                                  <Button variant="ghost" size="sm">Edit</Button>
-                                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                                  {isAdmin && <Button variant="ghost" size="sm">Edit</Button> }
+                                  {isAdmin && <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
                                      <Trash2 className="h-4 w-4 sm:mr-1" />
                                      <span className="hidden sm:inline">Disable</span>
-                                  </Button>
+                                  </Button>}
                                </TableCell>
                              </TableRow>
                            ))}
                          </TableBody>
                        </Table>
                     ) : (
-                         <p className="text-muted-foreground text-center py-4">No parking lots found.</p>
+                         <p className="text-muted-foreground text-center py-4">No parking lots found matching your access.</p>
                     )}
                  </CardContent>
                </Card>
@@ -551,13 +718,10 @@ export default function AdminDashboardPage() {
                      </CardDescription>
                   </CardHeader>
                   <CardContent>
-                      {isLoadingLots ? (
-                          <Skeleton className="h-24 w-full" />
-                      ) : errorLoadingLots ? (
-                          <p className="text-destructive text-center py-4">{errorLoadingLots}</p>
-                      ) : !selectedLot ? (
-                          <p className="text-muted-foreground text-center py-4">Select a parking lot from the dropdown above.</p>
-                      ) : (
+                      {isLoadingLots ? ( <Skeleton className="h-24 w-full" /> )
+                      : errorLoadingLots ? ( <p className="text-destructive text-center py-4">{errorLoadingLots}</p> )
+                      : !selectedLot ? ( <p className="text-muted-foreground text-center py-4">Select a parking lot from the dropdown above.</p> )
+                      : (
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                              {allAvailableServices.map((service) => {
                                 const isChecked = selectedLot.services?.includes(service) ?? false;
@@ -567,15 +731,12 @@ export default function AdminDashboardPage() {
                                            id={`service-${service}`}
                                            checked={isChecked}
                                            onCheckedChange={(checked) => handleServiceToggle(service, !!checked)}
-                                           disabled={isUpdatingServices}
+                                           disabled={isUpdatingServices || (!isAdmin && !isParkingLotOwner)} // Disable if not authorized
                                        />
-                                       <label
-                                           htmlFor={`service-${service}`}
-                                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center cursor-pointer"
-                                       >
+                                       <label htmlFor={`service-${service}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center cursor-pointer">
                                             {getServiceIcon(service)} {service}
                                        </label>
-                                       {isUpdatingServices && isChecked !== selectedLot.services?.includes(service) && ( // Show loader only when state is changing
+                                       {isUpdatingServices && isChecked !== (selectedLot.services?.includes(service) ?? false) && (
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />
                                         )}
                                    </div>
@@ -600,28 +761,16 @@ export default function AdminDashboardPage() {
                             <Button variant="outline" onClick={handleDownloadAds}>
                                 <Download className="mr-2 h-4 w-4" /> Download List
                             </Button>
-                             {!isParkingLotOwner && (
-                                  <Button variant="default" onClick={() => handleOpenAdModal()}>
-                                    <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
-                                 </Button>
-                             )}
-                             {isParkingLotOwner && (
-                                 <Button variant="default" onClick={() => handleOpenAdModal()}>
-                                     <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
-                                 </Button>
-                             )}
+                            <Button variant="default" onClick={() => handleOpenAdModal()}>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
+                            </Button>
                         </div>
                    </div>
                  </CardHeader>
                  <CardContent>
-                   {isLoadingAds ? (
-                        <div className="space-y-2">
-                            <Skeleton className="h-16 w-full" />
-                            <Skeleton className="h-16 w-full" />
-                        </div>
-                   ) : errorLoadingAds ? (
-                        <p className="text-destructive text-center py-4">{errorLoadingAds}</p>
-                   ) : advertisements.length > 0 ? (
+                   {isLoadingAds ? ( <Skeleton className="h-32 w-full" /> )
+                   : errorLoadingAds ? ( <p className="text-destructive text-center py-4">{errorLoadingAds}</p> )
+                   : advertisements.length > 0 ? (
                         <Table>
                             <TableHeader>
                                 <TableRow>
@@ -630,7 +779,7 @@ export default function AdminDashboardPage() {
                                     {selectedLotId === 'all' && <TableHead>Target Location</TableHead>}
                                     <TableHead>Runs</TableHead>
                                     <TableHead>Associated Service</TableHead>
-                                     <TableHead>Status</TableHead>
+                                    <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -638,44 +787,22 @@ export default function AdminDashboardPage() {
                                 {advertisements.map((ad) => {
                                      const targetLotName = ad.targetLotName || (ad.targetLocationId ? 'Unknown Lot' : 'All Locations');
                                      const statusColor = ad.status === 'active' ? 'text-green-600' : ad.status === 'inactive' ? 'text-orange-600' : 'text-gray-500';
+                                     const canEdit = isAdmin || (isParkingLotOwner && (!ad.targetLocationId || sampleUsers.find(u=>u.id===userId)?.associatedLots.includes(ad.targetLocationId)));
+                                     const canDelete = canEdit;
                                      return (
                                         <TableRow key={ad.id}>
-                                            <TableCell>
-                                                 <Image
-                                                    src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`}
-                                                    alt={ad.title}
-                                                    width={80}
-                                                    height={40}
-                                                    className="rounded object-cover aspect-[2/1]"
-                                                />
-                                            </TableCell>
+                                            <TableCell><Image src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`} alt={ad.title} width={80} height={40} className="rounded object-cover aspect-[2/1]" /></TableCell>
                                             <TableCell className="font-medium">{ad.title}</TableCell>
                                             {selectedLotId === 'all' && <TableCell>{targetLotName}</TableCell>}
-                                            <TableCell className="text-xs">
-                                                 {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'N/A'} -
-                                                 {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}
-                                            </TableCell>
+                                            <TableCell className="text-xs">{ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'N/A'} - {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}</TableCell>
                                              <TableCell className="text-xs">
-                                                {ad.associatedService ? (
-                                                    <Badge variant="outline" size="sm" className="flex items-center w-fit">
-                                                        {getServiceIcon(ad.associatedService, "h-3 w-3 mr-1")} {ad.associatedService}
-                                                    </Badge>
-                                                ) : <span className="text-muted-foreground">None</span>}
-                                            </TableCell>
-                                            <TableCell className={`text-xs font-medium ${statusColor}`}>
-                                                {ad.status?.charAt(0).toUpperCase() + ad.status?.slice(1) || 'Unknown'}
-                                            </TableCell>
+                                                {ad.associatedService ? (<Badge variant="outline" size="sm" className="flex items-center w-fit">{getServiceIcon(ad.associatedService, "h-3 w-3 mr-1")} {ad.associatedService}</Badge>) : <span className="text-muted-foreground">None</span>}
+                                             </TableCell>
+                                            <TableCell className={`text-xs font-medium ${statusColor}`}>{ad.status?.charAt(0).toUpperCase() + ad.status?.slice(1) || 'Unknown'}</TableCell>
                                             <TableCell className="text-right space-x-1">
-                                                <Button variant="ghost" size="sm" onClick={() => handleOpenAdModal(ad)}>Edit</Button>
-                                                 <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="text-destructive hover:text-destructive"
-                                                    onClick={() => handleDeleteAd(ad.id)}
-                                                    disabled={isDeletingAd}
-                                                >
-                                                    {isDeletingAd ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4 sm:mr-1" />}
-                                                    <span className="hidden sm:inline">Delete</span>
+                                                <Button variant="ghost" size="sm" onClick={() => handleOpenAdModal(ad)} disabled={!canEdit}>Edit</Button>
+                                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteAd(ad.id)} disabled={isDeletingAd || !canDelete}>
+                                                    {isDeletingAd ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4 sm:mr-1" />} <span className="hidden sm:inline">Delete</span>
                                                  </Button>
                                             </TableCell>
                                         </TableRow>
@@ -687,59 +814,146 @@ export default function AdminDashboardPage() {
                        <div className="text-center py-10 text-muted-foreground">
                             <Megaphone className="mx-auto h-10 w-10 mb-2" />
                             <p>No advertisements found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
-                            { !isParkingLotOwner && (
-                                  <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
-                                    <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
-                                </Button>
-                             )}
-                              {isParkingLotOwner && (
-                                 <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
-                                     <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
-                                 </Button>
-                              )}
+                             <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
+                            </Button>
                        </div>
                    )}
                  </CardContent>
                </Card>
              </TabsContent>
 
+            {/* Pricing Rules Tab */}
+            <TabsContent value="pricing">
+               <Card>
+                 <CardHeader>
+                   <CardTitle>Dynamic Pricing Rules {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
+                   <CardDescription>Manage pricing rules based on time, events, or user tiers.</CardDescription>
+                   <div className="flex flex-wrap items-center gap-2 pt-4">
+                        <Input placeholder="Search rules by description..." className="max-w-sm" />
+                        <Button>Search</Button>
+                        <div className="ml-auto flex gap-2">
+                            <Button variant="outline" onClick={handleDownloadRules}>
+                                <Download className="mr-2 h-4 w-4" /> Download Rules
+                            </Button>
+                            {/* Only Admin can create global rules, Owner can create for their lots */}
+                            {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                                <Button variant="default" onClick={() => handleOpenRuleModal(null)}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Create Rule
+                                </Button>
+                            )}
+                        </div>
+                   </div>
+                 </CardHeader>
+                 <CardContent>
+                    {isLoadingRules ? ( <Skeleton className="h-32 w-full" /> )
+                    : errorLoadingRules ? ( <p className="text-destructive text-center py-4">{errorLoadingRules}</p> )
+                    : displayedPricingRules.length > 0 ? (
+                        <Table>
+                           <TableHeader>
+                             <TableRow>
+                               <TableHead>Description</TableHead>
+                               {selectedLotId === 'all' && <TableHead>Lot Scope</TableHead>}
+                               <TableHead>Rate/Discount</TableHead>
+                               <TableHead>Conditions</TableHead>
+                               <TableHead>Priority</TableHead>
+                               <TableHead className="text-right">Actions</TableHead>
+                             </TableRow>
+                           </TableHeader>
+                           <TableBody>
+                             {displayedPricingRules.map((rule) => {
+                                const canEdit = isAdmin || (isParkingLotOwner && (!rule.lotId || sampleUsers.find(u=>u.id===userId)?.associatedLots.includes(rule.lotId)));
+                                const canDelete = canEdit;
+                                return (
+                                   <TableRow key={rule.ruleId}>
+                                     <TableCell className="font-medium">{rule.description}</TableCell>
+                                     {selectedLotId === 'all' && <TableCell>{rule.lotId ? (parkingLots.find(l=>l.id===rule.lotId)?.name || 'Unknown Lot') : 'Global'}</TableCell>}
+                                     <TableCell className="text-xs">
+                                         {rule.baseRatePerHour !== undefined && `$${rule.baseRatePerHour.toFixed(2)}/hr`}
+                                         {rule.flatRate !== undefined && `$${rule.flatRate.toFixed(2)}${rule.flatRateDurationMinutes ? `/${rule.flatRateDurationMinutes}min` : ''}`}
+                                         {rule.discountPercentage !== undefined && `-${rule.discountPercentage}%`}
+                                     </TableCell>
+                                     <TableCell className="text-xs space-y-0.5">
+                                          {rule.timeCondition && (
+                                             <div className="flex items-center gap-1 text-muted-foreground">
+                                                 <Clock className="h-3 w-3"/>
+                                                 <span>{rule.timeCondition.daysOfWeek?.join(', ') || 'Any Day'} {rule.timeCondition.startTime || ''}-{rule.timeCondition.endTime || ''}</span>
+                                             </div>
+                                          )}
+                                           {rule.userTierCondition?.length > 0 && (
+                                             <div className="flex items-center gap-1 text-muted-foreground">
+                                                 <Users className="h-3 w-3"/>
+                                                 <span>{rule.userTierCondition.join(', ')} Tier</span>
+                                             </div>
+                                          )}
+                                           {rule.eventCondition && (
+                                             <div className="flex items-center gap-1 text-muted-foreground">
+                                                 <Tag className="h-3 w-3"/>
+                                                 <span>Event: {rule.eventCondition}</span>
+                                             </div>
+                                          )}
+                                     </TableCell>
+                                     <TableCell>{rule.priority}</TableCell>
+                                     <TableCell className="text-right space-x-1">
+                                         <Button variant="ghost" size="sm" onClick={() => handleOpenRuleModal(rule)} disabled={!canEdit}>Edit</Button>
+                                         <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteRule(rule.ruleId)} disabled={isDeletingRule || !canDelete}>
+                                            {isDeletingRule ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4 sm:mr-1" />} <span className="hidden sm:inline">Delete</span>
+                                         </Button>
+                                     </TableCell>
+                                   </TableRow>
+                                );
+                             })}
+                           </TableBody>
+                        </Table>
+                     ) : (
+                         <div className="text-center py-10 text-muted-foreground">
+                           <DollarSign className="mx-auto h-10 w-10 mb-2" />
+                           <p>No pricing rules found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
+                           {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                             <Button size="sm" className="mt-4" onClick={() => handleOpenRuleModal(null)}>
+                               <PlusCircle className="mr-2 h-4 w-4" /> Create First Rule
+                             </Button>
+                           )}
+                         </div>
+                     )}
+                 </CardContent>
+               </Card>
+            </TabsContent>
+
 
              {/* Analytics Tab */}
              <TabsContent value="analytics">
                <Card>
                  <CardHeader>
-                   <CardTitle>System Analytics {selectedLot ? ` - ${selectedLot.name}` : ' - Overall'}</CardTitle>
-                   <CardDescription>View performance and financial reports {selectedLot ? `for ${selectedLot.name}` : 'for all locations'}.</CardDescription>
-                   <div className="pt-4 flex justify-end">
-                      <Button variant="outline" onClick={handleDownloadAnalytics}>
-                          <Download className="mr-2 h-4 w-4" /> Download Report
-                      </Button>
-                   </div>
+                   <CardTitle>System Analytics {selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Overall' : '')}</CardTitle>
+                   <CardDescription>View performance and financial reports {selectedLot ? `for ${selectedLot.name}` : (isAdmin ? 'for all locations' : '(Admin only)')}.</CardDescription>
+                   {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                       <div className="pt-4 flex justify-end">
+                          <Button variant="outline" onClick={handleDownloadAnalytics}>
+                              <Download className="mr-2 h-4 w-4" /> Download Report
+                          </Button>
+                       </div>
+                   )}
                  </CardHeader>
                  <CardContent>
-                   <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                       <Card>
-                           <CardHeader><CardTitle className="text-lg">${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader>
-                       </Card>
-                        <Card>
-                           <CardHeader><CardTitle className="text-lg">{displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader>
-                       </Card>
-                        <Card>
-                           <CardHeader><CardTitle className="text-lg">{displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader>
-                       </Card>
-                   </div>
-                    {selectedLotId === 'all' && (
-                         <Card className="mt-6">
-                            <CardHeader>
-                                 <CardTitle>Average Revenue Across All Lots</CardTitle>
-                                  <CardDescription>Average revenue per lot today.</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-2xl font-bold">${averageRevenue.toFixed(2)}</p>
-                            </CardContent>
-                         </Card>
+                    {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
+                       <>
+                           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                               <Card><CardHeader><CardTitle className="text-lg">${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader></Card>
+                                <Card><CardHeader><CardTitle className="text-lg">{displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader></Card>
+                                <Card><CardHeader><CardTitle className="text-lg">{displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader></Card>
+                           </div>
+                            {selectedLotId === 'all' && isAdmin && (
+                                 <Card className="mt-6">
+                                    <CardHeader><CardTitle>Average Revenue Across All Lots</CardTitle><CardDescription>Average revenue per lot today.</CardDescription></CardHeader>
+                                    <CardContent><p className="text-2xl font-bold">${averageRevenue.toFixed(2)}</p></CardContent>
+                                 </Card>
+                            )}
+                           <p className="text-muted-foreground mt-6 text-center">More detailed charts and reports coming soon.</p>
+                       </>
+                    ) : (
+                         <p className="text-muted-foreground text-center py-4">Analytics are available for specific lots or by Admins for all locations.</p>
                     )}
-                   <p className="text-muted-foreground mt-6 text-center">More detailed charts and reports coming soon.</p>
                  </CardContent>
                </Card>
              </TabsContent>
@@ -748,46 +962,53 @@ export default function AdminDashboardPage() {
              <TabsContent value="settings">
                <Card>
                  <CardHeader>
-                   <CardTitle>System Settings {selectedLot ? ` - ${selectedLot.name}` : ' - Global'}</CardTitle>
-                   <CardDescription>Configure application settings, integrations, and pricing rules {selectedLot ? `specific to ${selectedLot.name}` : 'globally'}.</CardDescription>
+                   <CardTitle>System Settings {selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Global' : '')}</CardTitle>
+                   <CardDescription>Configure application settings, integrations, and defaults {selectedLot ? `specific to ${selectedLot.name}` : (isAdmin ? 'globally' : '(Admin only)')}.</CardDescription>
                  </CardHeader>
                  <CardContent>
-                     <div className="mt-4 space-y-4">
-                       {selectedLotId === 'all' && ( // Only show global settings when 'all' is selected
-                           <div className="flex items-center justify-between p-4 border rounded-md">
-                              <div>
-                                <p className="font-medium">Base Reservation Fee (Global)</p>
-                                <p className="text-sm text-muted-foreground">The standard fee applied if no lot-specific fee exists.</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg font-semibold">$</span>
-                                <Input type="number" defaultValue="2.50" step="0.01" className="w-24" />
-                                 <Button size="sm">Save</Button>
-                              </div>
-                           </div>
-                       )}
-                        {selectedLotId !== 'all' && selectedLot && ( // Show lot-specific settings
-                           <div className="flex items-center justify-between p-4 border rounded-md">
-                              <div>
-                                <p className="font-medium">Reservation Fee Override ({selectedLot.name})</p>
-                                <p className="text-sm text-muted-foreground">Set a specific fee for this location (leave blank to use global).</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg font-semibold">$</span>
-                                <Input type="number" placeholder="e.g., 3.00" step="0.01" className="w-24" />
-                                 <Button size="sm">Save</Button>
-                              </div>
-                           </div>
-                        )}
-                         <div className="flex items-center justify-between p-4 border rounded-md">
-                          <div>
-                            <p className="font-medium">Payment Gateway Integration</p>
-                            <p className="text-sm text-muted-foreground">Connect to Stripe, Mobile Money, etc.</p>
-                          </div>
-                          <Button size="sm" variant="outline">Configure</Button>
-                       </div>
-                       {/* Add more settings forms here */}
-                    </div>
+                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
+                         <div className="mt-4 space-y-4">
+                           {selectedLotId === 'all' && isAdmin && ( // Only show global settings when 'all' is selected by Admin
+                               <div className="flex items-center justify-between p-4 border rounded-md">
+                                  <div>
+                                    <p className="font-medium">Base Reservation Fee (Global)</p>
+                                    <p className="text-sm text-muted-foreground">Default fee if no lot-specific fee exists.</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg font-semibold">$</span>
+                                    <Input type="number" defaultValue="2.50" step="0.01" className="w-24" />
+                                     <Button size="sm">Save</Button>
+                                  </div>
+                               </div>
+                           )}
+                           {/* Lot specific settings or other global settings for Admin */}
+                            {selectedLotId !== 'all' && selectedLot && (
+                               <div className="flex items-center justify-between p-4 border rounded-md">
+                                  <div>
+                                    <p className="font-medium">Lot Fee Override ({selectedLot.name})</p>
+                                    <p className="text-sm text-muted-foreground">Set specific fee (leave blank for global/default).</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg font-semibold">$</span>
+                                    <Input type="number" placeholder="e.g., 3.00" step="0.01" className="w-24" />
+                                     <Button size="sm">Save</Button>
+                                  </div>
+                               </div>
+                            )}
+                            {isAdmin && (
+                                 <div className="flex items-center justify-between p-4 border rounded-md">
+                                  <div>
+                                    <p className="font-medium">Payment Gateway Integration</p>
+                                    <p className="text-sm text-muted-foreground">Connect to Stripe, Mobile Money, etc.</p>
+                                  </div>
+                                  <Button size="sm" variant="outline">Configure</Button>
+                               </div>
+                            )}
+                           {/* Add more settings forms here */}
+                        </div>
+                     ) : (
+                         <p className="text-muted-foreground text-center py-4">Settings are available for specific lots or globally by Admins.</p>
+                     )}
                  </CardContent>
                </Card>
              </TabsContent>
@@ -798,134 +1019,114 @@ export default function AdminDashboardPage() {
       {/* Add/Edit Advertisement Modal */}
        <Dialog open={isAdModalOpen} onOpenChange={setIsAdModalOpen}>
            <DialogContent className="sm:max-w-lg">
-               <DialogHeader>
-                   <DialogTitle>{currentAd.id ? 'Edit' : 'Create'} Advertisement</DialogTitle>
-                   <DialogDescription>
-                       Fill in the details for the advertisement. It will be shown in the Explore tab.
-                   </DialogDescription>
-               </DialogHeader>
+               <DialogHeader><DialogTitle>{currentAd.id ? 'Edit' : 'Create'} Advertisement</DialogTitle><DialogDescription>Fill in the details for the advertisement.</DialogDescription></DialogHeader>
                <div className="grid gap-4 py-4">
-                    {/* Title */}
-                    <div className="grid grid-cols-4 items-center gap-4">
-                       <Label htmlFor="title" className="text-right">Title*</Label>
-                       <Input id="title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
-                   </div>
-                   {/* Description */}
-                   <div className="grid grid-cols-4 items-start gap-4">
-                       <Label htmlFor="description" className="text-right pt-2">Description*</Label>
-                       <Textarea id="description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} />
-                   </div>
-                   {/* Image URL */}
+                   {/* Title */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="title" className="text-right">Title*</Label><Input id="title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* Description */} <div className="grid grid-cols-4 items-start gap-4"><Label htmlFor="description" className="text-right pt-2">Description*</Label><Textarea id="description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} /></div>
+                   {/* Image URL */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="imageUrl" className="text-right">Image URL</Label><Input id="imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} /></div>
+                   {/* Image Preview */} {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e) => { e.currentTarget.style.display = 'none'; }}/></div></div>)}
+                   {/* Target Location */}
                    <div className="grid grid-cols-4 items-center gap-4">
-                       <Label htmlFor="imageUrl" className="text-right">Image URL</Label>
-                       <Input id="imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} />
-                   </div>
-                    {/* Image Preview */}
-                   {currentAd.imageUrl && (
-                       <div className="grid grid-cols-4 items-center gap-4">
-                           <div className="col-start-2 col-span-3">
-                               <Image
-                                    src={currentAd.imageUrl}
-                                    alt="Ad Preview"
-                                    width={150}
-                                    height={75}
-                                    className="rounded object-cover aspect-[2/1] border"
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; /* Hide if image fails */ }}
-                                />
-                           </div>
-                       </div>
-                   )}
-                   {/* Target Location (Only if Admin and creating/editing) */}
-                   {/* Allow selection even if a specific lot is chosen initially, but pre-fill it */}
-                    <div className="grid grid-cols-4 items-center gap-4">
                        <Label htmlFor="targetLocationId" className="text-right">Location*</Label>
-                       <Select
-                            name="targetLocationId"
-                            value={currentAd.targetLocationId || 'all'} // Use 'all' to represent empty/global
-                            onValueChange={(value) => handleAdSelectChange('targetLocationId', value)}
-                            disabled={isSavingAd}
-                       >
-                           <SelectTrigger className="col-span-3">
-                               <SelectValue placeholder="Select target location" />
-                           </SelectTrigger>
+                       <Select name="targetLocationId" value={currentAd.targetLocationId || 'all'} onValueChange={(value) => handleAdSelectChange('targetLocationId', value)} disabled={isSavingAd || (!isAdmin && isParkingLotOwner && parkingLots.length <=1 && !currentAd.id)}>
+                           <SelectTrigger className="col-span-3"><SelectValue placeholder="Select target location" /></SelectTrigger>
                            <SelectContent>
-                               { !isParkingLotOwner && (
-                                    <SelectItem value="all">All Locations</SelectItem>
-                               )}
-                               {parkingLots.map(lot => (
-                                   <SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>
-                               ))}
+                               { isAdmin && <SelectItem value="all">All Locations (Global)</SelectItem> }
+                               {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
                            </SelectContent>
                        </Select>
                    </div>
-
                    {/* Associated Service */}
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="associatedService" className="text-right">Link to Service (Optional)</Label>
-                        <Select
-                             name="associatedService"
-                             value={currentAd.associatedService || ''}
-                             onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )}
-                             disabled={isSavingAd}
-                        >
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="Link to a specific service..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="">None</SelectItem>
-                                {allAvailableServices.map(service => (
-                                    <SelectItem key={service} value={service}>
-                                         <span className="flex items-center gap-2">
-                                            {getServiceIcon(service, "h-4 w-4 mr-2")} {service}
-                                         </span>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                   {/* Start Date */}
-                   <div className="grid grid-cols-4 items-center gap-4">
-                       <Label htmlFor="startDate" className="text-right">Start Date</Label>
-                       <Input id="startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
-                   </div>
-                   {/* End Date */}
-                   <div className="grid grid-cols-4 items-center gap-4">
-                       <Label htmlFor="endDate" className="text-right">End Date</Label>
-                       <Input id="endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} />
-                   </div>
-                    {/* Status */}
-                   <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="status" className="text-right">Status</Label>
-                         <Select
-                             name="status"
-                             value={currentAd.status || 'active'}
-                             onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')}
-                             disabled={isSavingAd}
-                         >
-                             <SelectTrigger className="col-span-3">
-                                 <SelectValue placeholder="Select status" />
-                             </SelectTrigger>
-                             <SelectContent>
-                                 <SelectItem value="active">Active</SelectItem>
-                                 <SelectItem value="inactive">Inactive</SelectItem>
-                                 <SelectItem value="draft">Draft</SelectItem>
-                             </SelectContent>
-                         </Select>
-                   </div>
+                   <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="associatedService" className="text-right">Link to Service</Label><Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )} disabled={isSavingAd}><SelectTrigger className="col-span-3"><SelectValue placeholder="Link to a specific service..." /></SelectTrigger><SelectContent><SelectItem value="">None</SelectItem>{allAvailableServices.map(service => (<SelectItem key={service} value={service}><span className="flex items-center gap-2">{getServiceIcon(service, "h-4 w-4 mr-2")} {service}</span></SelectItem>))}</SelectContent></Select></div>
+                   {/* Start Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="startDate" className="text-right">Start Date</Label><Input id="startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* End Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="endDate" className="text-right">End Date</Label><Input id="endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* Status */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="status" className="text-right">Status</Label><Select name="status" value={currentAd.status || 'active'} onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')} disabled={isSavingAd}><SelectTrigger className="col-span-3"><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent></Select></div>
                </div>
-               <DialogFooter>
-                   <DialogClose asChild>
-                       <Button type="button" variant="outline" disabled={isSavingAd}>Cancel</Button>
-                   </DialogClose>
-                   <Button type="submit" onClick={handleSaveAd} disabled={isSavingAd}>
-                       {isSavingAd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                       {currentAd.id ? 'Save Changes' : 'Create Ad'}
-                   </Button>
-               </DialogFooter>
+               <DialogFooter><DialogClose asChild><Button type="button" variant="outline" disabled={isSavingAd}>Cancel</Button></DialogClose><Button type="submit" onClick={handleSaveAd} disabled={isSavingAd}>{isSavingAd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{currentAd.id ? 'Save Changes' : 'Create Ad'}</Button></DialogFooter>
            </DialogContent>
        </Dialog>
+
+        {/* Add/Edit Pricing Rule Modal */}
+        <Dialog open={isRuleModalOpen} onOpenChange={setIsRuleModalOpen}>
+            <DialogContent className="sm:max-w-lg">
+                <DialogHeader><DialogTitle>{currentRule.id ? 'Edit' : 'Create'} Pricing Rule</DialogTitle><DialogDescription>Define conditions and rates for dynamic pricing.</DialogDescription></DialogHeader>
+                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                     {/* Rule ID (Readonly) */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ruleId" className="text-right">Rule ID</Label><Input id="ruleId" name="ruleId" value={currentRule.ruleId || ''} readOnly disabled className="col-span-3 bg-muted text-muted-foreground text-xs" /></div>
+                     {/* Description */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="description" className="text-right">Description*</Label><Input id="description" name="description" value={currentRule.description || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} /></div>
+                     {/* Priority */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="priority" className="text-right">Priority*</Label><Input id="priority" name="priority" type="number" value={currentRule.priority ?? 100} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="Lower number = higher priority" min="1" /></div>
+                     {/* Lot Scope */}
+                     <div className="grid grid-cols-4 items-center gap-4">
+                         <Label htmlFor="lotId" className="text-right">Lot Scope</Label>
+                         <Select name="lotId" value={currentRule.lotId || 'all'} onValueChange={(value) => handleRuleSelectChange('lotId', value)} disabled={isSavingRule || (!isAdmin && isParkingLotOwner)}>
+                             <SelectTrigger className="col-span-3"><SelectValue placeholder="Select lot scope" /></SelectTrigger>
+                             <SelectContent>
+                                 { isAdmin && <SelectItem value="all">Global (All Lots)</SelectItem> }
+                                 {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
+                             </SelectContent>
+                         </Select>
+                     </div>
+                     {/* Rate Options */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Rate/Discount (Define ONE type per rule)</p>
+                     {/* Base Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="baseRatePerHour" className="text-right">Base Rate ($/hr)</Label><ShadInput id="baseRatePerHour" name="baseRatePerHour" type="number" value={currentRule.baseRatePerHour ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.flatRate !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 2.50" step="0.01" min="0"/></div>
+                     {/* Flat Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="flatRate" className="text-right">Flat Rate ($)</Label><ShadInput id="flatRate" name="flatRate" type="number" value={currentRule.flatRate ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 10.00" step="0.01" min="0"/></div>
+                     {/* Flat Rate Duration */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="flatRateDurationMinutes" className="text-right">Duration (min)</Label><ShadInput id="flatRateDurationMinutes" name="flatRateDurationMinutes" type="number" value={currentRule.flatRateDurationMinutes ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined || currentRule.flatRate === undefined} placeholder="e.g., 1440 for daily" min="1"/></div>
+                     {/* Discount */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="discountPercentage" className="text-right">Discount (%)</Label><ShadInput id="discountPercentage" name="discountPercentage" type="number" value={currentRule.discountPercentage ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.flatRate !== undefined} placeholder="e.g., 10 for 10%" min="0" max="100"/></div>
+                     {/* Conditions */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Conditions (Optional)</p>
+                     {/* Days of Week */}
+                      <div className="grid grid-cols-4 items-start gap-4">
+                          <Label className="text-right pt-2">Days of Week</Label>
+                          {/* Replace with actual MultiSelect component if available */}
+                           <div className="col-span-3 space-x-2"> {/* Placeholder for MultiSelect */}
+                               <span className="text-xs text-muted-foreground">[MultiSelect Placeholder: {currentRule.timeCondition?.daysOfWeek?.join(', ') || 'Any'}]</span>
+                           </div>
+                      </div>
+                     {/* Time Range */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="startTime" className="text-right">Time Range</Label><div className="col-span-3 flex items-center gap-2"><ShadInput id="startTime" name="startTime" type="time" value={currentRule.timeCondition?.startTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /><span className="text-muted-foreground">-</span><ShadInput id="endTime" name="endTime" type="time" value={currentRule.timeCondition?.endTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /></div></div>
+                      {/* User Tiers */}
+                      <div className="grid grid-cols-4 items-start gap-4">
+                          <Label className="text-right pt-2">User Tiers</Label>
+                           {/* Replace with actual MultiSelect component if available */}
+                           <div className="col-span-3 space-x-2"> {/* Placeholder for MultiSelect */}
+                               <span className="text-xs text-muted-foreground">[MultiSelect Placeholder: {currentRule.userTierCondition?.join(', ') || 'Any'}]</span>
+                           </div>
+                      </div>
+                     {/* Event */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="eventCondition" className="text-right">Event Name</Label><Input id="eventCondition" name="eventCondition" value={currentRule.eventCondition || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="e.g., Concert Night"/></div>
+                </div>
+                <DialogFooter><DialogClose asChild><Button type="button" variant="outline" disabled={isSavingRule}>Cancel</Button></DialogClose><Button type="submit" onClick={handleSaveRule} disabled={isSavingRule}>{isSavingRule ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{currentRule.id ? 'Save Changes' : 'Create Rule'}</Button></DialogFooter>
+            </DialogContent>
+        </Dialog>
 
     </div>
   );
 }
+
+// Mock MultiSelect component placeholder - Replace with actual implementation
+const MockMultiSelect = ({ options, selected, onChange, placeholder }: { options: string[], selected: string[], onChange: (selected: string[]) => void, placeholder?: string }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const toggleOption = (option: string) => {
+        const newSelected = selected.includes(option)
+            ? selected.filter(item => item !== option)
+            : [...selected, option];
+        onChange(newSelected);
+    };
+
+    return (
+        <div className="relative">
+            <Button variant="outline" onClick={() => setIsOpen(!isOpen)} className="w-full justify-start font-normal">
+                {selected.length > 0 ? selected.join(', ') : <span className="text-muted-foreground">{placeholder || 'Select...'}</span>}
+            </Button>
+            {isOpen && (
+                <div className="absolute z-10 w-full mt-1 border bg-popover rounded-md shadow-lg p-2">
+                    {options.map(option => (
+                        <div key={option} className="flex items-center space-x-2 p-1 hover:bg-accent rounded">
+                            <Checkbox
+                                id={`ms-${option}`}
+                                checked={selected.includes(option)}
+                                onCheckedChange={() => toggleOption(option)}
+                            />
+                            <label htmlFor={`ms-${option}`} className="text-sm">{option}</label>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
