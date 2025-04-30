@@ -15,7 +15,7 @@ interface TimedReservationSliderProps {
   disabled?: boolean; // General disable flag
 }
 
-const RESERVATION_TIMEOUT_SECONDS = 15; // Default timeout
+const RESERVATION_TIMEOUT_SECONDS = 60; // Default timeout (Changed to 60 seconds)
 const SLIDER_CONFIRM_THRESHOLD = 95; // Value to reach for confirmation
 
 export default function TimedReservationSlider({
