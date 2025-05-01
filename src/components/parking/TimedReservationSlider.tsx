@@ -21,7 +21,7 @@ const SLIDER_CONFIRM_THRESHOLD = 95; // Value to reach for confirmation
 export default function TimedReservationSlider({
   onConfirm,
   onTimeout,
-  timeoutSeconds = RESERVATION_TIMEOUT_SECONDS,
+  timeoutSeconds = RESERVATION_TIMEOUT_SECONDS, // Use the constant as default
   isConfirming,
   disabled = false,
 }: TimedReservationSliderProps) {

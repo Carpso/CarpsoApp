@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock } from 'lucide-react'; // Added DollarSign, Clock
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car } from 'lucide-react'; // Added DollarSign, Clock, Car
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
@@ -269,10 +269,16 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
-                 {/* Estimated Cost Display */}
-                 <div className="mt-3 text-sm border-t pt-3">
+               {/* Moved description text here */}
+              <div className="text-sm text-muted-foreground pt-2">
+                 You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
+              </div>
+            </AlertDialogHeader>
+
+            {/* Cost and Prediction Sections (Outside Description) */}
+            <div className="space-y-4 pt-2">
+                {/* Estimated Cost Display */}
+                 <div className="text-sm border-t pt-3">
                     <h4 className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</h4>
                     {isCostLoading ? (
                         <div className="flex items-center gap-2 text-muted-foreground">
@@ -288,7 +294,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                     )}
                  </div>
                 {/* Prediction Display */}
-                <div className="mt-3 text-sm border-t pt-3">
+                <div className="text-sm border-t pt-3">
                    <h4 className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</h4>
                    {isPredictionLoading ? (
                        <div className="flex items-center gap-2 text-muted-foreground">
@@ -305,8 +311,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                    )}
                 </div>
                  <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Reservations held for a limited time. Confirm below.</p>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+            </div>
+
              {/* Timed Reservation Slider */}
              <div className="my-4 px-1">
                  <TimedReservationSlider
@@ -314,6 +320,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                      onTimeout={handleReservationTimeout}
                      isConfirming={isReserving} // Pass reserving state
                      disabled={isReserving || selectedSpot?.isOccupied} // Disable slider when reserving or spot occupied
+                     timeoutSeconds={60} // Set timeout to 60 seconds
                  />
              </div>
             <AlertDialogFooter className="mt-0 pt-0"> {/* Adjusted spacing */}
@@ -345,4 +352,4 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
 
 // Helper Icon for ParkingSpot
-import { Car, Ban } from 'lucide-react';
+import { Ban } from 'lucide-react'; // Moved import here
