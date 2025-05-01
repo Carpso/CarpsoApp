@@ -28,7 +28,7 @@ const userGamificationData: Record<string, UserGamification> = {
         points: 150,
         badges: [
             { id: 'badge_first_booking', name: 'First Booking', description: 'Completed your first parking reservation.', iconName: 'Sparkles', earnedDate: '2024-07-28' },
-            { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Megaphone', earnedDate: '2024-07-29' },
+            { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Flag', earnedDate: '2024-07-29' }, // Changed icon to Flag
         ],
         isCarpoolEligible: false,
     },
@@ -37,8 +37,8 @@ const userGamificationData: Record<string, UserGamification> = {
 // Available badges definition (could be stored elsewhere)
 const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
      { id: 'badge_first_booking', name: 'First Booking', description: 'Completed your first parking reservation.', iconName: 'Sparkles' },
-     { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Megaphone' },
-     { id: 'badge_frequent_parker', name: 'Frequent Parker', description: 'Completed 5 reservations.', iconName: 'Award' }, // Assuming 'Award' icon exists
+     { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Flag' }, // Changed icon to Flag
+     { id: 'badge_frequent_parker', name: 'Frequent Parker', description: 'Completed 5 reservations.', iconName: 'Award' },
      { id: 'badge_carpool_champ', name: 'Carpool Champ', description: 'Enabled carpooling benefits.', iconName: 'Users' },
 ];
 
@@ -126,3 +126,5 @@ export async function updateCarpoolEligibility(userId: string, isEligible: boole
 }
 
 // Add more functions as needed, e.g., getLeaderboard
+
+```

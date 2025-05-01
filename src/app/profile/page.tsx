@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront } from 'lucide-react'; // Added Info, CarTaxiFront icons
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag } from 'lucide-react'; // Added Info, CarTaxiFront, Flag icons
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
@@ -35,10 +35,16 @@ interface UserDetails {
     avatarUrl?: string;
     memberSince: string;
     role: string;
+    // New fields for editing
+    preferredPaymentMethod?: 'Card' | 'MobileMoney';
+    notificationPreferences?: {
+        promotions: boolean;
+        updates: boolean;
+    }
 }
 
 interface BillingInfo {
-    paymentMethods: { type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
+    paymentMethods: { id: string; type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
     subscriptionTier?: 'Basic' | 'Premium';
     guaranteedSpotsAvailable?: number;
 }
@@ -68,13 +74,16 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
     const name = existingName || `User ${userId.substring(0, 5)}`;
     const avatarUrl = existingAvatar || `https://picsum.photos/seed/${userId}/100/100`;
     const role = existingRole || 'User';
-    return { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role };
+    // Simulate fetching other details
+    const prefs = { promotions: Math.random() > 0.5, updates: true };
+    return { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role, preferredPaymentMethod: 'Card', notificationPreferences: prefs };
 };
 
 const fetchBillingInfo = async (userId: string, role: string): Promise<Omit<BillingInfo, 'accountBalance'>> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
-    return { paymentMethods: [{ type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
+     // Add IDs to payment methods
+    return { paymentMethods: [{ id:'pm_1', type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { id:'pm_2', type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
 };
 
 
@@ -93,12 +102,36 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
 
 const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     await new Promise(resolve => setTimeout(resolve, 600));
-    // Simulate based on userId or signup info (if collected)
     const plateBasedOnId = `ABC ${userId.substring(userId.length - 4)}`.toUpperCase();
     return [
         { id: 'veh1', make: 'Toyota', model: 'Corolla', plateNumber: plateBasedOnId, isPrimary: true },
-        // { id: 'veh2', make: 'Nissan', model: 'Hardbody', plateNumber: 'XYZ 7890', isPrimary: false }, // Example second car
+        { id: 'veh2', make: 'Nissan', model: 'Hardbody', plateNumber: 'XYZ 7890', isPrimary: false }, // Example second car
     ];
+};
+
+// Mock Update Functions
+const updateUserDetails = async (userId: string, updates: Partial<UserDetails>): Promise<UserDetails> => {
+     await new Promise(resolve => setTimeout(resolve, 800));
+     console.log("Simulating user details update:", userId, updates);
+     // In a real app, update the backend data source
+     // This mock doesn't persist changes across sessions
+     return {
+         name: updates.name || 'User',
+         email: updates.email || 'user@example.com',
+         phone: updates.phone || '+260 999 999 999',
+         avatarUrl: updates.avatarUrl,
+         memberSince: '2024-01-01', // Keep original
+         role: 'User', // Keep original role
+         preferredPaymentMethod: updates.preferredPaymentMethod,
+         notificationPreferences: updates.notificationPreferences,
+     };
+};
+
+const updateUserVehicles = async (userId: string, vehicles: Vehicle[]): Promise<Vehicle[]> => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log("Simulating updating user vehicles:", userId, vehicles);
+    // Replace the mock data (in a real app, update backend)
+    return vehicles;
 };
 
 // Helper to get Lucide icon component based on name string
@@ -109,7 +142,7 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
         case 'Users': return Users;
         case 'Trophy': return Trophy;
         case 'Star': return Star;
-        case 'Megaphone': return AlertTriangle; // Changed for reporting issue badge
+        case 'Megaphone': return Flag; // Changed to Flag
         case 'CheckCircle': return CheckCircle;
         case 'Gift': return Gift;
         default: return SparklesIcon; // Default icon
@@ -117,28 +150,37 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
 };
 
 export default function ProfilePage() {
-    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile, logout } = useContext(AppStateContext)!;
+    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout } = useContext(AppStateContext)!;
     const router = useRouter();
     const { toast } = useToast();
 
     const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
     const [billingInfo, setBillingInfo] = useState<Omit<BillingInfo, 'accountBalance'> | null>(null);
     const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
-    const [vehicles, setVehicles] = useState<Vehicle[]>([]); // State for user vehicles
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [gamification, setGamification] = useState<UserGamification | null>(null);
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
+
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
-    const [isLoadingVehicles, setIsLoadingVehicles] = useState(true); // Loading state for vehicles
+    const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
+
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
     const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
+
     const [editMode, setEditMode] = useState(false);
     const [isSavingProfile, setIsSavingProfile] = useState(false);
-    const [newName, setNewName] = useState('');
-    const [newAvatarUrl, setNewAvatarUrl] = useState('');
+    // Editable fields states
+    const [editName, setEditName] = useState('');
+    const [editAvatarUrl, setEditAvatarUrl] = useState('');
+    const [editPhone, setEditPhone] = useState('');
+    const [editEmail, setEditEmail] = useState(''); // Added email edit state
+    const [editVehicles, setEditVehicles] = useState<Vehicle[]>([]);
+    const [editNotificationPrefs, setEditNotificationPrefs] = useState({ promotions: false, updates: false });
+
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
     const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false);
 
@@ -176,8 +218,15 @@ export default function ProfilePage() {
                 setGamification(gamificationData);
                 setWallet(walletData);
                 setWalletTransactions(transactionsData);
-                setNewName(details.name || userName || '');
-                setNewAvatarUrl(details.avatarUrl || userAvatarUrl || '');
+
+                // Initialize edit states
+                setEditName(details.name || userName || '');
+                setEditAvatarUrl(details.avatarUrl || userAvatarUrl || '');
+                setEditPhone(details.phone || '');
+                setEditEmail(details.email || '');
+                setEditVehicles(vehiclesData); // Initialize editable vehicles
+                setEditNotificationPrefs(details.notificationPreferences || { promotions: false, updates: false });
+
             } catch (error) {
                 console.error("Failed to load user profile data:", error);
                 setErrorLoading("Could not fetch profile data.");
@@ -247,10 +296,12 @@ export default function ProfilePage() {
     const handleDownloadBilling = () => {
         console.log("Download billing statement (payment methods, subscriptions):", billingInfo);
         toast({ title: "Download Started (Simulation)", description: "Downloading billing summary." });
+        // TODO: Implement CSV/PDF generation
     };
      const handleDownloadHistory = () => {
          console.log("Download history (parking & wallet):", { parking: completedHistory, wallet: walletTransactions });
          toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
+         // TODO: Implement CSV/PDF generation
      };
 
 
@@ -269,17 +320,42 @@ export default function ProfilePage() {
         } finally { setIsUpdatingCarpool(false); }
     };
 
+    // --- Edit Mode Handlers ---
     const handleSaveProfile = async () => {
-        if (!newName || !userId) {
+        if (!editName || !userId) {
             toast({ title: "Missing Information", description: "Name cannot be empty.", variant: "destructive" });
             return;
         }
+        // Add more validation for email, phone, plates etc.
+        const primaryVehicles = editVehicles.filter(v => v.isPrimary).length;
+         if (primaryVehicles !== 1) {
+             toast({ title: "Vehicle Error", description: "Please select exactly one primary vehicle.", variant: "destructive" });
+             return;
+         }
+
         setIsSavingProfile(true);
         try {
-            await new Promise(resolve => setTimeout(resolve, 800));
-            console.log("Simulating profile update for:", userId, { name: newName, avatarUrl: newAvatarUrl });
-            updateUserProfile(newName, newAvatarUrl);
-            setUserDetails(prev => prev ? { ...prev, name: newName, avatarUrl: newAvatarUrl } : null);
+             // Simulate updating different parts
+            const updatedDetailsPromise = updateUserDetails(userId, {
+                name: editName,
+                avatarUrl: editAvatarUrl,
+                phone: editPhone,
+                email: editEmail,
+                notificationPreferences: editNotificationPrefs,
+            });
+             const updatedVehiclesPromise = updateUserVehicles(userId, editVehicles);
+
+             const [updatedDetails, updatedVehiclesResult] = await Promise.all([
+                 updatedDetailsPromise,
+                 updatedVehiclesPromise
+             ]);
+
+            // Update global state
+            updateGlobalProfile(editName, editAvatarUrl);
+            // Update local state
+            setUserDetails(updatedDetails);
+            setVehicles(updatedVehiclesResult);
+
             toast({ title: "Profile Updated" });
             setEditMode(false);
         } catch (error) {
@@ -291,12 +367,44 @@ export default function ProfilePage() {
     };
 
      const handleCancelEdit = () => {
-        const originalName = userDetails?.name || userName || '';
-        const originalAvatar = userDetails?.avatarUrl || userAvatarUrl || '';
-        setNewName(originalName);
-        setNewAvatarUrl(originalAvatar);
+        // Reset edit states to original values
+        setEditName(userDetails?.name || userName || '');
+        setEditAvatarUrl(userDetails?.avatarUrl || userAvatarUrl || '');
+        setEditPhone(userDetails?.phone || '');
+        setEditEmail(userDetails?.email || '');
+        setEditVehicles(vehicles); // Reset to original vehicles fetched
+        setEditNotificationPrefs(userDetails?.notificationPreferences || { promotions: false, updates: false });
         setEditMode(false);
      };
+
+    const handleEditVehicleChange = (index: number, field: keyof Vehicle, value: string | boolean) => {
+        setEditVehicles(prev =>
+            prev.map((vehicle, i) =>
+                i === index ? { ...vehicle, [field]: value } : vehicle
+            )
+        );
+    };
+     const handleSetPrimaryVehicle = (id: string) => {
+         setEditVehicles(prev => prev.map(v => ({ ...v, isPrimary: v.id === id })));
+     };
+     const handleAddVehicle = () => {
+        setEditVehicles(prev => [...prev, { id: `new_${Date.now()}`, make: '', model: '', plateNumber: '', isPrimary: prev.length === 0 }]);
+     };
+     const handleRemoveVehicle = (id: string) => {
+          // Prevent removing the last vehicle or the primary if it's the only one
+          if (editVehicles.length <= 1) {
+               toast({ title: "Cannot Remove", description: "You must have at least one vehicle.", variant: "destructive" });
+               return;
+          }
+         const vehicleToRemove = editVehicles.find(v => v.id === id);
+         if (vehicleToRemove?.isPrimary) {
+              toast({ title: "Cannot Remove", description: "Cannot remove the primary vehicle. Set another as primary first.", variant: "destructive" });
+              return;
+         }
+        setEditVehicles(prev => prev.filter(v => v.id !== id));
+     };
+    // --- End Edit Mode Handlers ---
+
 
     const handleLogout = () => {
         logout();
@@ -317,8 +425,8 @@ export default function ProfilePage() {
 
     const activeReservations = parkingHistory?.filter(h => h.status === 'Active') || [];
     const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
-    const displayName = editMode ? newName : (userDetails?.name || userName || 'User');
-    const displayAvatar = editMode ? newAvatarUrl : (userDetails?.avatarUrl || userAvatarUrl || '');
+    const displayName = userDetails?.name || userName || 'User';
+    const displayAvatar = userDetails?.avatarUrl || userAvatarUrl || '';
     const userInitial = displayName ? displayName.charAt(0).toUpperCase() : '?';
     const currentTier = billingInfo?.subscriptionTier || 'Basic';
     const isPremium = currentTier === 'Premium';
@@ -380,21 +488,23 @@ export default function ProfilePage() {
                     <CardContent>
                         {/* User Details Section */}
                         <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
-                            <Avatar className="h-24 w-24 md:h-32 md:w-32 flex-shrink-0 border">
-                                <AvatarImage src={displayAvatar} alt={displayName} />
-                                <AvatarFallback className="text-4xl">{userInitial}</AvatarFallback>
-                            </Avatar>
+                            {/* Avatar */}
+                            <div className="relative flex-shrink-0">
+                                 <Avatar className="h-24 w-24 md:h-32 md:w-32 border">
+                                    <AvatarImage src={editMode ? editAvatarUrl : displayAvatar} alt={editMode ? editName : displayName} />
+                                    <AvatarFallback className="text-4xl">{userInitial}</AvatarFallback>
+                                </Avatar>
+                                 {editMode && (
+                                      <Input id="profile-avatar" type="text" value={editAvatarUrl} onChange={(e) => setEditAvatarUrl(e.target.value)} placeholder="Avatar URL..." disabled={isSavingProfile} className="mt-2 text-xs" />
+                                 )}
+                            </div>
+                            {/* Info */}
                             <div className="space-y-2 flex-grow">
                                 {editMode ? (
                                     <>
-                                        <div className="space-y-1">
-                                            <Label htmlFor="profile-name">Name</Label>
-                                            <Input id="profile-name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={isSavingProfile} />
-                                        </div>
-                                        <div className="space-y-1">
-                                             <Label htmlFor="profile-avatar">Avatar URL</Label>
-                                             <Input id="profile-avatar" value={newAvatarUrl} onChange={(e) => setNewAvatarUrl(e.target.value)} placeholder="https://..." disabled={isSavingProfile} />
-                                        </div>
+                                        <div className="space-y-1"> <Label htmlFor="profile-name">Name*</Label><Input id="profile-name" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={isSavingProfile} required /></div>
+                                        <div className="space-y-1"><Label htmlFor="profile-email">Email</Label><Input id="profile-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="you@example.com" disabled={isSavingProfile} /></div>
+                                        <div className="space-y-1"><Label htmlFor="profile-phone">Phone</Label><Input id="profile-phone" type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+260 ..." disabled={isSavingProfile} /></div>
                                     </>
                                 ) : (
                                     <>
@@ -412,6 +522,40 @@ export default function ProfilePage() {
                                 )}
                             </div>
                         </div>
+
+                         {/* Edit Mode - Notification Preferences */}
+                          {editMode && (
+                              <div className="mb-6 border-t pt-6">
+                                 <h3 className="text-lg font-semibold mb-3">Notification Preferences</h3>
+                                 <div className="space-y-3">
+                                     <div className="flex items-center justify-between">
+                                          <Label htmlFor="promo-notifications" className="flex flex-col space-y-1">
+                                              <span>Promotions & Offers</span>
+                                              <span className="font-normal leading-snug text-muted-foreground text-xs">Receive updates about discounts and special deals.</span>
+                                          </Label>
+                                          <Switch
+                                            id="promo-notifications"
+                                            checked={editNotificationPrefs.promotions}
+                                            onCheckedChange={(checked) => setEditNotificationPrefs(prev => ({ ...prev, promotions: checked }))}
+                                            disabled={isSavingProfile}
+                                          />
+                                     </div>
+                                     <div className="flex items-center justify-between">
+                                          <Label htmlFor="update-notifications" className="flex flex-col space-y-1">
+                                              <span>App Updates & News</span>
+                                              <span className="font-normal leading-snug text-muted-foreground text-xs">Get notified about new features and important updates.</span>
+                                          </Label>
+                                          <Switch
+                                            id="update-notifications"
+                                            checked={editNotificationPrefs.updates}
+                                            onCheckedChange={(checked) => setEditNotificationPrefs(prev => ({ ...prev, updates: checked }))}
+                                            disabled={isSavingProfile}
+                                          />
+                                     </div>
+                                 </div>
+                              </div>
+                          )}
+
 
                          <Separator className="my-6" />
 
@@ -532,23 +676,29 @@ export default function ProfilePage() {
 
                              <div>
                                  <p className="text-sm font-medium mb-2">Payment Methods</p>
-                                 <div className="space-y-2 mb-3">
-                                     {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
-                                         billingInfo.paymentMethods.map((method, index) => (
-                                             <div key={index} className="flex items-center justify-between p-3 border rounded-md text-sm">
-                                                 <div className="flex items-center gap-2">
-                                                     {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-                                                     <span>{method.details}</span>
-                                                 </div>
-                                                 {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
-                                                 {/* TODO: Add button to remove payment method */}
-                                             </div>
-                                         ))
-                                     ) : (
-                                         <p className="text-sm text-muted-foreground">No payment methods saved.</p>
-                                     )}
-                                 </div>
-                                 <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
+                                  {/* Display only if NOT in edit mode */}
+                                  {!editMode && (
+                                      <>
+                                         <div className="space-y-2 mb-3">
+                                             {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
+                                                 billingInfo.paymentMethods.map((method) => (
+                                                     <div key={method.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
+                                                         <div className="flex items-center gap-2">
+                                                             {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                                                             <span>{method.details}</span>
+                                                         </div>
+                                                         {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                     </div>
+                                                 ))
+                                             ) : (
+                                                 <p className="text-sm text-muted-foreground">No payment methods saved.</p>
+                                             )}
+                                         </div>
+                                         <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
+                                     </>
+                                  )}
+                                   {/* TODO: Add editable payment methods section for edit mode */}
+                                    {editMode && <p className="text-sm text-muted-foreground">[Editable payment methods coming soon]</p>}
                              </div>
                          </section>
 
@@ -558,37 +708,59 @@ export default function ProfilePage() {
                         <section className="mb-6">
                            <div className="flex justify-between items-center mb-3">
                                <h3 className="text-lg font-semibold flex items-center gap-2"><CarTaxiFront className="h-5 w-5" /> My Vehicles</h3>
-                               {/* Add Vehicle Button (Placeholder) */}
-                               <Button variant="outline" size="sm">
-                                   <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
-                               </Button>
+                               {editMode && (
+                                   <Button variant="outline" size="sm" onClick={handleAddVehicle} disabled={isSavingProfile}>
+                                       <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
+                                   </Button>
+                               )}
                            </div>
-                           {isLoadingVehicles ? (
+                           {isLoadingVehicles && !editMode ? (
                                <Skeleton className="h-20 w-full" />
-                           ) : vehicles.length > 0 ? (
-                               <div className="space-y-2">
-                                   {vehicles.map(vehicle => (
-                                       <div key={vehicle.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
-                                            <div className="flex items-center gap-3">
-                                                <Car className="h-5 w-5 text-muted-foreground" />
-                                                <div>
-                                                   <p className="font-medium">{vehicle.make} {vehicle.model}</p>
-                                                   <p className="text-xs text-muted-foreground uppercase">{vehicle.plateNumber}</p>
+                           ) : (editMode ? editVehicles : vehicles).length > 0 ? (
+                               <div className="space-y-3">
+                                   {(editMode ? editVehicles : vehicles).map((vehicle, index) => (
+                                       <div key={vehicle.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 border rounded-md gap-3">
+                                            <div className="flex items-start gap-3 flex-grow">
+                                                <Car className="h-5 w-5 text-muted-foreground mt-1" />
+                                                <div className="flex-grow">
+                                                     {editMode ? (
+                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                             <div className="space-y-1"> <Label htmlFor={`veh-make-${index}`} className="text-xs">Make</Label><Input id={`veh-make-${index}`} value={vehicle.make} onChange={(e) => handleEditVehicleChange(index, 'make', e.target.value)} placeholder="e.g., Toyota" disabled={isSavingProfile} className="h-8"/></div>
+                                                             <div className="space-y-1"> <Label htmlFor={`veh-model-${index}`} className="text-xs">Model</Label><Input id={`veh-model-${index}`} value={vehicle.model} onChange={(e) => handleEditVehicleChange(index, 'model', e.target.value)} placeholder="e.g., Corolla" disabled={isSavingProfile} className="h-8"/></div>
+                                                             <div className="space-y-1 col-span-1 sm:col-span-2"><Label htmlFor={`veh-plate-${index}`} className="text-xs">License Plate*</Label><Input id={`veh-plate-${index}`} value={vehicle.plateNumber} onChange={(e) => handleEditVehicleChange(index, 'plateNumber', e.target.value.toUpperCase())} placeholder="e.g., ABC 1234" required disabled={isSavingProfile} className="h-8 uppercase"/></div>
+                                                         </div>
+                                                     ) : (
+                                                         <div>
+                                                            <p className="font-medium">{vehicle.make} {vehicle.model}</p>
+                                                            <p className="text-sm text-muted-foreground uppercase">{vehicle.plateNumber}</p>
+                                                         </div>
+                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                {vehicle.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
-                                                {/* Placeholder for Edit/Delete actions */}
-                                                <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-4 w-4" /></Button>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"><X className="h-4 w-4" /></Button>
+                                            <div className="flex items-center gap-2 sm:ml-4 flex-shrink-0">
+                                                {editMode ? (
+                                                     <Button variant={vehicle.isPrimary ? "default" : "outline"} size="sm" onClick={() => handleSetPrimaryVehicle(vehicle.id)} disabled={isSavingProfile || vehicle.isPrimary} className="h-8">
+                                                         {vehicle.isPrimary ? <CheckCircle className="h-4 w-4 sm:mr-1"/> : null}
+                                                          <span className="hidden sm:inline">{vehicle.isPrimary ? 'Primary' : 'Set Primary'}</span>
+                                                     </Button>
+                                                ) : (
+                                                     vehicle.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>
+                                                )}
+                                                 {editMode && (
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile}>
+                                                        <X className="h-4 w-4" />
+                                                        <span className="sr-only">Remove</span>
+                                                    </Button>
+                                                 )}
                                             </div>
                                        </div>
                                    ))}
                                </div>
                            ) : (
-                               <p className="text-sm text-muted-foreground text-center py-4">No vehicles added yet.</p>
+                               <p className="text-sm text-muted-foreground text-center py-4">{editMode ? 'Click "Add Vehicle" to get started.' : 'No vehicles added yet.'}</p>
                            )}
                        </section>
+
 
                         <Separator className="my-6" />
 
@@ -816,3 +988,4 @@ const ProfileSkeleton = () => (
     </div>
 );
 
+```

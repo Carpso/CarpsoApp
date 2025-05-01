@@ -63,7 +63,7 @@ export default function BottomNavBar({
               )}
               aria-current={isActive ? 'page' : undefined}
             >
-              <item.icon className={cn('h-5 w-5 mb-1', isActive ? 'text-primary' : '')} />
+              <item.icon className={cn('h-5 w-5 mb-0.5', isActive ? 'text-primary' : '')} /> {/* Adjusted icon size consistency */}
               <span className="text-xs">{item.label}</span>
             </Link>
           );
@@ -81,7 +81,7 @@ export default function BottomNavBar({
                 aria-current={pathname === profileItem.href ? 'page' : undefined}
                 aria-label="View Profile"
             >
-                 <Avatar className="h-6 w-6 mb-0.5"> {/* Slightly larger avatar */}
+                 <Avatar className="h-6 w-6 mb-0.5">
                       <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User'} className="object-cover" />
                       <AvatarFallback className="text-[10px] bg-muted border border-muted-foreground/20">{userInitial}</AvatarFallback>
                   </Avatar>
