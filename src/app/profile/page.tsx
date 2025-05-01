@@ -143,7 +143,7 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
         case 'Users': return Users;
         case 'Trophy': return Trophy;
         case 'Star': return Star;
-        case 'Megaphone': return Flag; // Changed to Flag
+        case 'Flag': return Flag; // Changed to Flag
         case 'CheckCircle': return CheckCircle;
         case 'Gift': return Gift;
         default: return SparklesIcon; // Default icon
@@ -452,7 +452,7 @@ export default function ProfilePage() {
         if (bookmark) {
             setCurrentBookmark(bookmark);
         } else {
-            setCurrentBookmark({ userId: userId, label: '' }); // Default for new bookmark
+            setCurrentBookmark({ userId: userId || '', label: '' }); // Default for new bookmark, ensure userId is string
         }
         setIsBookmarkModalOpen(true);
     };
@@ -503,6 +503,7 @@ export default function ProfilePage() {
             toast({ title: "Save Failed", description: error.message || "Could not save the bookmark.", variant: "destructive" });
         } finally {
             setIsSavingBookmark(false);
+            // Ensure currentBookmark is reset after modal closes (handled by isOpen effect/onOpenChange)
         }
     };
 
@@ -521,6 +522,16 @@ export default function ProfilePage() {
          } finally {
               setIsDeletingBookmark(false);
          }
+    };
+
+    const handleBookmarkModalClose = (open: boolean) => {
+        if (!open) {
+             setIsBookmarkModalOpen(false);
+             // Delay reset to allow modal animation
+             setTimeout(() => setCurrentBookmark(null), 300);
+        } else {
+             setIsBookmarkModalOpen(true);
+        }
     };
     // --- End Bookmark Handlers ---
 
@@ -1079,7 +1090,7 @@ export default function ProfilePage() {
             />
 
              {/* Add/Edit Bookmark Modal */}
-             <Dialog open={isBookmarkModalOpen} onOpenChange={setIsBookmarkModalOpen}>
+             <Dialog open={isBookmarkModalOpen} onOpenChange={handleBookmarkModalClose}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeaderSub>
                         <DialogTitleSub>{currentBookmark?.id ? 'Edit' : 'Add'} Saved Location</DialogTitleSub>
@@ -1192,4 +1203,3 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
-```
