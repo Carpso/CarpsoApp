@@ -1,7 +1,7 @@
 // src/components/parking/LiveLocationView.tsx
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,12 +11,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, Image as ImageIcon } from 'lucide-react'; // Added Camera, ImageIcon
+import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, Image as ImageIcon, RefreshCcw, Smartphone } from 'lucide-react'; // Added RefreshCcw, Smartphone
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image'; // Import next/image
-import { Badge } from "@/components/ui/badge"; // Import Badge
-import { cn } from '@/lib/utils'; // Import cn utility
+import Image from 'next/image';
+import { Badge } from "@/components/ui/badge";
+import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select
 
 // Define possible view sources
 type ViewSourceType = 'userCamera' | 'ipCamera' | 'stillImage' | 'placeholder' | 'loading' | 'error';
@@ -44,149 +45,198 @@ export default function LiveLocationView({
   const [currentSource, setCurrentSource] = useState<ViewSourceType>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [userStreamActive, setUserStreamActive] = useState(false); // Track if the user's camera stream is active
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined); // Track selected user camera device
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null); // Store the active stream for cleanup
   const { toast } = useToast();
 
   // --- Simulation Data ---
-  // In a real app, these URLs would come from the backend based on the spotId/location
-  const simulatedIpCameraUrl = availableSources.ipCameraUrl || (spotId && spotId.includes('A') ? `https://picsum.photos/seed/${spotId}-ipcam/640/480?blur=1` : undefined); // Example: Lot A has IP cams
-  const simulatedStillImageUrl = availableSources.stillImageUrl || `https://picsum.photos/seed/${spotId}-still/640/480`; // All spots have a still image URL
+  const simulatedIpCameraUrl = availableSources.ipCameraUrl || (spotId && spotId.includes('A') ? `https://picsum.photos/seed/${spotId}-ipcam/640/480?blur=1` : undefined);
+  const simulatedStillImageUrl = availableSources.stillImageUrl || `https://picsum.photos/seed/${spotId}-still/640/480`;
 
-  // --- Source Loading Logic ---
+  // --- Camera Enumeration ---
   useEffect(() => {
-    let isMounted = true; // Flag to prevent state updates on unmounted component
-
-    const cleanupUserCamera = () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-        setUserStreamActive(false);
-        console.log("User Camera Stream Cleaned Up");
+    const getVideoDevices = async () => {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        console.warn("enumerateDevices() not supported.");
+        return;
+      }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(device => device.kind === 'videoinput');
+        setVideoDevices(videoInputs);
+        // Attempt to pre-select the back camera if available
+        const backCamera = videoInputs.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
+        setSelectedDeviceId(backCamera?.deviceId || videoInputs[0]?.deviceId); // Default to first if no back camera found
+        console.log("Available video devices:", videoInputs);
+      } catch (err) {
+        console.error("Error enumerating devices:", err);
       }
     };
 
-    const tryUserCamera = async () => {
-        if (!isMounted) return;
-        console.log("Attempting User Camera");
-        setCurrentSource('loading');
-        setErrorMessage(null);
-        setUserStreamActive(false);
-        try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('User camera access is not supported by this browser.');
-            }
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (!isMounted) {
-                 stream.getTracks().forEach(track => track.stop());
-                 return;
-            }
-            // Check if videoRef.current exists *before* setting srcObject
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                // Wait for video metadata to load to ensure it's ready
-                videoRef.current.onloadedmetadata = () => {
-                    if (isMounted) {
-                        setUserStreamActive(true);
-                        setCurrentSource('userCamera');
-                        console.log("User Camera Active");
-                    }
-                }
-            } else {
-                 // If ref is still null here, throw the error
-                 console.error("Video element ref is null when trying to attach stream.");
-                 throw new Error("Video element not ready.");
-            }
-        } catch (error: any) {
-            console.error('Error accessing user camera:', error);
-            if (!isMounted) return;
-            // Handle specific errors
-             let userFriendlyError = `Could not access your camera. ${error.message}`;
-             if (error.name === "NotAllowedError") {
-                 userFriendlyError = "Camera permission denied. Please enable permissions in browser settings.";
-             } else if (error.name === "NotFoundError") {
-                 userFriendlyError = "No camera found on this device.";
-             } else if (error.name === "NotReadableError") {
-                userFriendlyError = "Camera is already in use or hardware error occurred.";
-             }
+    if (isOpen) {
+      getVideoDevices();
+    } else {
+      setVideoDevices([]); // Clear devices when closed
+    }
+  }, [isOpen]);
 
-            setErrorMessage(`User Camera Error: ${userFriendlyError}. Trying next source...`);
-            toast({
-                variant: 'default', // Use default variant, as it's an expected fallback path
-                title: 'User Camera Unavailable',
-                description: `Could not access your camera. Trying other views. ${error.name === 'NotAllowedError' ? 'Check permissions.' : ''}`,
-                duration: 5000,
-            });
-            // Fallback path
-            tryStillImage();
-        }
-    };
 
-     const tryStillImage = async () => {
-         if (!isMounted) return;
-         console.log("Attempting Still Image");
-         if (simulatedStillImageUrl) {
-             setCurrentSource('loading');
-             setErrorMessage(null);
-             // Simulate loading delay for the image
-             await new Promise(resolve => setTimeout(resolve, 300));
-             if (isMounted) {
-                 // We assume the image loads successfully for this simulation
-                 setCurrentSource('stillImage');
-                 console.log("Still Image Active");
-             }
-         } else {
-              if (isMounted) {
-                  setErrorMessage("No still image available. Trying next source...");
-                  setCurrentSource('placeholder'); // No other sources left
-              }
-         }
-     }
+  // --- Cleanup Function ---
+   const cleanupStream = useCallback((streamToClean: MediaStream | null) => {
+      if (streamToClean) {
+         streamToClean.getTracks().forEach(track => track.stop());
+         console.log("Stream tracks stopped.");
+      }
+      if (videoRef.current) {
+         videoRef.current.srcObject = null;
+      }
+      setActiveStream(null);
+      setUserStreamActive(false);
+   }, []);
 
-    const tryIpCamera = async () => {
-        if (!isMounted) return;
-        console.log("Attempting IP Camera");
-        if (simulatedIpCameraUrl) {
-            setCurrentSource('loading');
-            setErrorMessage(null);
-            // Simulate loading delay/check for the IP camera feed
-            await new Promise(resolve => setTimeout(resolve, 500));
-            if (isMounted) {
-                // We assume the "IP camera" loads successfully for this simulation
-                setCurrentSource('ipCamera');
-                console.log("IP Camera Active (Simulated)");
-            }
-        } else {
-             if (isMounted) {
-                 setErrorMessage("IP Camera not available for this spot. Trying next source...");
-                 tryUserCamera(); // Fallback path
-             }
-        }
-    };
 
-    if (isOpen && spotId) {
+  // --- Source Loading/Switching Logic ---
+  const loadSource = useCallback(async (sourceType: ViewSourceType, deviceId?: string) => {
+      console.log(`Attempting to load source: ${sourceType}${deviceId ? ` (Device: ${deviceId})` : ''}`);
       setCurrentSource('loading');
       setErrorMessage(null);
-      setUserStreamActive(false);
+      // Stop any existing user camera stream before switching
+      cleanupStream(activeStream);
 
-      // --- Try sources in order: IP Camera -> User Camera -> Still Image -> Placeholder ---
-      tryIpCamera();
+      switch (sourceType) {
+          case 'userCamera':
+              try {
+                  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                      throw new Error('User camera access is not supported by this browser.');
+                  }
+                  const constraints: MediaStreamConstraints = {
+                     video: deviceId
+                         ? { deviceId: { exact: deviceId } }
+                         : { facingMode: "environment" } // Default to back camera if no specific device selected
+                 };
+                  console.log("Requesting user media with constraints:", constraints);
+                  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                  setActiveStream(stream); // Store the new stream
 
+                  if (videoRef.current) {
+                      videoRef.current.srcObject = stream;
+                      await videoRef.current.play(); // Ensure video plays
+                      setUserStreamActive(true);
+                      setCurrentSource('userCamera');
+                      setSelectedDeviceId(deviceId || stream.getVideoTracks()[0]?.getSettings().deviceId); // Update selected device ID based on actual stream
+                      console.log("User Camera Active");
+                  } else {
+                      throw new Error("Video element not ready.");
+                  }
+              } catch (error: any) {
+                  console.error('Error accessing user camera:', error);
+                  let userFriendlyError = `Could not access camera. ${error.message}`;
+                  if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+                      userFriendlyError = "Camera permission denied. Please enable permissions in browser settings.";
+                  } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+                      userFriendlyError = "Selected camera not found.";
+                  } else if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+                      userFriendlyError = "Camera is already in use or hardware error occurred.";
+                  } else if (error.name === "OverconstrainedError" || error.name === "ConstraintNotSatisfiedError") {
+                      userFriendlyError = `Could not satisfy camera constraints (e.g., resolution, facing mode). Trying default.`;
+                      // Retry with default constraints if specific device failed
+                      if (deviceId) {
+                           console.log("Retrying with default camera constraints...");
+                           setTimeout(() => loadSource('userCamera'), 100); // Retry without specific deviceId
+                           return; // Stop current execution
+                      }
+                  }
+
+                  setErrorMessage(`User Camera Error: ${userFriendlyError}`);
+                  setCurrentSource('error'); // Set to error state
+                  setActiveStream(null); // Clear stream state on error
+                  setUserStreamActive(false);
+                  toast({
+                      variant: 'destructive',
+                      title: 'User Camera Failed',
+                      description: userFriendlyError,
+                      duration: 5000,
+                  });
+                  // Attempt fallback ONLY if this was the initial load attempt
+                  // if (currentSource === 'loading') { tryStillImage(); } // Avoid fallback loop on manual switch
+              }
+              break;
+
+          case 'ipCamera':
+              if (simulatedIpCameraUrl) {
+                  // Simulate loading delay
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                  setCurrentSource('ipCamera');
+                  console.log("IP Camera Active (Simulated)");
+              } else {
+                  setErrorMessage("IP Camera not available for this spot.");
+                  setCurrentSource('error');
+              }
+              break;
+
+          case 'stillImage':
+              if (simulatedStillImageUrl) {
+                  // Simulate loading delay
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                  setCurrentSource('stillImage');
+                  console.log("Still Image Active");
+              } else {
+                  setErrorMessage("No still image available.");
+                  setCurrentSource('error');
+              }
+              break;
+
+          default:
+              setCurrentSource('placeholder');
+              setErrorMessage("Selected view source is not available.");
+              break;
+      }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStream, cleanupStream, simulatedIpCameraUrl, simulatedStillImageUrl, toast]); // Removed currentSource from dependencies to prevent loops
+
+
+  // Effect for initial loading when dialog opens or spot changes
+  useEffect(() => {
+    if (isOpen && spotId) {
+      // Try sources in order on initial load: IP Camera -> User Camera (Back) -> Still Image
+      if (simulatedIpCameraUrl) {
+        loadSource('ipCamera');
+      } else {
+        loadSource('userCamera'); // Defaults to back camera
+      }
     } else if (!isOpen) {
-      cleanupUserCamera();
-      setCurrentSource('loading'); // Reset state when closed
+      // Cleanup when dialog closes
+      cleanupStream(activeStream);
+      setCurrentSource('loading');
       setErrorMessage(null);
+      setActiveStream(null);
+      setUserStreamActive(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, spotId]); // Only run on open/close or spot change
 
-     return () => {
-         isMounted = false;
-         cleanupUserCamera(); // Ensure cleanup on unmount
-     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, spotId, simulatedIpCameraUrl, simulatedStillImageUrl]); // Rerun effect when dialog opens/closes or spotId/sources change
+  // Cleanup stream on component unmount
+  useEffect(() => {
+    return () => {
+      cleanupStream(activeStream);
+    };
+  }, [activeStream, cleanupStream]);
+
+  const handleSourceSwitch = (source: ViewSourceType) => {
+      if (source === 'userCamera') {
+         loadSource('userCamera', selectedDeviceId); // Use currently selected device ID
+      } else {
+         loadSource(source);
+      }
+  };
+
+  const handleCameraDeviceChange = (deviceId: string) => {
+      setSelectedDeviceId(deviceId);
+      loadSource('userCamera', deviceId); // Immediately switch to the selected device
+  };
 
   const renderViewContent = () => {
-      // Always render the video element to ensure ref is ready
-      // Conditionally show/hide elements using CSS based on currentSource
       return (
           <>
               {/* Loading Indicator */}
@@ -201,7 +251,7 @@ export default function LiveLocationView({
                   className={cn("w-full h-full object-cover", currentSource === 'userCamera' && userStreamActive ? 'block' : 'hidden')}
                   autoPlay
                   muted
-                  playsInline
+                  playsInline // Important for mobile browsers
               />
 
               {/* IP Camera View */}
@@ -246,7 +296,13 @@ export default function LiveLocationView({
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
                         <Video className="h-10 w-10 text-muted-foreground mb-2" />
                         <p className="font-semibold text-muted-foreground">Live View Unavailable</p>
-                        {errorMessage && <p className="text-xs text-destructive mt-1">{errorMessage.replace("Trying next source...", "")}</p>}
+                        {errorMessage && <p className="text-xs text-destructive mt-1">{errorMessage}</p>}
+                         {/* Provide option to retry user camera if it failed */}
+                         {currentSource === 'error' && errorMessage?.includes('User Camera') && (
+                             <Button variant="secondary" size="sm" className="mt-3" onClick={() => loadSource('userCamera', selectedDeviceId)}>
+                                 <RefreshCcw className="mr-2 h-4 w-4" /> Retry My Camera
+                             </Button>
+                         )}
                     </div>
                </div>
           </>
@@ -255,7 +311,7 @@ export default function LiveLocationView({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[640px]"> {/* Wider dialog for video/image */}
+      <DialogContent className="sm:max-w-[640px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
              <MapPin className="h-5 w-5 text-primary" />
@@ -266,39 +322,88 @@ export default function LiveLocationView({
           </DialogDescription>
         </DialogHeader>
 
-         {/* Container for the view content */}
+         {/* View Container */}
          <div className="my-4 aspect-video w-full overflow-hidden rounded-md border bg-muted flex items-center justify-center relative">
            {renderViewContent()}
         </div>
 
-        {/* Alert if user explicitly denied camera permission */}
+        {/* Error Alerts */}
         {errorMessage?.includes("Camera permission denied") && (
            <Alert variant="destructive" className="mt-4">
               <CameraOff className="h-4 w-4"/>
               <AlertTitle>User Camera Access Denied</AlertTitle>
               <AlertDescription>
-                You denied access to your camera. To use the live view from your device, please enable camera permissions in your browser settings.
+                Please enable camera permissions in your browser settings to use this feature.
               </AlertDescription>
             </Alert>
         )}
-         {/* Info about the current view source */}
-         <div className="text-xs text-muted-foreground text-center mt-[-10px] mb-2">
-            {currentSource === 'userCamera' && <span>Showing live view from your device camera.</span>}
-            {currentSource === 'ipCamera' && <span>Showing live view from parking lot camera (Simulated).</span>}
-            {currentSource === 'stillImage' && <span>Showing recent still image of the spot.</span>}
-            {currentSource === 'placeholder' && <span>Showing placeholder image.</span>}
-            {currentSource === 'loading' && <span>Loading...</span>}
-         </div>
+         {currentSource === 'error' && !errorMessage?.includes("Camera permission denied") && (
+             <Alert variant="warning" className="mt-4">
+                 <AlertTriangle className="h-4 w-4" />
+                 <AlertTitle>View Unavailable</AlertTitle>
+                 <AlertDescription>{errorMessage || "The selected view could not be loaded."}</AlertDescription>
+             </Alert>
+         )}
 
-        <DialogFooter>
+        {/* View Source Selection */}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {simulatedIpCameraUrl && (
+                <Button
+                    variant={currentSource === 'ipCamera' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => handleSourceSwitch('ipCamera')}
+                    disabled={currentSource === 'loading'}
+                >
+                    <Camera className="mr-2 h-4 w-4" /> IP Cam
+                </Button>
+            )}
+            {/* Show camera selector if devices available, otherwise a single button */}
+            {videoDevices.length > 1 ? (
+                <Select
+                    value={selectedDeviceId}
+                    onValueChange={handleCameraDeviceChange}
+                    disabled={currentSource === 'loading'}
+                 >
+                    <SelectTrigger className="w-auto h-9 px-3 text-sm gap-2 flex-grow sm:flex-grow-0" aria-label="Select Camera">
+                         <Smartphone className="h-4 w-4 shrink-0" />
+                        <SelectValue placeholder="Select Camera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {videoDevices.map(device => (
+                            <SelectItem key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Camera ${videoDevices.indexOf(device) + 1}`}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            ) : videoDevices.length === 1 || navigator.mediaDevices?.getUserMedia ? ( // Show button even if enumeration failed but getUserMedia exists
+                 <Button
+                    variant={currentSource === 'userCamera' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => handleSourceSwitch('userCamera')}
+                    disabled={currentSource === 'loading'}
+                >
+                    <Smartphone className="mr-2 h-4 w-4" /> My Camera
+                </Button>
+            ) : null }
+            {simulatedStillImageUrl && (
+                <Button
+                    variant={currentSource === 'stillImage' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => handleSourceSwitch('stillImage')}
+                    disabled={currentSource === 'loading'}
+                >
+                    <ImageIcon className="mr-2 h-4 w-4" /> Still Image
+                </Button>
+            )}
+        </div>
+
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onClose}>Close</Button>
-           {/* TODO: Add "Switch View" button if multiple sources were detected as available */}
-           {/* Example:
-           { (simulatedIpCameraUrl && currentSource !== 'ipCamera') && <Button variant="secondary" onClick={tryIpCamera}>Try IP Cam</Button> }
-           { (currentSource !== 'userCamera') && <Button variant="secondary" onClick={tryUserCamera}>Try My Camera</Button> }
-           */}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+    
