@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info } from 'lucide-react'; // Added Info icon
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront } from 'lucide-react'; // Added Info, CarTaxiFront icons
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
@@ -38,7 +38,6 @@ interface UserDetails {
 }
 
 interface BillingInfo {
-    // accountBalance: number; // This might become deprecated in favor of wallet balance
     paymentMethods: { type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
     subscriptionTier?: 'Basic' | 'Premium';
     guaranteedSpotsAvailable?: number;
@@ -55,6 +54,14 @@ interface ParkingHistoryEntry {
     status: 'Completed' | 'Active' | 'Upcoming';
 }
 
+interface Vehicle {
+    id: string;
+    make: string;
+    model: string;
+    plateNumber: string;
+    isPrimary: boolean;
+}
+
 // Mock Data Fetching Functions (Replace with real API calls)
 const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
     await new Promise(resolve => setTimeout(resolve, 700));
@@ -64,7 +71,6 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
     return { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role };
 };
 
-// Billing info might only contain payment methods now, balance is in wallet
 const fetchBillingInfo = async (userId: string, role: string): Promise<Omit<BillingInfo, 'accountBalance'>> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
@@ -85,6 +91,16 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
     return history.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 };
 
+const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    // Simulate based on userId or signup info (if collected)
+    const plateBasedOnId = `ABC ${userId.substring(userId.length - 4)}`.toUpperCase();
+    return [
+        { id: 'veh1', make: 'Toyota', model: 'Corolla', plateNumber: plateBasedOnId, isPrimary: true },
+        // { id: 'veh2', make: 'Nissan', model: 'Hardbody', plateNumber: 'XYZ 7890', isPrimary: false }, // Example second car
+    ];
+};
+
 // Helper to get Lucide icon component based on name string
 const getIconFromName = (iconName: string | undefined): React.ElementType => {
     switch (iconName) {
@@ -101,28 +117,30 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
 };
 
 export default function ProfilePage() {
-    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile, logout } = useContext(AppStateContext)!; // Added logout
+    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile, logout } = useContext(AppStateContext)!;
     const router = useRouter();
     const { toast } = useToast();
 
     const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
-    const [billingInfo, setBillingInfo] = useState<Omit<BillingInfo, 'accountBalance'> | null>(null); // Exclude accountBalance
+    const [billingInfo, setBillingInfo] = useState<Omit<BillingInfo, 'accountBalance'> | null>(null);
     const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]); // State for user vehicles
     const [gamification, setGamification] = useState<UserGamification | null>(null);
-    const [wallet, setWallet] = useState<Wallet | null>(null); // Wallet state
-    const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]); // Wallet transactions state
+    const [wallet, setWallet] = useState<Wallet | null>(null);
+    const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isLoadingWallet, setIsLoadingWallet] = useState(true); // Specific loading for wallet
+    const [isLoadingWallet, setIsLoadingWallet] = useState(true);
+    const [isLoadingVehicles, setIsLoadingVehicles] = useState(true); // Loading state for vehicles
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
     const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
     const [editMode, setEditMode] = useState(false);
-    const [isSavingProfile, setIsSavingProfile] = useState(false); // Specific state for saving profile
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [newName, setNewName] = useState('');
     const [newAvatarUrl, setNewAvatarUrl] = useState('');
-    const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false); // State for TopUpModal
-    const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false); // State for SendMoneyModal
+    const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+    const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false);
 
      // Redirect if not authenticated
      useEffect(() => {
@@ -137,24 +155,27 @@ export default function ProfilePage() {
     const loadProfileData = useCallback(async () => {
         if (userId) {
             setIsLoading(true);
-            setIsLoadingWallet(true); // Start wallet loading
+            setIsLoadingWallet(true);
+            setIsLoadingVehicles(true);
             setErrorLoading(null);
             try {
                 const roleToUse = userRole || 'User';
-                const [details, billing, history, gamificationData, walletData, transactionsData] = await Promise.all([
+                const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData] = await Promise.all([
                     fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                     fetchBillingInfo(userId, roleToUse),
                     fetchParkingHistory(userId),
+                    fetchVehicles(userId), // Fetch vehicles
                     getUserGamification(userId),
-                    getWalletBalance(userId), // Fetch wallet balance
-                    getWalletTransactions(userId, 5), // Fetch recent transactions
+                    getWalletBalance(userId),
+                    getWalletTransactions(userId, 5),
                 ]);
                 setUserDetails(details);
                 setBillingInfo(billing);
                 setParkingHistory(history);
+                setVehicles(vehiclesData); // Set vehicles state
                 setGamification(gamificationData);
-                setWallet(walletData); // Set wallet state
-                setWalletTransactions(transactionsData); // Set transactions state
+                setWallet(walletData);
+                setWalletTransactions(transactionsData);
                 setNewName(details.name || userName || '');
                 setNewAvatarUrl(details.avatarUrl || userAvatarUrl || '');
             } catch (error) {
@@ -163,11 +184,13 @@ export default function ProfilePage() {
                 toast({ title: "Error Loading Profile", description: "Could not fetch some profile data.", variant: "destructive" });
             } finally {
                 setIsLoading(false);
-                setIsLoadingWallet(false); // End wallet loading
+                setIsLoadingWallet(false);
+                setIsLoadingVehicles(false);
             }
         } else {
              setIsLoading(false);
              setIsLoadingWallet(false);
+             setIsLoadingVehicles(false);
              if (isAuthenticated) {
                 setErrorLoading("User ID not found. Please try logging in again.");
              }
@@ -175,7 +198,6 @@ export default function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId, userRole, toast]); // userName/userAvatarUrl removed from deps
 
-    // Refetch wallet balance and transactions after modal actions
     const refreshWalletData = useCallback(async () => {
         if (!userId) return;
         setIsLoadingWallet(true);
@@ -201,9 +223,11 @@ export default function ProfilePage() {
         } else {
             setIsLoading(false);
             setIsLoadingWallet(false);
+            setIsLoadingVehicles(false);
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
+            setVehicles([]);
             setGamification(null);
             setWallet(null);
             setWalletTransactions([]);
@@ -223,13 +247,10 @@ export default function ProfilePage() {
     const handleDownloadBilling = () => {
         console.log("Download billing statement (payment methods, subscriptions):", billingInfo);
         toast({ title: "Download Started (Simulation)", description: "Downloading billing summary." });
-        // TODO: Implement actual CSV/spreadsheet generation and download
     };
-     // Update download history to potentially include wallet txns if relevant
      const handleDownloadHistory = () => {
          console.log("Download history (parking & wallet):", { parking: completedHistory, wallet: walletTransactions });
          toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
-         // TODO: Implement combined CSV/spreadsheet generation
      };
 
 
@@ -354,7 +375,7 @@ export default function ProfilePage() {
                                 </div>
                             )}
                         </div>
-                        <CardDescription>View and manage your account details, wallet, and history.</CardDescription>
+                        <CardDescription>View and manage your account details, wallet, vehicles, and history.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {/* User Details Section */}
@@ -402,7 +423,7 @@ export default function ProfilePage() {
                                     {isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
                                 </Button>
                              </div>
-                             <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground">
+                             <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground rounded-lg shadow-md">
                                  <div className="flex justify-between items-start">
                                      <div>
                                         <p className="text-sm font-medium opacity-80">Available Balance</p>
@@ -423,7 +444,7 @@ export default function ProfilePage() {
                                       <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={isLoadingWallet}>
                                          <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
                                       </Button>
-                                      <Button variant="secondary" size="sm" onClick={()={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
+                                      <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
                                          <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
                                       </Button>
                                       {/* Add Receive/Scan button here */}
@@ -531,8 +552,46 @@ export default function ProfilePage() {
                              </div>
                          </section>
 
+                        <Separator className="my-6" />
+
+                         {/* Vehicle Management Section */}
+                        <section className="mb-6">
+                           <div className="flex justify-between items-center mb-3">
+                               <h3 className="text-lg font-semibold flex items-center gap-2"><CarTaxiFront className="h-5 w-5" /> My Vehicles</h3>
+                               {/* Add Vehicle Button (Placeholder) */}
+                               <Button variant="outline" size="sm">
+                                   <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
+                               </Button>
+                           </div>
+                           {isLoadingVehicles ? (
+                               <Skeleton className="h-20 w-full" />
+                           ) : vehicles.length > 0 ? (
+                               <div className="space-y-2">
+                                   {vehicles.map(vehicle => (
+                                       <div key={vehicle.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
+                                            <div className="flex items-center gap-3">
+                                                <Car className="h-5 w-5 text-muted-foreground" />
+                                                <div>
+                                                   <p className="font-medium">{vehicle.make} {vehicle.model}</p>
+                                                   <p className="text-xs text-muted-foreground uppercase">{vehicle.plateNumber}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {vehicle.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                {/* Placeholder for Edit/Delete actions */}
+                                                <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-4 w-4" /></Button>
+                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"><X className="h-4 w-4" /></Button>
+                                            </div>
+                                       </div>
+                                   ))}
+                               </div>
+                           ) : (
+                               <p className="text-sm text-muted-foreground text-center py-4">No vehicles added yet.</p>
+                           )}
+                       </section>
 
                         <Separator className="my-6" />
+
 
                         {/* Gamification Section */}
                         <section className="mb-6">
@@ -707,46 +766,53 @@ const ProfileSkeleton = () => (
          {/* Wallet Skeleton */}
          <div className="space-y-4">
             <Skeleton className="h-6 w-1/4 mb-3" />
-            <Skeleton className="h-32 w-full mb-4" /> {/* Balance card */}
+            <Skeleton className="h-32 w-full mb-4 rounded-lg" /> {/* Balance card */}
             <Skeleton className="h-5 w-1/3 mb-2"/> {/* Transactions Title */}
-            <Skeleton className="h-10 w-full"/>
-            <Skeleton className="h-10 w-full"/>
+            <Skeleton className="h-10 w-full rounded-md"/>
+            <Skeleton className="h-10 w-full rounded-md"/>
          </div>
         <Separator />
         {/* Billing/Plan/Card Skeleton */}
         <div className="space-y-4">
              <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-24 w-full mb-4"/> {/* Subscription */}
-             <Skeleton className="h-28 w-full mb-4"/> {/* Carpso Card */}
+             <Skeleton className="h-24 w-full mb-4 rounded-md"/> {/* Subscription */}
+             <Skeleton className="h-28 w-full mb-4 rounded-md"/> {/* Carpso Card */}
              <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
-             <Skeleton className="h-12 w-full"/>
-             <Skeleton className="h-12 w-full"/>
-             <Skeleton className="h-9 w-full mt-1"/> {/* Manage Button */}
+             <Skeleton className="h-12 w-full rounded-md"/>
+             <Skeleton className="h-12 w-full rounded-md"/>
+             <Skeleton className="h-9 w-full mt-1 rounded-md"/> {/* Manage Button */}
         </div>
+        <Separator />
+         {/* Vehicle Skeleton */}
+         <div className="space-y-4">
+             <Skeleton className="h-6 w-1/4 mb-3" />
+             <Skeleton className="h-20 w-full rounded-md"/>
+         </div>
         <Separator />
         {/* Rewards Skeleton */}
         <div className="space-y-4">
             <Skeleton className="h-6 w-1/3 mb-3" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full rounded-md" />
+                <Skeleton className="h-20 w-full rounded-md" />
             </div>
             <Skeleton className="h-5 w-1/4 mt-4" />
-            <div className="flex gap-2"> <Skeleton className="h-8 w-20"/> <Skeleton className="h-8 w-24"/></div>
+            <div className="flex gap-2"> <Skeleton className="h-8 w-20 rounded-full"/> <Skeleton className="h-8 w-24 rounded-full"/></div>
         </div>
          <Separator />
          {/* Active Reservation Skeleton */}
          <div className="space-y-3">
              <Skeleton className="h-6 w-1/3 mb-3" />
-             <Skeleton className="h-24 w-full" />
+             <Skeleton className="h-24 w-full rounded-md" />
          </div>
         <Separator />
         {/* History Skeleton */}
         <div className="space-y-3">
             <Skeleton className="h-6 w-1/3 mb-3" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full rounded-md" />
+            <Skeleton className="h-16 w-full rounded-md" />
+            <Skeleton className="h-16 w-full rounded-md" />
         </div>
     </div>
 );
+
