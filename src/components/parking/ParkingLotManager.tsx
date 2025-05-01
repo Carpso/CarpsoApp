@@ -1,3 +1,4 @@
+// src/components/parking/ParkingLotManager.tsx
 'use client';
 
 import React, { useState, useEffect, useContext, useCallback } from 'react';
@@ -54,6 +55,12 @@ export default function ParkingLotManager() {
   const { toast } = useToast();
    const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null); // State for report modal
    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+   const [isClient, setIsClient] = useState(false); // State to track client-side mount
+
+   useEffect(() => {
+       setIsClient(true); // Set isClient to true once the component mounts on the client
+   }, []);
+
 
      // Fetch recommendations when locations are loaded or user/destination changes
      const fetchRecommendations = useCallback(async (destination?: string) => { // Added optional destination
@@ -76,7 +83,7 @@ export default function ParkingLotManager() {
            // Prepare input for the recommendation flow
            // Convert locations to JSON string with essential details
            const locationsWithPrice = await Promise.all(locations.map(async loc => {
-               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, 'Basic'); // Estimate for 1 hour
+               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' ? 'Premium' : 'Basic'); // Estimate for 1 hour, pass correct role
                return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
            }));
            const nearbyLotsJson = JSON.stringify(locationsWithPrice);
@@ -108,15 +115,8 @@ export default function ParkingLotManager() {
            setIsLoadingRecommendations(false);
        }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-     }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast]); // Add relevant dependencies
+     }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole]); // Add userRole dependency for pricing
 
-    useEffect(() => {
-        // Fetch recommendations after locations are loaded and user is authenticated
-        if (!isLoadingLocations && locations.length > 0 && isAuthenticated) {
-            fetchRecommendations();
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoadingLocations, locations, isAuthenticated, toast, fetchRecommendations, userId, userPreferredServices, userHistorySummary]);
 
    // --- Voice Assistant Integration ---
     // Move handleVoiceCommandResult here
@@ -245,7 +245,7 @@ export default function ParkingLotManager() {
                 // Response already spoken by the flow
                 break;
         }
-    }, [locations, pinnedSpot, isAuthenticated, toast]); // Added toast
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Added fetchRecommendations
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
         if (!transcript) return;
@@ -259,7 +259,10 @@ export default function ParkingLotManager() {
                 description: "Sorry, I couldn't process that request.",
                 variant: "destructive",
             });
-            voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
+            // Check if voiceAssistant is initialized before speaking
+            if (voiceAssistant) {
+               voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
+            }
         }
     }, [handleVoiceCommandResult, toast]); // Dependencies
 
@@ -272,7 +275,6 @@ export default function ParkingLotManager() {
        }
    });
 
-   // useEffect moved below
    useEffect(() => {
        if (voiceAssistant.error) {
            toast({
@@ -306,8 +308,17 @@ export default function ParkingLotManager() {
       }
     };
     fetchLocationsData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
+   useEffect(() => {
+        // Fetch recommendations after locations are loaded and user is authenticated
+        if (!isLoadingLocations && locations.length > 0 && isAuthenticated) {
+            fetchRecommendations();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoadingLocations, isAuthenticated, fetchRecommendations]); // Removed locations, userId, userPreferredServices, userHistorySummary from dependencies as fetchRecommendations itself depends on them
 
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
@@ -383,6 +394,9 @@ export default function ParkingLotManager() {
   };
 
   const getVoiceButtonIcon = () => {
+        if (!isClient || !voiceAssistant?.state) { // Check if on client and voiceAssistant is initialized
+             return <MicOff key="disabled-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
+        }
         switch (voiceAssistant.state) {
             case 'listening':
                 return <Mic key="mic" className="h-5 w-5 text-destructive animate-pulse" />;
@@ -397,6 +411,7 @@ export default function ParkingLotManager() {
     };
 
    const handleVoiceButtonClick = () => {
+        if (!isClient || !voiceAssistant) return; // Ensure client-side and voiceAssistant exists
        if (voiceAssistant.isListening) {
            voiceAssistant.stopListening();
        } else {
@@ -409,26 +424,32 @@ export default function ParkingLotManager() {
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Parking Availability</h1>
            <div className="flex items-center gap-2">
-                {/* Voice Assistant Button */}
-                {voiceAssistant.isSupported ? (
-                     <Button
-                         variant="outline"
-                         size="icon"
-                         onClick={handleVoiceButtonClick}
-                         disabled={voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking'}
-                         aria-label={voiceAssistant.isListening ? 'Stop listening' : 'Start voice command'}
-                         className={cn(
-                             voiceAssistant.isListening && "border-destructive text-destructive",
-                             (voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking') && "opacity-50 cursor-not-allowed"
-                         )}
-                     >
-                         {getVoiceButtonIcon()}
-                     </Button>
-                ) : (
-                     <Button variant="outline" size="icon" disabled title="Voice commands not supported by your browser">
-                        <MicOff className="h-5 w-5 text-muted-foreground opacity-50" />
-                    </Button>
-                )}
+                {/* Voice Assistant Button - Conditionally render on client */}
+                 {isClient && (
+                     voiceAssistant?.isSupported ? (
+                         <Button
+                             variant="outline"
+                             size="icon"
+                             onClick={handleVoiceButtonClick}
+                             disabled={!voiceAssistant || voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking'}
+                             aria-label={voiceAssistant?.isListening ? 'Stop listening' : 'Start voice command'}
+                             className={cn(
+                                 voiceAssistant?.isListening && "border-destructive text-destructive",
+                                 (!voiceAssistant || voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking') && "opacity-50 cursor-not-allowed"
+                             )}
+                         >
+                             {getVoiceButtonIcon()}
+                         </Button>
+                     ) : (
+                         <Button variant="outline" size="icon" disabled title="Voice commands not supported by your browser">
+                            <MicOff className="h-5 w-5 text-muted-foreground opacity-50" />
+                        </Button>
+                     )
+                 )}
+                 {!isClient && ( // Render a placeholder or skeleton server-side
+                      <Skeleton className="h-10 w-10" />
+                 )}
+
 
                {/* Auth / Profile Button */}
                {isAuthenticated && userId ? (
@@ -443,7 +464,7 @@ export default function ParkingLotManager() {
            </div>
        </div>
         {/* Voice Assistant Status Indicator (Optional) */}
-        {voiceAssistant.state !== 'idle' && voiceAssistant.state !== 'error' && (
+        {isClient && voiceAssistant?.state !== 'idle' && voiceAssistant?.state !== 'error' && (
             <p className="text-sm text-muted-foreground text-center mb-4">
                  {voiceAssistant.state === 'listening' && 'Listening...'}
                  {voiceAssistant.state === 'processing' && 'Processing command...'}
@@ -499,7 +520,7 @@ export default function ParkingLotManager() {
                                         <CardTitle className="text-base flex items-center justify-between">
                                             {rec.lotName}
                                             {rec.availabilityScore !== undefined && (
-                                                <Badge variant={rec.availabilityScore > 0.7 ? 'default' : rec.availabilityScore > 0.4 ? 'secondary' : 'destructive'} className="text-xs bg-green-600 text-white">
+                                                <Badge variant={rec.availabilityScore > 0.7 ? 'default' : rec.availabilityScore > 0.4 ? 'secondary' : 'destructive'} className={cn("text-xs", rec.availabilityScore > 0.7 && "bg-green-600 text-white")}>
                                                     {(rec.availabilityScore * 100).toFixed(0)}% Free
                                                 </Badge>
                                             )}
