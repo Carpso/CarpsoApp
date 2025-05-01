@@ -23,6 +23,7 @@ import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistan
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
 import { cn } from '@/lib/utils';
 import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
+import { Badge } from '@/components/ui/badge'; // Import Badge component
 
 
 export default function ParkingLotManager() {
@@ -127,7 +128,7 @@ export default function ParkingLotManager() {
         console.log("Processed Entities:", entities);
 
         // Speak the response first
-        voiceAssistant.speak(responseText);
+        if (voiceAssistant) voiceAssistant.speak(responseText);
 
         // --- Execute action based on intent ---
         switch (intent) {
@@ -157,10 +158,10 @@ export default function ParkingLotManager() {
                          // TODO: Programmatically trigger the reservation dialog in ParkingLotGrid
                          console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                     } else {
-                        voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                        if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
                     }
                 } else {
-                    voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                    if (voiceAssistant) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
                 }
                 break;
 
@@ -174,19 +175,19 @@ export default function ParkingLotManager() {
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                          console.warn(`Need mechanism to display/highlight availability for ${entities.spotId}`);
                     } else {
-                         voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
                     }
                 } else if (entities.locationId) {
                      const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
                      if (location) {
                          setSelectedLocationId(location.id);
                          const available = location.capacity - (location.currentOccupancy ?? 0);
-                         voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                         if (voiceAssistant) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
                      } else {
-                         voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
                      }
                 } else {
-                    voiceAssistant.speak("Which spot or location would you like me to check?");
+                    if (voiceAssistant) voiceAssistant.speak("Which spot or location would you like me to check?");
                 }
                 break;
 
@@ -204,14 +205,14 @@ export default function ParkingLotManager() {
                          // TODO: Integrate with mapping service (e.g., open Google Maps URL)
                          // window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank');
                      } else {
-                         voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
                      }
                  } else if (pinnedSpot) {
                      const location = locations.find(l => l.id === pinnedSpot.locationId);
                       toast({ title: "Getting Directions", description: `Opening map directions to your parked car at ${pinnedSpot.spotId}...` });
                       // TODO: Integrate with mapping service to pinned spot coordinates (if available)
                  } else {
-                      voiceAssistant.speak("Where would you like directions to?");
+                      if (voiceAssistant) voiceAssistant.speak("Where would you like directions to?");
                  }
                 break;
             case 'report_issue':
@@ -232,20 +233,20 @@ export default function ParkingLotManager() {
                          setIsReportModalOpen(true);
                          // TTS response handled by the flow already
                      } else if (!isAuthenticated) {
-                          voiceAssistant.speak("Please sign in to report an issue.");
+                          if (voiceAssistant) voiceAssistant.speak("Please sign in to report an issue.");
                           setIsAuthModalOpen(true);
                      } else {
-                          voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
                      }
                 } else {
-                    voiceAssistant.speak("Which spot are you reporting an issue for?");
+                    if (voiceAssistant) voiceAssistant.speak("Which spot are you reporting an issue for?");
                 }
                 break;
             case 'unknown':
                 // Response already spoken by the flow
                 break;
         }
-    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Added fetchRecommendations
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Added fetchRecommendations dependency
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
         if (!transcript) return;
@@ -276,7 +277,7 @@ export default function ParkingLotManager() {
    });
 
    useEffect(() => {
-       if (voiceAssistant.error) {
+       if (voiceAssistant?.error) { // Check if voiceAssistant exists before accessing error
            toast({
                title: "Voice Assistant Error",
                description: voiceAssistant.error,
@@ -284,7 +285,7 @@ export default function ParkingLotManager() {
                duration: 4000,
            });
        }
-   }, [voiceAssistant.error, toast]);
+   }, [voiceAssistant?.error, toast]); // Optional chaining for dependency
    // --- End Voice Assistant Integration ---
 
 
@@ -394,7 +395,8 @@ export default function ParkingLotManager() {
   };
 
   const getVoiceButtonIcon = () => {
-        if (!isClient || !voiceAssistant?.state) { // Check if on client and voiceAssistant is initialized
+        // Initial render on client will be false, use MicOff as default before hydration
+        if (!isClient || !voiceAssistant?.state) {
              return <MicOff key="disabled-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         switch (voiceAssistant.state) {
@@ -402,8 +404,8 @@ export default function ParkingLotManager() {
                 return <Mic key="mic" className="h-5 w-5 text-destructive animate-pulse" />;
             case 'processing':
                 return <Loader2 key="loader" className="h-5 w-5 animate-spin" />;
-            case 'speaking':
-            case 'error':
+            case 'speaking': // Still use Mic for speaking state
+            case 'error': // Use Mic for error state too, perhaps differentiate with color later
             case 'idle':
             default:
                 return <Mic key="default-mic" className="h-5 w-5" />;
@@ -425,7 +427,7 @@ export default function ParkingLotManager() {
            <h1 className="text-3xl font-bold">Parking Availability</h1>
            <div className="flex items-center gap-2">
                 {/* Voice Assistant Button - Conditionally render on client */}
-                 {isClient && (
+                 {isClient ? (
                      voiceAssistant?.isSupported ? (
                          <Button
                              variant="outline"
@@ -445,8 +447,7 @@ export default function ParkingLotManager() {
                             <MicOff className="h-5 w-5 text-muted-foreground opacity-50" />
                         </Button>
                      )
-                 )}
-                 {!isClient && ( // Render a placeholder or skeleton server-side
+                 ) : ( // Render a placeholder or skeleton server-side
                       <Skeleton className="h-10 w-10" />
                  )}
 
