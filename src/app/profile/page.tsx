@@ -13,10 +13,10 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag } from 'lucide-react'; // Added Info, CarTaxiFront, Flag icons
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2 } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
-import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark } from '@/services/user-service'; // Import bookmark types and functions
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
 import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction } from '@/services/wallet-service'; // Import wallet service
@@ -25,6 +25,7 @@ import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendM
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Import Table components
 import { cn } from '@/lib/utils'; // Import cn utility
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
+import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as DialogHeaderSub, DialogTitle as DialogTitleSub, DialogDescription as DialogDescriptionSub, DialogClose } from "@/components/ui/dialog"; // Import Dialog components
 
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
@@ -149,6 +150,16 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
     }
 };
 
+// Helper to get Bookmark icon based on label
+const getBookmarkIcon = (label: string): React.ElementType => {
+    const lowerLabel = label.toLowerCase();
+    if (lowerLabel.includes('home')) return HomeIcon;
+    if (lowerLabel.includes('work') || lowerLabel.includes('office')) return Briefcase;
+    if (lowerLabel.includes('school')) return SchoolIcon;
+    if (lowerLabel.includes('college') || lowerLabel.includes('university')) return GraduationCap;
+    return BookMarked; // Default bookmark icon
+};
+
 export default function ProfilePage() {
     const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout } = useContext(AppStateContext)!;
     const router = useRouter();
@@ -161,10 +172,12 @@ export default function ProfilePage() {
     const [gamification, setGamification] = useState<UserGamification | null>(null);
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
+    const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]); // State for bookmarks
 
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
+    const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
 
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -184,6 +197,13 @@ export default function ProfilePage() {
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
     const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false);
 
+    // Bookmark Modal State
+    const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
+    const [currentBookmark, setCurrentBookmark] = useState<Partial<UserBookmark> | null>(null);
+    const [isSavingBookmark, setIsSavingBookmark] = useState(false);
+    const [isDeletingBookmark, setIsDeletingBookmark] = useState(false);
+
+
      // Redirect if not authenticated
      useEffect(() => {
          if (typeof window !== 'undefined' && !isAuthenticated) {
@@ -199,10 +219,12 @@ export default function ProfilePage() {
             setIsLoading(true);
             setIsLoadingWallet(true);
             setIsLoadingVehicles(true);
+            setIsLoadingBookmarks(true);
             setErrorLoading(null);
             try {
                 const roleToUse = userRole || 'User';
-                const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData] = await Promise.all([
+                // Fetch bookmarks along with other data
+                const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData, bookmarksData] = await Promise.all([
                     fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                     fetchBillingInfo(userId, roleToUse),
                     fetchParkingHistory(userId),
@@ -210,6 +232,7 @@ export default function ProfilePage() {
                     getUserGamification(userId),
                     getWalletBalance(userId),
                     getWalletTransactions(userId, 5),
+                    getUserBookmarks(userId), // Fetch bookmarks
                 ]);
                 setUserDetails(details);
                 setBillingInfo(billing);
@@ -218,6 +241,7 @@ export default function ProfilePage() {
                 setGamification(gamificationData);
                 setWallet(walletData);
                 setWalletTransactions(transactionsData);
+                setBookmarks(bookmarksData); // Set bookmarks state
 
                 // Initialize edit states
                 setEditName(details.name || userName || '');
@@ -235,11 +259,13 @@ export default function ProfilePage() {
                 setIsLoading(false);
                 setIsLoadingWallet(false);
                 setIsLoadingVehicles(false);
+                setIsLoadingBookmarks(false);
             }
         } else {
              setIsLoading(false);
              setIsLoadingWallet(false);
              setIsLoadingVehicles(false);
+             setIsLoadingBookmarks(false);
              if (isAuthenticated) {
                 setErrorLoading("User ID not found. Please try logging in again.");
              }
@@ -265,6 +291,20 @@ export default function ProfilePage() {
         }
     }, [userId, toast]);
 
+     const refreshBookmarks = useCallback(async () => {
+        if (!userId) return;
+        setIsLoadingBookmarks(true);
+        try {
+            const bookmarksData = await getUserBookmarks(userId);
+            setBookmarks(bookmarksData);
+        } catch (error) {
+             console.error("Failed to refresh bookmarks:", error);
+             toast({ title: "Bookmarks Update Error", description: "Could not refresh saved locations.", variant: "destructive" });
+        } finally {
+             setIsLoadingBookmarks(false);
+        }
+    }, [userId, toast]);
+
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -273,6 +313,7 @@ export default function ProfilePage() {
             setIsLoading(false);
             setIsLoadingWallet(false);
             setIsLoadingVehicles(false);
+            setIsLoadingBookmarks(false);
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
@@ -280,6 +321,7 @@ export default function ProfilePage() {
             setGamification(null);
             setWallet(null);
             setWalletTransactions([]);
+            setBookmarks([]); // Clear bookmarks
         }
     }, [isAuthenticated, loadProfileData]);
 
@@ -405,6 +447,82 @@ export default function ProfilePage() {
      };
     // --- End Edit Mode Handlers ---
 
+    // --- Bookmark Handlers ---
+    const handleOpenBookmarkModal = (bookmark: UserBookmark | null = null) => {
+        if (bookmark) {
+            setCurrentBookmark(bookmark);
+        } else {
+            setCurrentBookmark({ userId: userId, label: '' }); // Default for new bookmark
+        }
+        setIsBookmarkModalOpen(true);
+    };
+
+    const handleBookmarkFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setCurrentBookmark(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSaveBookmark = async () => {
+        if (!userId || !currentBookmark || !currentBookmark.label) {
+            toast({ title: "Missing Information", description: "Bookmark label cannot be empty.", variant: "destructive" });
+            return;
+        }
+        // TODO: Add validation for address/coordinates if needed
+
+        setIsSavingBookmark(true);
+        try {
+            if (currentBookmark.id && currentBookmark.id !== '') {
+                 // Update existing bookmark
+                 const updated = await updateBookmark(currentBookmark.id, {
+                     label: currentBookmark.label,
+                     address: currentBookmark.address,
+                     latitude: currentBookmark.latitude ? Number(currentBookmark.latitude) : undefined,
+                     longitude: currentBookmark.longitude ? Number(currentBookmark.longitude) : undefined,
+                 });
+                 if (updated) {
+                     await refreshBookmarks();
+                     toast({ title: "Bookmark Updated" });
+                     setIsBookmarkModalOpen(false);
+                 } else { throw new Error("Failed to update bookmark."); }
+            } else {
+                // Create new bookmark
+                 const created = await addBookmark(userId, {
+                     label: currentBookmark.label,
+                     address: currentBookmark.address,
+                     latitude: currentBookmark.latitude ? Number(currentBookmark.latitude) : undefined,
+                     longitude: currentBookmark.longitude ? Number(currentBookmark.longitude) : undefined,
+                 });
+                 if (created) {
+                     await refreshBookmarks();
+                     toast({ title: "Bookmark Added" });
+                     setIsBookmarkModalOpen(false);
+                 } else { throw new Error("Failed to add bookmark."); }
+            }
+        } catch (error: any) {
+            console.error("Failed to save bookmark:", error);
+            toast({ title: "Save Failed", description: error.message || "Could not save the bookmark.", variant: "destructive" });
+        } finally {
+            setIsSavingBookmark(false);
+        }
+    };
+
+    const handleDeleteBookmark = async (bookmarkId: string) => {
+         // Optional: Add confirmation dialog
+         setIsDeletingBookmark(true);
+         try {
+             const success = await deleteBookmark(bookmarkId);
+             if (success) {
+                 await refreshBookmarks();
+                 toast({ title: "Bookmark Deleted" });
+             } else { throw new Error("Failed to delete bookmark."); }
+         } catch (error: any) {
+              console.error("Failed to delete bookmark:", error);
+              toast({ title: "Delete Failed", description: error.message || "Could not delete the bookmark.", variant: "destructive" });
+         } finally {
+              setIsDeletingBookmark(false);
+         }
+    };
+    // --- End Bookmark Handlers ---
 
     const handleLogout = () => {
         logout();
@@ -764,6 +882,49 @@ export default function ProfilePage() {
 
                         <Separator className="my-6" />
 
+                        {/* Saved Locations (Bookmarks) Section */}
+                         <section className="mb-6">
+                            <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><BookMarked className="h-5 w-5" /> Saved Locations</h3>
+                                <Button variant="outline" size="sm" onClick={() => handleOpenBookmarkModal()}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Add Location
+                                </Button>
+                            </div>
+                            {isLoadingBookmarks ? (
+                                <Skeleton className="h-24 w-full" />
+                            ) : bookmarks.length > 0 ? (
+                                <div className="space-y-3">
+                                    {bookmarks.map(bookmark => {
+                                        const Icon = getBookmarkIcon(bookmark.label);
+                                        return (
+                                            <div key={bookmark.id} className="flex items-center justify-between p-3 border rounded-md gap-3">
+                                                <div className="flex items-start gap-3 flex-grow overflow-hidden">
+                                                    <Icon className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                                                    <div className="flex-grow truncate">
+                                                        <p className="font-medium truncate">{bookmark.label}</p>
+                                                        {bookmark.address && <p className="text-xs text-muted-foreground truncate">{bookmark.address}</p>}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenBookmarkModal(bookmark)} aria-label={`Edit ${bookmark.label}`}>
+                                                        <Edit2 className="h-4 w-4" />
+                                                     </Button>
+                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteBookmark(bookmark.id)} disabled={isDeletingBookmark} aria-label={`Delete ${bookmark.label}`}>
+                                                        {isDeletingBookmark ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
+                                                     </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground text-center py-4">No saved locations yet. Add your home, work, or other frequent destinations.</p>
+                            )}
+                        </section>
+
+
+                        <Separator className="my-6" />
+
 
                         {/* Gamification Section */}
                         <section className="mb-6">
@@ -916,6 +1077,43 @@ export default function ProfilePage() {
                 currency={wallet?.currency ?? 'ZMW'}
                 onSuccess={refreshWalletData} // Refresh data on success
             />
+
+             {/* Add/Edit Bookmark Modal */}
+             <Dialog open={isBookmarkModalOpen} onOpenChange={setIsBookmarkModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeaderSub>
+                        <DialogTitleSub>{currentBookmark?.id ? 'Edit' : 'Add'} Saved Location</DialogTitleSub>
+                        <DialogDescriptionSub>Save frequently visited locations for quick access.</DialogDescriptionSub>
+                    </DialogHeaderSub>
+                    <div className="grid gap-4 py-4">
+                        <div className="space-y-1">
+                            <Label htmlFor="bookmark-label">Label*</Label>
+                            <Input id="bookmark-label" name="label" value={currentBookmark?.label || ''} onChange={handleBookmarkFormChange} placeholder="e.g., Home, Work, Gym" disabled={isSavingBookmark} required />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="bookmark-address">Address (Optional)</Label>
+                            <Input id="bookmark-address" name="address" value={currentBookmark?.address || ''} onChange={handleBookmarkFormChange} placeholder="123 Main St, Anytown" disabled={isSavingBookmark} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                             <div className="space-y-1">
+                                 <Label htmlFor="bookmark-lat">Latitude (Optional)</Label>
+                                 <Input id="bookmark-lat" name="latitude" type="number" value={currentBookmark?.latitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., 34.0522" disabled={isSavingBookmark} step="any"/>
+                             </div>
+                             <div className="space-y-1">
+                                 <Label htmlFor="bookmark-lon">Longitude (Optional)</Label>
+                                 <Input id="bookmark-lon" name="longitude" type="number" value={currentBookmark?.longitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., -118.2437" disabled={isSavingBookmark} step="any"/>
+                             </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                         <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingBookmark}>Cancel</Button></DialogClose>
+                         <Button type="submit" onClick={handleSaveBookmark} disabled={isSavingBookmark || !currentBookmark?.label}>
+                             {isSavingBookmark ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                             {currentBookmark?.id ? 'Save Changes' : 'Add Bookmark'}
+                         </Button>
+                    </DialogFooter>
+                </DialogContent>
+             </Dialog>
         </TooltipProvider>
     );
 }
@@ -961,6 +1159,13 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-20 w-full rounded-md"/>
          </div>
         <Separator />
+        {/* Bookmarks Skeleton */}
+         <div className="space-y-4">
+             <Skeleton className="h-6 w-1/4 mb-3" />
+             <Skeleton className="h-16 w-full rounded-md"/>
+             <Skeleton className="h-16 w-full rounded-md"/>
+         </div>
+        <Separator />
         {/* Rewards Skeleton */}
         <div className="space-y-4">
             <Skeleton className="h-6 w-1/3 mb-3" />
@@ -987,5 +1192,4 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
-
 ```

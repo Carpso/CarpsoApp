@@ -20,6 +20,19 @@ export interface UserGamification {
   isCarpoolEligible: boolean; // Flag for carpooling discounts/features
 }
 
+/**
+ * Represents a user's saved location bookmark.
+ */
+export interface UserBookmark {
+  id: string;
+  userId: string;
+  label: string; // e.g., 'Home', 'Work', 'School'
+  address?: string; // Optional full address
+  latitude?: number;
+  longitude?: number;
+}
+
+
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
 const userGamificationData: Record<string, UserGamification> = {
@@ -33,6 +46,15 @@ const userGamificationData: Record<string, UserGamification> = {
         isCarpoolEligible: false,
     },
 };
+
+// Mock store for bookmarks
+let userBookmarks: Record<string, UserBookmark[]> = {
+    'user_abc123': [
+        { id: 'bm_1', userId: 'user_abc123', label: 'Home', address: '10 Residential St, Anytown', latitude: 34.0600, longitude: -118.2300 },
+        { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown', latitude: 34.0510, longitude: -118.2450 },
+    ],
+};
+
 
 // Available badges definition (could be stored elsewhere)
 const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
@@ -125,6 +147,84 @@ export async function updateCarpoolEligibility(userId: string, isEligible: boole
     return true;
 }
 
-// Add more functions as needed, e.g., getLeaderboard
+// --- Bookmark Functions ---
 
+/**
+ * Fetches the saved location bookmarks for a user.
+ * @param userId The ID of the user.
+ * @returns A promise resolving to an array of the user's bookmarks.
+ */
+export async function getUserBookmarks(userId: string): Promise<UserBookmark[]> {
+    await new Promise(resolve => setTimeout(resolve, 250)); // Simulate delay
+    return userBookmarks[userId] || [];
+}
+
+/**
+ * Adds a new bookmark for a user.
+ * @param userId The ID of the user.
+ * @param bookmarkData Data for the new bookmark (label is required).
+ * @returns A promise resolving to the newly created bookmark.
+ */
+export async function addBookmark(userId: string, bookmarkData: Pick<UserBookmark, 'label' | 'address' | 'latitude' | 'longitude'>): Promise<UserBookmark> {
+    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
+    if (!bookmarkData.label) {
+        throw new Error("Bookmark label cannot be empty.");
+    }
+    const newBookmark: UserBookmark = {
+        id: `bm_${Date.now()}`,
+        userId,
+        ...bookmarkData,
+    };
+    if (!userBookmarks[userId]) {
+        userBookmarks[userId] = [];
+    }
+    userBookmarks[userId].push(newBookmark);
+    console.log(`Added bookmark for user ${userId}:`, newBookmark);
+    return newBookmark;
+}
+
+/**
+ * Updates an existing bookmark.
+ * @param bookmarkId The ID of the bookmark to update.
+ * @param updateData The fields to update.
+ * @returns A promise resolving to the updated bookmark or null if not found.
+ */
+export async function updateBookmark(bookmarkId: string, updateData: Partial<Omit<UserBookmark, 'id' | 'userId'>>): Promise<UserBookmark | null> {
+    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
+    for (const userId in userBookmarks) {
+        const bookmarkIndex = userBookmarks[userId].findIndex(bm => bm.id === bookmarkId);
+        if (bookmarkIndex !== -1) {
+            userBookmarks[userId][bookmarkIndex] = {
+                ...userBookmarks[userId][bookmarkIndex],
+                ...updateData,
+            };
+            console.log(`Updated bookmark ${bookmarkId}:`, userBookmarks[userId][bookmarkIndex]);
+            return userBookmarks[userId][bookmarkIndex];
+        }
+    }
+    console.warn(`Bookmark not found for update: ${bookmarkId}`);
+    return null;
+}
+
+/**
+ * Deletes a bookmark.
+ * @param bookmarkId The ID of the bookmark to delete.
+ * @returns A promise resolving to true if successful, false otherwise.
+ */
+export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
+    await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
+    for (const userId in userBookmarks) {
+        const initialLength = userBookmarks[userId].length;
+        userBookmarks[userId] = userBookmarks[userId].filter(bm => bm.id !== bookmarkId);
+        if (userBookmarks[userId].length < initialLength) {
+            console.log(`Deleted bookmark ${bookmarkId} for user ${userId}.`);
+            return true;
+        }
+    }
+    console.warn(`Bookmark not found for deletion: ${bookmarkId}`);
+    return false;
+}
+
+
+// Add more functions as needed, e.g., getLeaderboard
 ```

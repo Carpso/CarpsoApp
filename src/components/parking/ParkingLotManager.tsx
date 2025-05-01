@@ -8,7 +8,7 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle } from 'lucide-react'; // Added CheckSquare, Square, AlertTriangle
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked } from 'lucide-react'; // Added BookMarked
 import AuthModal from '@/components/auth/AuthModal';
 // import UserProfile from '@/components/profile/UserProfile'; // No longer imported here
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
 // import Link from 'next/link'; // No longer needed for profile here
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
-import { getUserGamification } from '@/services/user-service'; // Import gamification service
+import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark } from '@/services/user-service'; // Import gamification service and bookmark functions/type
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
@@ -52,6 +52,8 @@ export default function ParkingLotManager() {
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [userPreferredServices, setUserPreferredServices] = useState<ParkingLotService[]>([]); // Example user preference
   const [userHistorySummary, setUserHistorySummary] = useState<string>("Prefers Downtown Garage, parks mostly weekday mornings."); // Example summary
+  const [userBookmarks, setUserBookmarks] = useState<UserBookmark[]>([]); // State for user bookmarks
+  const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(false);
 
   const { toast } = useToast();
    const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null); // State for report modal
@@ -60,23 +62,49 @@ export default function ParkingLotManager() {
    const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle'); // Track voice assistant state for UI
 
    useEffect(() => {
-       setIsClient(true); // Set isClient to true once the component mounts on the client
+       // Ensure this only runs on the client
+       setIsClient(true);
    }, []);
+
+    const fetchUserBookmarks = useCallback(async () => {
+       if (!isAuthenticated || !userId) return;
+       setIsLoadingBookmarks(true);
+       try {
+           const bookmarks = await getUserBookmarks(userId);
+           setUserBookmarks(bookmarks);
+       } catch (err) {
+           console.error("Failed to fetch user bookmarks:", err);
+           // Optional: toast notification
+       } finally {
+           setIsLoadingBookmarks(false);
+       }
+    }, [isAuthenticated, userId]);
 
 
      // Fetch recommendations when locations are loaded or user/destination changes
-     const fetchRecommendations = useCallback(async (destination?: string) => { // Added optional destination
+     const fetchRecommendations = useCallback(async (destinationLabel?: string) => { // Changed parameter to label
        if (!isAuthenticated || !userId || locations.length === 0) {
            setRecommendations([]); // Clear recommendations if not logged in or no locations
            return;
        }
        setIsLoadingRecommendations(true);
        try {
-           // Simulate getting user location/destination (replace with actual data)
+           // Simulate getting user location (replace with actual data)
            const currentCoords = { latitude: 34.0522, longitude: -118.2437 }; // Example: Near Downtown Garage
-           const destinationCoords = destination // Use provided destination if available
-              ? { latitude: 34.0550, longitude: -118.2500 } // TODO: Geocode destination string to coords
-              : undefined;
+
+            // Try to get coords from bookmarks if destinationLabel matches
+            let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
+            if (destinationLabel) {
+                const matchedBookmark = userBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
+                if (matchedBookmark) {
+                    destinationCoords = { latitude: matchedBookmark.latitude, longitude: matchedBookmark.longitude };
+                    console.log(`Using coordinates from bookmark "${matchedBookmark.label}" for recommendation.`);
+                } else {
+                    console.log(`Destination label "${destinationLabel}" not found in bookmarks. Trying geocoding (not implemented).`);
+                    // TODO: Implement geocoding for addresses or general labels if needed
+                }
+            }
+
 
             // Fetch user preferences (e.g., from gamification/profile service)
             // const gamificationData = await getUserGamification(userId);
@@ -89,16 +117,20 @@ export default function ParkingLotManager() {
                return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
            }));
            const nearbyLotsJson = JSON.stringify(locationsWithPrice);
+            const bookmarksJson = JSON.stringify(userBookmarks); // Pass bookmarks to the flow
+
 
            const input = {
                userId: userId,
                currentLatitude: currentCoords.latitude,
                currentLongitude: currentCoords.longitude,
-               destinationLatitude: destinationCoords?.latitude,
+               destinationLabel: destinationLabel, // Pass the label
+               destinationLatitude: destinationCoords?.latitude, // Pass derived coords if available
                destinationLongitude: destinationCoords?.longitude,
                preferredServices: userPreferredServices,
                nearbyParkingLots: nearbyLotsJson,
                userHistorySummary: userHistorySummary,
+               userBookmarks: bookmarksJson, // Pass bookmarks
                // maxDistanceKm: 5, // Optional: Add distance constraint
            };
 
@@ -117,7 +149,7 @@ export default function ParkingLotManager() {
            setIsLoadingRecommendations(false);
        }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-     }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole]); // Add userRole dependency for pricing
+     }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks]); // Add userBookmarks dependency
 
 
    // --- Voice Assistant Integration ---
@@ -135,7 +167,7 @@ export default function ParkingLotManager() {
         // --- Execute action based on intent ---
         switch (intent) {
             case 'find_parking':
-                // Trigger recommendation fetch or filter based on destination
+                // Trigger recommendation fetch based on destination label
                 if (entities.destination) {
                      toast({ title: "Finding Parking", description: `Looking for parking near ${entities.destination}. Recommendations updated.` });
                      await fetchRecommendations(entities.destination);
@@ -187,10 +219,10 @@ export default function ParkingLotManager() {
                          if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
                           else console.warn("Voice assistant speak function not available.");
                      }
-                } else {
+                 } else {
                     if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot or location would you like me to check?");
-                     else console.warn("Voice assistant speak function not available.");
-                }
+                    else console.warn("Voice assistant speak function not available.");
+                 }
                 break;
 
             case 'cancel_reservation':
@@ -198,25 +230,50 @@ export default function ParkingLotManager() {
                 break;
 
             case 'get_directions':
-                 if (entities.locationId) {
-                     const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
-                     if (location) {
-                         toast({ title: "Getting Directions", description: `Opening map directions for ${location.name}...` });
-                         // TODO: Integrate with mapping service (e.g., open Google Maps URL)
-                         // window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank');
-                     } else {
-                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
-                          else console.warn("Voice assistant speak function not available.");
-                     }
+                 if (entities.destination) {
+                      let targetLat: number | undefined;
+                      let targetLon: number | undefined;
+                      let targetName = entities.destination;
+
+                      // Check if destination is a bookmark
+                      const matchedBookmark = userBookmarks.find(bm => bm.label.toLowerCase() === entities.destination?.toLowerCase());
+                      if (matchedBookmark) {
+                         targetLat = matchedBookmark.latitude;
+                         targetLon = matchedBookmark.longitude;
+                         targetName = matchedBookmark.label;
+                         console.log(`Getting directions to bookmark: ${targetName}`);
+                      } else {
+                          // Check if destination is a known parking lot
+                          const location = locations.find(loc => loc.id === entities.destination || loc.name === entities.destination);
+                          if (location) {
+                               targetLat = location.latitude;
+                               targetLon = location.longitude;
+                               targetName = location.name;
+                               console.log(`Getting directions to parking lot: ${targetName}`);
+                          } else {
+                              // TODO: Geocode the destination string if not a bookmark or lot
+                               console.log(`Cannot resolve directions target: ${targetName}. Geocoding needed.`);
+                          }
+                      }
+
+                      if (targetLat && targetLon) {
+                          toast({ title: "Getting Directions", description: `Opening map directions for ${targetName}...` });
+                          // Open Google Maps URL
+                           window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`, '_blank');
+                      } else {
+                           if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
+                            else console.warn("Voice assistant speak function not available.");
+                      }
                  } else if (pinnedSpot) {
                      const location = locations.find(l => l.id === pinnedSpot.locationId);
-                      toast({ title: "Getting Directions", description: `Opening map directions to your parked car at ${pinnedSpot.spotId}...` });
+                      toast({ title: "Getting Directions", description: `Opening map directions to your pinned car at ${pinnedSpot.spotId}...` });
                       // TODO: Integrate with mapping service to pinned spot coordinates (if available)
                  } else {
                       if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
                        else console.warn("Voice assistant speak function not available.");
                  }
                 break;
+
             case 'report_issue':
                 if (entities.spotId) {
                     const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
@@ -244,17 +301,59 @@ export default function ParkingLotManager() {
                      else console.warn("Voice assistant speak function not available.");
                 }
                 break;
+
+            case 'add_bookmark':
+                 if (!isAuthenticated || !userId) {
+                    if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to save locations.");
+                    else console.warn("Voice assistant speak function not available.");
+                    setIsAuthModalOpen(true);
+                    break;
+                 }
+                 if (entities.bookmarkLabel) {
+                     // Basic handling: Assume 'current location' for now if location isn't specific
+                     // A more robust solution would involve confirming the location or using device GPS
+                     let lat: number | undefined;
+                     let lon: number | undefined;
+                     let addr: string | undefined;
+                     if (entities.bookmarkLocation?.toLowerCase().includes('current') || entities.bookmarkLocation?.toLowerCase().includes('here')) {
+                         // TODO: Get actual current location from device GPS
+                         addr = "Current Location (Detected)";
+                     } else {
+                         addr = entities.bookmarkLocation;
+                         // TODO: Geocode address to get lat/lon if possible
+                     }
+
+                     try {
+                         await addBookmark(userId, { label: entities.bookmarkLabel, address: addr, latitude: lat, longitude: lon });
+                         await fetchUserBookmarks(); // Refresh bookmarks list
+                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, saved "${entities.bookmarkLabel}".`);
+                         else console.warn("Voice assistant speak function not available.");
+                         toast({ title: "Bookmark Added", description: `Saved "${entities.bookmarkLabel}".` });
+                     } catch (error: any) {
+                         console.error("Error adding bookmark via voice:", error);
+                          if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't save the bookmark. ${error.message}`);
+                          else console.warn("Voice assistant speak function not available.");
+                         toast({ title: "Save Failed", description: error.message, variant: "destructive" });
+                     }
+
+                 } else {
+                      if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("What label and location do you want to save?");
+                      else console.warn("Voice assistant speak function not available.");
+                 }
+                break;
+
             case 'unknown':
                 // Response already spoken by the flow
                 break;
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Removed voiceAssistant from dependency array
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations, userId, userBookmarks, fetchUserBookmarks]); // Removed voiceAssistant, added userId, userBookmarks, fetchUserBookmarks
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
         if (!transcript) return;
         try {
-            const result = await processVoiceCommand({ transcript });
+             const bookmarksJson = JSON.stringify(userBookmarks); // Pass current bookmarks context
+            const result = await processVoiceCommand({ transcript, userBookmarks: bookmarksJson });
             await handleVoiceCommandResult(result);
         } catch (err) {
             console.error("Failed to process voice command:", err);
@@ -270,7 +369,7 @@ export default function ParkingLotManager() {
                 console.warn("Voice assistant speak function not available for error reporting.");
             }
         }
-    }, [handleVoiceCommandResult, toast]); // Removed voiceAssistant
+    }, [handleVoiceCommandResult, toast, userBookmarks]); // Added userBookmarks dependency
 
    const voiceAssistant = useVoiceAssistant({
        onCommand: handleVoiceCommand,
@@ -324,14 +423,23 @@ export default function ParkingLotManager() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+    // Fetch bookmarks when user logs in
+    useEffect(() => {
+        if (isAuthenticated && userId) {
+            fetchUserBookmarks();
+        } else {
+             setUserBookmarks([]); // Clear bookmarks if logged out
+        }
+    }, [isAuthenticated, userId, fetchUserBookmarks]);
+
 
    useEffect(() => {
-        // Fetch recommendations after locations are loaded and user is authenticated
-        if (!isLoadingLocations && locations.length > 0 && isAuthenticated) {
+        // Fetch recommendations after locations and bookmarks are loaded and user is authenticated
+        if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated) {
             fetchRecommendations();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoadingLocations, isAuthenticated, fetchRecommendations]);
+    }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, fetchRecommendations]); // Add isLoadingBookmarks
 
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
@@ -339,7 +447,8 @@ export default function ParkingLotManager() {
     login(newUserId, name || `User ${newUserId.substring(0,5)}`, avatar, role || 'User');
     setIsAuthModalOpen(false);
     toast({title: "Authentication Successful"});
-    fetchRecommendations(); // Fetch recommendations after successful login
+    fetchUserBookmarks(); // Fetch bookmarks after login
+    // Recommendations will be fetched by the useEffect dependency change
   };
 
   // Logout is handled in profile page or header now
@@ -392,11 +501,12 @@ export default function ParkingLotManager() {
   };
 
   const getVoiceButtonIcon = () => {
-        if (!isClient || !voiceAssistant) {
-             // Render a placeholder or skeleton server-side or before hydration
-             return <MicOff key="loading-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
+        // Return placeholder or static icon before client-side hydration
+        if (!isClient) {
+             return <MicOff key="ssr-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
-        if (!voiceAssistant.isSupported) {
+        // Rest of the logic runs only on the client
+        if (!voiceAssistant || !voiceAssistant.isSupported) {
              return <MicOff key="unsupported-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         switch (voiceAssistantState) {
@@ -450,7 +560,7 @@ export default function ParkingLotManager() {
                      variant="outline"
                      size="icon"
                      onClick={handleVoiceButtonClick}
-                     disabled={!isClient || !voiceAssistant || !voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking'}
+                     disabled={!isClient || (voiceAssistant && (!voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking')) || false}
                      aria-label={getVoiceButtonTooltip()}
                      title={getVoiceButtonTooltip()} // Tooltip for desktop
                      className={cn(
@@ -523,7 +633,7 @@ export default function ParkingLotManager() {
                      <CardDescription>Based on your preferences and current conditions.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {isLoadingRecommendations ? (
+                    {isLoadingRecommendations || isLoadingBookmarks ? ( // Also consider bookmark loading
                         <div className="space-y-2">
                             <Skeleton className="h-10 w-full" />
                             <Skeleton className="h-10 w-full" />
@@ -635,7 +745,7 @@ export default function ParkingLotManager() {
              // onProfileClick is removed
          />
 
-        {/* Report Issue Modal (Still needed for history items, but could be moved to Profile page) */}
+        {/* Report Issue Modal (Now also potentially triggered by voice) */}
         <ReportIssueModal
             isOpen={isReportModalOpen}
             onClose={() => {
