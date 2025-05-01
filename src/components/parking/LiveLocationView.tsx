@@ -15,6 +15,8 @@ import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, Image as Imag
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image'; // Import next/image
+import { Badge } from "@/components/ui/badge"; // Import Badge
+import { cn } from '@/lib/utils'; // Import cn utility
 
 // Define possible view sources
 type ViewSourceType = 'userCamera' | 'ipCamera' | 'stillImage' | 'placeholder' | 'loading' | 'error';
@@ -59,6 +61,7 @@ export default function LiveLocationView({
         stream.getTracks().forEach(track => track.stop());
         videoRef.current.srcObject = null;
         setUserStreamActive(false);
+        console.log("User Camera Stream Cleaned Up");
       }
     };
 
@@ -77,25 +80,44 @@ export default function LiveLocationView({
                  stream.getTracks().forEach(track => track.stop());
                  return;
             }
+            // Check if videoRef.current exists *before* setting srcObject
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                setUserStreamActive(true);
-                setCurrentSource('userCamera');
-                console.log("User Camera Active");
+                // Wait for video metadata to load to ensure it's ready
+                videoRef.current.onloadedmetadata = () => {
+                    if (isMounted) {
+                        setUserStreamActive(true);
+                        setCurrentSource('userCamera');
+                        console.log("User Camera Active");
+                    }
+                }
             } else {
+                 // If ref is still null here, throw the error
+                 console.error("Video element ref is null when trying to attach stream.");
                  throw new Error("Video element not ready.");
             }
         } catch (error: any) {
             console.error('Error accessing user camera:', error);
             if (!isMounted) return;
-            setErrorMessage(`User Camera Error: ${error.message}. Trying next source...`);
+            // Handle specific errors
+             let userFriendlyError = `Could not access your camera. ${error.message}`;
+             if (error.name === "NotAllowedError") {
+                 userFriendlyError = "Camera permission denied. Please enable permissions in browser settings.";
+             } else if (error.name === "NotFoundError") {
+                 userFriendlyError = "No camera found on this device.";
+             } else if (error.name === "NotReadableError") {
+                userFriendlyError = "Camera is already in use or hardware error occurred.";
+             }
+
+            setErrorMessage(`User Camera Error: ${userFriendlyError}. Trying next source...`);
             toast({
                 variant: 'default', // Use default variant, as it's an expected fallback path
                 title: 'User Camera Unavailable',
-                description: `Could not access your camera. Trying other views.`,
+                description: `Could not access your camera. Trying other views. ${error.name === 'NotAllowedError' ? 'Check permissions.' : ''}`,
+                duration: 5000,
             });
-            // Fallback to placeholder if all else fails
-            tryStillImage(); // Fallback path
+            // Fallback path
+            tryStillImage();
         }
     };
 
@@ -163,65 +185,72 @@ export default function LiveLocationView({
   }, [isOpen, spotId, simulatedIpCameraUrl, simulatedStillImageUrl]); // Rerun effect when dialog opens/closes or spotId/sources change
 
   const renderViewContent = () => {
-      switch (currentSource) {
-          case 'loading':
-              return (
-                  <div className="flex flex-col items-center text-muted-foreground">
-                      <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                      <span>Loading View...</span>
-                  </div>
-              );
-          case 'userCamera':
-              if (userStreamActive) {
-                  return <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />;
-              }
-              // Fallback within userCamera state if stream suddenly fails (should be handled by effect, but as safety)
-              return <div className="text-destructive">User camera stream failed.</div>;
-          case 'ipCamera':
-              // Simulate IP Camera view (using an image for simplicity)
-              return (
-                    <div className="relative w-full h-full">
+      // Always render the video element to ensure ref is ready
+      // Conditionally show/hide elements using CSS based on currentSource
+      return (
+          <>
+              {/* Loading Indicator */}
+              <div className={cn("absolute inset-0 flex flex-col items-center justify-center text-muted-foreground z-10 transition-opacity", currentSource === 'loading' ? 'opacity-100' : 'opacity-0 pointer-events-none')}>
+                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                  <span>Loading View...</span>
+              </div>
+
+              {/* User Camera View */}
+              <video
+                  ref={videoRef}
+                  className={cn("w-full h-full object-cover", currentSource === 'userCamera' && userStreamActive ? 'block' : 'hidden')}
+                  autoPlay
+                  muted
+                  playsInline
+              />
+
+              {/* IP Camera View */}
+               <div className={cn("relative w-full h-full", currentSource === 'ipCamera' ? 'block' : 'hidden')}>
+                   {simulatedIpCameraUrl && (
+                        <>
                         <Image
-                            src={simulatedIpCameraUrl!}
-                            alt={`Simulated IP Camera view for spot ${spotId}`}
+                           src={simulatedIpCameraUrl}
+                           alt={`Simulated IP Camera view for spot ${spotId}`}
+                           layout="fill"
+                           objectFit="cover"
+                        />
+                         <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Live IP Cam (Simulated)</Badge>
+                       </>
+                   )}
+               </div>
+
+              {/* Still Image View */}
+              <div className={cn("relative w-full h-full", currentSource === 'stillImage' ? 'block' : 'hidden')}>
+                    {simulatedStillImageUrl && (
+                        <>
+                        <Image
+                            src={simulatedStillImageUrl}
+                            alt={`Still image for spot ${spotId}`}
                             layout="fill"
                             objectFit="cover"
                         />
-                        <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs">Live IP Cam (Simulated)</Badge>
-                   </div>
-                );
-          case 'stillImage':
-              return (
-                   <div className="relative w-full h-full">
-                       <Image
-                           src={simulatedStillImageUrl!}
-                           alt={`Still image for spot ${spotId}`}
-                           layout="fill"
-                           objectFit="cover"
-                       />
-                       <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs">Recent Image</Badge>
-                   </div>
-              );
-          case 'error':
-          case 'placeholder':
-          default:
-              return (
-                  <div className="relative w-full h-full flex flex-col items-center justify-center text-center bg-muted">
-                      <Image
-                          src={`https://picsum.photos/seed/${spotId || 'placeholder'}/640/480?grayscale`}
-                          alt={`Placeholder view for spot ${spotId}`}
-                          layout="fill"
-                          objectFit="cover"
-                          className="opacity-30"
-                      />
-                       <div className="absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
-                          <Video className="h-10 w-10 text-muted-foreground mb-2" />
-                          <p className="font-semibold text-muted-foreground">Live View Unavailable</p>
-                          {errorMessage && <p className="text-xs text-destructive mt-1">{errorMessage.replace("Trying next source...", "")}</p>}
-                       </div>
-                  </div>
-              );
-      }
+                        <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Recent Image</Badge>
+                        </>
+                    )}
+               </div>
+
+               {/* Placeholder/Error View */}
+                <div className={cn("relative w-full h-full flex flex-col items-center justify-center text-center bg-muted", (currentSource === 'placeholder' || currentSource === 'error') ? 'flex' : 'hidden')}>
+                    <Image
+                        src={`https://picsum.photos/seed/${spotId || 'placeholder'}/640/480?grayscale`}
+                        alt={`Placeholder view for spot ${spotId}`}
+                        layout="fill"
+                        objectFit="cover"
+                        className="opacity-30"
+                    />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
+                        <Video className="h-10 w-10 text-muted-foreground mb-2" />
+                        <p className="font-semibold text-muted-foreground">Live View Unavailable</p>
+                        {errorMessage && <p className="text-xs text-destructive mt-1">{errorMessage.replace("Trying next source...", "")}</p>}
+                    </div>
+               </div>
+          </>
+      );
   };
 
   return (
@@ -237,12 +266,13 @@ export default function LiveLocationView({
           </DialogDescription>
         </DialogHeader>
 
-         <div className="my-4 aspect-video w-full overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+         {/* Container for the view content */}
+         <div className="my-4 aspect-video w-full overflow-hidden rounded-md border bg-muted flex items-center justify-center relative">
            {renderViewContent()}
         </div>
 
-        {/* Alert if user explicitly denied camera permission during the process */}
-        {currentSource === 'placeholder' && errorMessage?.includes("User Camera Error: NotAllowedError") && (
+        {/* Alert if user explicitly denied camera permission */}
+        {errorMessage?.includes("Camera permission denied") && (
            <Alert variant="destructive" className="mt-4">
               <CameraOff className="h-4 w-4"/>
               <AlertTitle>User Camera Access Denied</AlertTitle>
@@ -257,6 +287,7 @@ export default function LiveLocationView({
             {currentSource === 'ipCamera' && <span>Showing live view from parking lot camera (Simulated).</span>}
             {currentSource === 'stillImage' && <span>Showing recent still image of the spot.</span>}
             {currentSource === 'placeholder' && <span>Showing placeholder image.</span>}
+            {currentSource === 'loading' && <span>Loading...</span>}
          </div>
 
         <DialogFooter>
