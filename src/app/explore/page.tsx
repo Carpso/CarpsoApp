@@ -1,8 +1,9 @@
+// src/app/explore/page.tsx
 'use client'; // Needed for useEffect, useState
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash } from "lucide-react"; // Replaced ChargingStation with Fuel, Added Loader2, ServerCrash
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell } from "lucide-react"; // Added Bath, ConciergeBell
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,7 +24,7 @@ const mockAuctions = [
 // Helper to get service icon
 const getServiceIcon = (service: ParkingLotService | undefined) => {
     switch (service) {
-      case 'EV Charging': return <Fuel className="h-8 w-8 text-primary mb-2" />; // Replaced ChargingStation with Fuel
+      case 'EV Charging': return <Fuel className="h-8 w-8 text-primary mb-2" />;
       case 'Car Wash': return <SprayCan className="h-8 w-8 text-primary mb-2" />;
       case 'Mobile Money Agent': return <BadgeCent className="h-8 w-8 text-primary mb-2" />;
       case 'Wifi': return <Wifi className="h-8 w-8 text-primary mb-2" />;
@@ -35,7 +36,7 @@ const getServiceIcon = (service: ParkingLotService | undefined) => {
 
 
 const mockServices = [
-    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: Fuel, serviceType: 'EV Charging' as ParkingLotService }, // Replaced ChargingStation
+    { id: 1, name: "EV Charging Station", location: "Downtown Garage", description: "Level 2 chargers available.", icon: Fuel, serviceType: 'EV Charging' as ParkingLotService },
     { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: SprayCan, serviceType: 'Car Wash' as ParkingLotService },
     { id: 3, name: "Mobile Money Booth", location: "Airport Lot B", description: "Airtel & MTN Mobile Money available.", icon: BadgeCent, serviceType: 'Mobile Money Agent' as ParkingLotService },
     { id: 4, name: "Free Wi-Fi Zone", location: "Downtown Garage", description: "Complimentary Wi-Fi near the entrance.", icon: Wifi, serviceType: 'Wifi' as ParkingLotService },

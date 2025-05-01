@@ -227,4 +227,3 @@ export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
 
 
 // Add more functions as needed, e.g., getLeaderboard
-```
