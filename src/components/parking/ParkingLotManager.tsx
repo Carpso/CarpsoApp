@@ -8,10 +8,11 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff } from 'lucide-react'; // Added Sparkles, Star, Mic, MicOff
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square } from 'lucide-react'; // Added CheckSquare, Square
 import AuthModal from '@/components/auth/AuthModal';
 import UserProfile from '@/components/profile/UserProfile';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge'; // Import Badge component
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
@@ -23,7 +24,6 @@ import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistan
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
 import { cn } from '@/lib/utils';
 import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
-import { Badge } from '@/components/ui/badge'; // Import Badge component
 
 
 export default function ParkingLotManager() {
@@ -57,6 +57,7 @@ export default function ParkingLotManager() {
    const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null); // State for report modal
    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
    const [isClient, setIsClient] = useState(false); // State to track client-side mount
+   const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle'); // Track voice assistant state for UI
 
    useEffect(() => {
        setIsClient(true); // Set isClient to true once the component mounts on the client
@@ -128,7 +129,8 @@ export default function ParkingLotManager() {
         console.log("Processed Entities:", entities);
 
         // Speak the response first
-        if (voiceAssistant) voiceAssistant.speak(responseText);
+        if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(responseText);
+        else console.warn("Voice assistant speak function not available.");
 
         // --- Execute action based on intent ---
         switch (intent) {
@@ -136,7 +138,6 @@ export default function ParkingLotManager() {
                 // Trigger recommendation fetch or filter based on destination
                 if (entities.destination) {
                      toast({ title: "Finding Parking", description: `Looking for parking near ${entities.destination}. Recommendations updated.` });
-                     // TODO: Update recommendations based on destination entity
                      await fetchRecommendations(entities.destination);
                 } else {
                      toast({ title: "Finding Parking", description: `Showing general recommendations.` });
@@ -150,18 +151,16 @@ export default function ParkingLotManager() {
                     const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
                     if (location) {
                         setSelectedLocationId(location.id);
-                        // Need a way to trigger the reservation dialog for the specific spot
-                        // This might require refactoring ParkingLotGrid or exposing a function
                         toast({ title: "Action Required", description: `Navigating to ${location.name}. Please confirm reservation for ${entities.spotId} on screen.` });
-                         // Scroll to grid?
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
-                         // TODO: Programmatically trigger the reservation dialog in ParkingLotGrid
                          console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                     } else {
-                        if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                        if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                        else console.warn("Voice assistant speak function not available.");
                     }
                 } else {
-                    if (voiceAssistant) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                    if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                    else console.warn("Voice assistant speak function not available.");
                 }
                 break;
 
@@ -170,31 +169,32 @@ export default function ParkingLotManager() {
                     const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
                      if (location) {
                          setSelectedLocationId(location.id);
-                         // TODO: Highlight or provide status for the specific spot
                          toast({ title: "Checking Availability", description: `Checking status for ${entities.spotId} in ${location.name}. See grid below.` });
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                          console.warn(`Need mechanism to display/highlight availability for ${entities.spotId}`);
                     } else {
-                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          else console.warn("Voice assistant speak function not available.");
                     }
                 } else if (entities.locationId) {
                      const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
                      if (location) {
                          setSelectedLocationId(location.id);
                          const available = location.capacity - (location.currentOccupancy ?? 0);
-                         if (voiceAssistant) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                          else console.warn("Voice assistant speak function not available.");
                      } else {
-                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                          else console.warn("Voice assistant speak function not available.");
                      }
                 } else {
-                    if (voiceAssistant) voiceAssistant.speak("Which spot or location would you like me to check?");
+                    if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot or location would you like me to check?");
+                     else console.warn("Voice assistant speak function not available.");
                 }
                 break;
 
             case 'cancel_reservation':
-                 // Requires checking active reservations and asking user to confirm which one
                  toast({ title: "Action Required", description: "Please open your profile to view and cancel active reservations." });
-                 // Optionally open profile: setIsProfileOpen(true);
                 break;
 
             case 'get_directions':
@@ -205,22 +205,22 @@ export default function ParkingLotManager() {
                          // TODO: Integrate with mapping service (e.g., open Google Maps URL)
                          // window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank');
                      } else {
-                         if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                         if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                          else console.warn("Voice assistant speak function not available.");
                      }
                  } else if (pinnedSpot) {
                      const location = locations.find(l => l.id === pinnedSpot.locationId);
                       toast({ title: "Getting Directions", description: `Opening map directions to your parked car at ${pinnedSpot.spotId}...` });
                       // TODO: Integrate with mapping service to pinned spot coordinates (if available)
                  } else {
-                      if (voiceAssistant) voiceAssistant.speak("Where would you like directions to?");
+                      if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
+                       else console.warn("Voice assistant speak function not available.");
                  }
                 break;
             case 'report_issue':
                 if (entities.spotId) {
                     const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
                      if (location && isAuthenticated) {
-                         // Find the corresponding 'reservation' (even if just parked) to pass to modal
-                         // This is tricky without a proper reservation list. Simulate finding a match.
                          const mockReservation = {
                              id: `rep_${entities.spotId}`,
                              spotId: entities.spotId,
@@ -231,22 +231,25 @@ export default function ParkingLotManager() {
                          };
                          setReportingReservation(mockReservation);
                          setIsReportModalOpen(true);
-                         // TTS response handled by the flow already
                      } else if (!isAuthenticated) {
-                          if (voiceAssistant) voiceAssistant.speak("Please sign in to report an issue.");
+                          if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to report an issue.");
+                          else console.warn("Voice assistant speak function not available.");
                           setIsAuthModalOpen(true);
                      } else {
-                          if (voiceAssistant) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                           else console.warn("Voice assistant speak function not available.");
                      }
                 } else {
-                    if (voiceAssistant) voiceAssistant.speak("Which spot are you reporting an issue for?");
+                    if (voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot are you reporting an issue for?");
+                     else console.warn("Voice assistant speak function not available.");
                 }
                 break;
             case 'unknown':
                 // Response already spoken by the flow
                 break;
         }
-    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Added fetchRecommendations dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations]); // Removed voiceAssistant from dependency array
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
         if (!transcript) return;
@@ -261,30 +264,42 @@ export default function ParkingLotManager() {
                 variant: "destructive",
             });
             // Check if voiceAssistant is initialized before speaking
-            if (voiceAssistant) {
+            if (voiceAssistant && voiceAssistant.speak) {
                voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
+            } else {
+                console.warn("Voice assistant speak function not available for error reporting.");
             }
         }
-    }, [handleVoiceCommandResult, toast]); // Dependencies
+    }, [handleVoiceCommandResult, toast]); // Removed voiceAssistant
 
-   const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
    const voiceAssistant = useVoiceAssistant({
        onCommand: handleVoiceCommand,
        onStateChange: (newState) => {
-           console.log("Voice Assistant State:", newState);
-           // Update UI based on state if needed
+           console.log("Voice Assistant State (Manager):", newState);
+           setVoiceAssistantState(newState); // Update local state for UI
        }
    });
 
    useEffect(() => {
-       if (voiceAssistant?.error) { // Check if voiceAssistant exists before accessing error
+       // Start listening automatically when component mounts on client and is supported
+       // Ensure it only runs client-side
+       if (isClient && voiceAssistant && voiceAssistant.isSupported && voiceAssistant.state === 'idle') {
+           voiceAssistant.startListening();
+       }
+       // No cleanup needed here as the hook manages its own lifecycle
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [isClient]); // Only run once on client mount
+
+   useEffect(() => {
+        // Check if voiceAssistant exists before accessing error
+        if (voiceAssistant?.error) {
            toast({
                title: "Voice Assistant Error",
                description: voiceAssistant.error,
                variant: "destructive",
                duration: 4000,
            });
-       }
+        }
    }, [voiceAssistant?.error, toast]); // Optional chaining for dependency
    // --- End Voice Assistant Integration ---
 
@@ -299,7 +314,6 @@ export default function ParkingLotManager() {
         setLocations(fetchedLocations);
         if (fetchedLocations.length > 0 && !selectedLocationId) {
           // Don't auto-select, let recommendations guide or user choose
-          // setSelectedLocationId(fetchedLocations[0].id);
         }
       } catch (err) {
         console.error("Failed to fetch parking locations:", err);
@@ -319,34 +333,33 @@ export default function ParkingLotManager() {
             fetchRecommendations();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoadingLocations, isAuthenticated, fetchRecommendations]); // Removed locations, userId, userPreferredServices, userHistorySummary from dependencies as fetchRecommendations itself depends on them
+    }, [isLoadingLocations, isAuthenticated, fetchRecommendations]);
 
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
   const handleAuthSuccess = (newUserId: string, name?: string, avatar?: string, role?: string) => {
-    login(newUserId, name || `User ${newUserId.substring(0,5)}`, avatar, role || 'User'); // Update context on login
+    login(newUserId, name || `User ${newUserId.substring(0,5)}`, avatar, role || 'User');
     setIsAuthModalOpen(false);
     toast({title: "Authentication Successful"});
-    // Trigger recommendation fetch on login
     fetchRecommendations();
   };
 
   const handleLogout = () => {
-      logout(); // Update context on logout
+      logout();
       setIsProfileOpen(false);
       toast({title: "Logged Out"});
-      setPinnedSpot(null); // Clear pin on logout
-      setRecommendations([]); // Clear recommendations on logout
+      setPinnedSpot(null);
+      setRecommendations([]);
+      // Optionally stop voice assistant on logout
+      if (voiceAssistant) voiceAssistant.stopListening();
   }
 
-  // Simulate pinning the car location temporarily after reservation/parking
    const simulatePinCar = async (spotId: string, locationId: string) => {
        setIsPinning(true);
-       setPinnedSpot(null); // Clear previous pin first
+       setPinnedSpot(null);
        console.log(`Simulating pinning car location at ${spotId} in ${locationId}...`);
-       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
+       await new Promise(resolve => setTimeout(resolve, 1000));
 
-       // Get location details for pinning (optional, for more context)
        const location = locations.find(l => l.id === locationId);
 
        setPinnedSpot({ spotId, locationId });
@@ -354,11 +367,9 @@ export default function ParkingLotManager() {
        toast({
            title: "Car Location Pinned",
            description: `Your car's location at ${spotId} (${location?.name || locationId}) has been temporarily saved.`,
-           // Add action to view map or clear pin if needed
        });
-       // Potentially award points for parking
        if (userId) {
-          // await awardPoints(userId, 5); // Example: Award 5 points for parking
+          // await awardPoints(userId, 5);
        }
    };
 
@@ -372,10 +383,7 @@ export default function ParkingLotManager() {
                action: <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>,
            });
        } else {
-           // If authenticated, automatically simulate pinning the car
            simulatePinCar(spotId, locationId);
-           // TODO: Add reservation to user's history (requires backend integration)
-           // Award badge for first booking (if applicable)
            if (userId) {
                 // awardBadge(userId, 'badge_first_booking');
            }
@@ -387,70 +395,81 @@ export default function ParkingLotManager() {
       toast({ title: "Pinned Location Cleared" });
   };
 
-  // Handle selecting a recommended location
   const handleSelectRecommendation = (lotId: string) => {
       setSelectedLocationId(lotId);
-      // Optionally scroll to the parking grid
        document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const getVoiceButtonIcon = () => {
-        // Initial render on client will be false, use MicOff as default before hydration
-        if (!isClient || !voiceAssistant?.state) {
-             return <MicOff key="disabled-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
+        if (!isClient || !voiceAssistant) {
+             // Render a placeholder or skeleton server-side or before hydration
+             return <MicOff key="loading-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
-        switch (voiceAssistant.state) {
+        switch (voiceAssistantState) {
+             case 'activated':
+                 return <CheckSquare key="activated" className="h-5 w-5 text-green-600 animate-pulse" />;
             case 'listening':
-                return <Mic key="mic" className="h-5 w-5 text-destructive animate-pulse" />;
+                return <Square key="listening" className="h-5 w-5 text-blue-600 animate-pulse" />;
             case 'processing':
                 return <Loader2 key="loader" className="h-5 w-5 animate-spin" />;
-            case 'speaking': // Still use Mic for speaking state
-            case 'error': // Use Mic for error state too, perhaps differentiate with color later
+            case 'speaking':
+                return <Mic key="speaking" className="h-5 w-5 text-purple-600" />;
+            case 'error':
+                 return <MicOff key="error-mic" className="h-5 w-5 text-destructive" />;
             case 'idle':
             default:
-                return <Mic key="default-mic" className="h-5 w-5" />;
+                return <MicOff key="default-mic" className="h-5 w-5 text-muted-foreground" />;
         }
     };
 
    const handleVoiceButtonClick = () => {
-        if (!isClient || !voiceAssistant) return; // Ensure client-side and voiceAssistant exists
-       if (voiceAssistant.isListening) {
+       if (!isClient || !voiceAssistant) return;
+       // Button now just toggles continuous listening on/off
+       if (voiceAssistant.state === 'listening' || voiceAssistant.state === 'activated') {
            voiceAssistant.stopListening();
        } else {
            voiceAssistant.startListening();
        }
    };
 
+    const getVoiceButtonTooltip = () => {
+         if (!isClient || !voiceAssistant) return "Loading...";
+         if (!voiceAssistant.isSupported) return "Voice commands not supported";
+         switch (voiceAssistantState) {
+              case 'activated': return "Listening for command...";
+              case 'listening': return "Listening for 'Hey Carpso'...";
+              case 'processing': return "Processing...";
+              case 'speaking': return "Speaking...";
+              case 'error': return `Error: ${voiceAssistant.error || 'Unknown'}`;
+              case 'idle':
+              default: return "Click to enable voice commands";
+         }
+    }
+
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Parking Availability</h1>
            <div className="flex items-center gap-2">
-                {/* Voice Assistant Button - Conditionally render on client */}
-                 {isClient ? (
-                     voiceAssistant?.isSupported ? (
-                         <Button
-                             variant="outline"
-                             size="icon"
-                             onClick={handleVoiceButtonClick}
-                             disabled={!voiceAssistant || voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking'}
-                             aria-label={voiceAssistant?.isListening ? 'Stop listening' : 'Start voice command'}
-                             className={cn(
-                                 voiceAssistant?.isListening && "border-destructive text-destructive",
-                                 (!voiceAssistant || voiceAssistant.state === 'processing' || voiceAssistant.state === 'speaking') && "opacity-50 cursor-not-allowed"
-                             )}
-                         >
-                             {getVoiceButtonIcon()}
-                         </Button>
-                     ) : (
-                         <Button variant="outline" size="icon" disabled title="Voice commands not supported by your browser">
-                            <MicOff className="h-5 w-5 text-muted-foreground opacity-50" />
-                        </Button>
-                     )
-                 ) : ( // Render a placeholder or skeleton server-side
-                      <Skeleton className="h-10 w-10" />
-                 )}
-
+                {/* Voice Assistant Button - Enhanced UI */}
+                 <Button
+                     variant="outline"
+                     size="icon"
+                     onClick={handleVoiceButtonClick}
+                     disabled={!isClient || !voiceAssistant || !voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking'}
+                     aria-label={getVoiceButtonTooltip()}
+                     title={getVoiceButtonTooltip()} // Tooltip for desktop
+                     className={cn(
+                         "transition-opacity", // Added for smoother loading
+                         !isClient && "opacity-50 cursor-not-allowed", // Style for SSR/before mount
+                         isClient && voiceAssistantState === 'activated' && "border-primary",
+                         isClient && voiceAssistantState === 'listening' && "border-blue-600",
+                         isClient && voiceAssistantState === 'error' && "border-destructive",
+                         isClient && (!voiceAssistant || !voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking') && "opacity-50 cursor-not-allowed"
+                     )}
+                 >
+                     {getVoiceButtonIcon()}
+                 </Button>
 
                {/* Auth / Profile Button */}
                {isAuthenticated && userId ? (
@@ -464,12 +483,14 @@ export default function ParkingLotManager() {
                )}
            </div>
        </div>
-        {/* Voice Assistant Status Indicator (Optional) */}
-        {isClient && voiceAssistant?.state !== 'idle' && voiceAssistant?.state !== 'error' && (
-            <p className="text-sm text-muted-foreground text-center mb-4">
-                 {voiceAssistant.state === 'listening' && 'Listening...'}
-                 {voiceAssistant.state === 'processing' && 'Processing command...'}
-                 {voiceAssistant.state === 'speaking' && 'Speaking...'}
+        {/* Voice Assistant Status Indicator (More informative) */}
+        {isClient && voiceAssistantState !== 'idle' && (
+            <p className="text-sm text-muted-foreground text-center mb-4 italic">
+                 {voiceAssistantState === 'activated' && "Say your command..."}
+                 {voiceAssistantState === 'listening' && "Listening for 'Hey Carpso'..."}
+                 {voiceAssistantState === 'processing' && "Processing command..."}
+                 {voiceAssistantState === 'speaking' && "Speaking..."}
+                 {voiceAssistantState === 'error' && `Error: ${voiceAssistant?.error || 'Unknown'}`}
             </p>
         )}
 
@@ -586,13 +607,12 @@ export default function ParkingLotManager() {
 
        {/* Parking Grid */}
       {selectedLocation ? (
-        <div id="parking-grid-section"> {/* Added ID for potential scrolling */}
+        <div id="parking-grid-section">
             <ParkingLotGrid
               key={selectedLocation.id}
               location={selectedLocation}
               onSpotReserved={handleSpotReserved}
-              // Pass user tier for dynamic pricing calculation
-              userTier={userRole === 'PremiumUser' ? 'Premium' : 'Basic'} // Example mapping
+              userTier={userRole === 'PremiumUser' ? 'Premium' : 'Basic'}
             />
         </div>
       ) : !isLoadingLocations && !error && locations.length > 0 ? (
@@ -601,28 +621,24 @@ export default function ParkingLotManager() {
          </p>
       ) : null }
 
-      {/* Authentication Modal */}
        <AuthModal
            isOpen={isAuthModalOpen}
            onClose={() => setIsAuthModalOpen(false)}
            onAuthSuccess={handleAuthSuccess}
        />
 
-        {/* User Profile Modal/Sheet */}
        {isAuthenticated && userId && (
            <UserProfile
                isOpen={isProfileOpen}
                onClose={() => setIsProfileOpen(false)}
                userId={userId}
                onLogout={handleLogout}
-               // Pass user details from context
                userName={userName}
                userAvatarUrl={userAvatarUrl}
-               userRole={userRole || 'User'} // Pass role
+               userRole={userRole || 'User'}
            />
        )}
 
-        {/* Bottom Navigation - Pass context state */}
         <BottomNavBar
              isAuthenticated={isAuthenticated}
              userRole={userRole || 'User'}
@@ -640,7 +656,7 @@ export default function ParkingLotManager() {
                  setTimeout(() => setReportingReservation(null), 300);
             }}
             reservation={reportingReservation}
-            userId={userId || ''} // Pass userId, ensure it's not null if modal can open
+            userId={userId || ''}
         />
     </div>
   );
