@@ -1,3 +1,4 @@
+// src/app/profile/page.tsx
 'use client';
 
 import React, { useState, useEffect, useContext, useCallback } from 'react';
@@ -12,14 +13,14 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X } from 'lucide-react';
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2 } from 'lucide-react'; // Added Loader2
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
-import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Keep for reporting from history
-import { useRouter } from 'next/navigation'; // Use for redirection
+import ReportIssueModal from '@/components/profile/ReportIssueModal';
+import { useRouter } from 'next/navigation';
 
-// Mock data types and functions (same as UserProfile sheet - should be moved to a shared location)
+// Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
     name: string;
     email?: string;
@@ -47,7 +48,7 @@ interface ParkingHistoryEntry {
     status: 'Completed' | 'Active' | 'Upcoming';
 }
 
-// Mock Data Fetching Functions (Should be replaced with real API calls)
+// Mock Data Fetching Functions (Replace with real API calls)
 const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
     await new Promise(resolve => setTimeout(resolve, 700));
     const name = existingName || `User ${userId.substring(0, 5)}`;
@@ -59,13 +60,12 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
 const fetchBillingInfo = async (userId: string, role: string): Promise<BillingInfo> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     const randomBalance = (Math.random() * 10) - 5;
-    const isPremium = role === 'PremiumUser' || role === 'Premium' || Math.random() > 0.7;
+    const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
     return { accountBalance: parseFloat(randomBalance.toFixed(2)), paymentMethods: [{ type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
 };
 
 const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[]> => {
     await new Promise(resolve => setTimeout(resolve, 1000));
-     // More realistic history
     const now = Date.now();
     const history: ParkingHistoryEntry[] = [
       { id: 'res1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 30 * 60000).toISOString(), endTime: new Date(now + 60 * 60000).toISOString(), cost: 0, status: 'Active' },
@@ -85,15 +85,15 @@ const getIconFromName = (iconName: string | undefined): React.ElementType => {
         case 'Users': return Users;
         case 'Trophy': return Trophy;
         case 'Star': return Star;
-        case 'Megaphone': return AlertTriangle;
+        case 'Megaphone': return AlertTriangle; // Changed for reporting issue badge
         case 'CheckCircle': return CheckCircle;
         case 'Gift': return Gift;
-        default: return SparklesIcon;
+        default: return SparklesIcon; // Default icon
     }
 };
 
 export default function ProfilePage() {
-    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile } = useContext(AppStateContext)!;
+    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile, logout } = useContext(AppStateContext)!; // Added logout
     const router = useRouter();
     const { toast } = useToast();
 
@@ -102,16 +102,17 @@ export default function ProfilePage() {
     const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
     const [gamification, setGamification] = useState<UserGamification | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
     const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
     const [editMode, setEditMode] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false); // Specific state for saving profile
     const [newName, setNewName] = useState('');
     const [newAvatarUrl, setNewAvatarUrl] = useState('');
 
      // Redirect if not authenticated
      useEffect(() => {
-         // Run check only on client side after mount
          if (typeof window !== 'undefined' && !isAuthenticated) {
               toast({ title: "Access Denied", description: "Please sign in to view your profile.", variant: "destructive" });
              router.push('/'); // Redirect to home page or login page
@@ -120,38 +121,61 @@ export default function ProfilePage() {
 
 
     // Fetch data when authenticated user ID is available
-    useEffect(() => {
+    const loadProfileData = useCallback(async () => {
         if (userId) {
-            const loadData = async () => {
-                setIsLoading(true);
-                try {
-                    const roleToUse = userRole || 'User';
-                    const [details, billing, history, gamificationData] = await Promise.all([
-                        fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
-                        fetchBillingInfo(userId, roleToUse),
-                        fetchParkingHistory(userId),
-                        getUserGamification(userId),
-                    ]);
-                    setUserDetails(details);
-                    setBillingInfo(billing);
-                    setParkingHistory(history);
-                    setGamification(gamificationData);
-                    setNewName(details.name);
-                    setNewAvatarUrl(details.avatarUrl || '');
-                } catch (error) {
-                    console.error("Failed to load user profile data:", error);
-                    toast({ title: "Error Loading Profile", description: "Could not fetch profile data.", variant: "destructive" });
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            loadData();
+            setIsLoading(true);
+            setErrorLoading(null);
+            try {
+                const roleToUse = userRole || 'User'; // Use context role or default
+                const [details, billing, history, gamificationData] = await Promise.all([
+                    fetchUserDetails(userId, userName, userAvatarUrl, roleToUse), // Use context name/avatar initially
+                    fetchBillingInfo(userId, roleToUse),
+                    fetchParkingHistory(userId),
+                    getUserGamification(userId),
+                ]);
+                setUserDetails(details);
+                setBillingInfo(billing);
+                setParkingHistory(history);
+                setGamification(gamificationData);
+                // Initialize edit form fields with fetched/context data
+                setNewName(details.name || userName || '');
+                setNewAvatarUrl(details.avatarUrl || userAvatarUrl || '');
+            } catch (error) {
+                console.error("Failed to load user profile data:", error);
+                setErrorLoading("Could not fetch profile data.");
+                toast({ title: "Error Loading Profile", description: "Could not fetch profile data.", variant: "destructive" });
+            } finally {
+                setIsLoading(false);
+            }
         } else {
-             setIsLoading(false); // Stop loading if no userId (handles case where user logs out)
+             // If userId is somehow null after authentication check passes, stop loading
+             setIsLoading(false);
+             if (isAuthenticated) {
+                setErrorLoading("User ID not found. Please try logging in again.");
+             }
         }
-    }, [userId, userName, userAvatarUrl, userRole, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userId, userRole, toast]); // Don't include userName/userAvatarUrl here to avoid re-fetch on profile update
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            loadProfileData();
+        } else {
+            // If not authenticated, stop loading and potentially clear data
+            setIsLoading(false);
+            setUserDetails(null);
+            setBillingInfo(null);
+            setParkingHistory(null);
+            setGamification(null);
+        }
+    }, [isAuthenticated, loadProfileData]);
+
 
     const handleOpenReportModal = (reservation: ParkingHistoryEntry) => {
+        if (!isAuthenticated) {
+            toast({ title: "Sign In Required", description: "Please sign in to report an issue.", variant: "destructive"});
+            return;
+        }
         setReportingReservation(reservation);
         setIsReportModalOpen(true);
     };
@@ -159,12 +183,14 @@ export default function ProfilePage() {
     const handleDownloadBilling = () => {
         console.log("Download billing statement:", billingInfo);
         toast({ title: "Download Started (Simulation)", description: "Downloading billing statement." });
+        // TODO: Implement actual CSV/spreadsheet generation and download
     };
 
     const handleDownloadHistory = () => {
         const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
         console.log("Download parking history:", completedHistory);
         toast({ title: "Download Started (Simulation)", description: "Downloading parking history." });
+         // TODO: Implement actual CSV/spreadsheet generation and download
     };
 
     const handleCarpoolToggle = async (checked: boolean) => {
@@ -173,7 +199,8 @@ export default function ProfilePage() {
         try {
             const success = await updateCarpoolEligibility(userId, checked);
             if (success) {
-                setGamification(prev => ({ ...prev!, isCarpoolEligible: checked }));
+                // Ensure gamification state exists before updating
+                setGamification(prev => prev ? ({ ...prev, isCarpoolEligible: checked }) : ({ points: 0, badges: [], isCarpoolEligible: checked }));
                 toast({ title: "Carpool Status Updated", description: checked ? "Eligible for carpooling benefits!" : "Carpooling benefits disabled." });
             } else { throw new Error("Failed to update carpool status."); }
         } catch (error) {
@@ -187,16 +214,16 @@ export default function ProfilePage() {
             toast({ title: "Missing Information", description: "Name cannot be empty.", variant: "destructive" });
             return;
         }
-        setIsLoading(true); // Indicate saving process
+        setIsSavingProfile(true); // Use specific saving state
         try {
-            // Simulate backend update call
+            // Simulate backend update call (replace with actual API call)
             await new Promise(resolve => setTimeout(resolve, 800));
             console.log("Simulating profile update for:", userId, { name: newName, avatarUrl: newAvatarUrl });
 
             // Update global state via context
             updateUserProfile(newName, newAvatarUrl);
 
-            // Update local state
+            // Update local state for immediate feedback
             setUserDetails(prev => prev ? { ...prev, name: newName, avatarUrl: newAvatarUrl } : null);
 
             toast({ title: "Profile Updated" });
@@ -205,22 +232,31 @@ export default function ProfilePage() {
             console.error("Failed to save profile:", error);
             toast({ title: "Save Failed", variant: "destructive" });
         } finally {
-            setIsLoading(false);
+            setIsSavingProfile(false);
         }
     };
 
      const handleCancelEdit = () => {
-        // Reset form fields to original values
-        if(userDetails) {
-            setNewName(userDetails.name);
-            setNewAvatarUrl(userDetails.avatarUrl || '');
-        }
+        // Reset form fields to original values from userDetails or context
+        const originalName = userDetails?.name || userName || '';
+        const originalAvatar = userDetails?.avatarUrl || userAvatarUrl || '';
+        setNewName(originalName);
+        setNewAvatarUrl(originalAvatar);
         setEditMode(false);
      };
 
+    const handleLogout = () => {
+        logout();
+        toast({ title: "Logged Out"});
+        router.push('/'); // Redirect to home after logout
+    };
+
+
     const activeReservations = parkingHistory?.filter(h => h.status === 'Active') || [];
     const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
-    const userInitial = userDetails?.name ? userDetails.name.charAt(0).toUpperCase() : '?';
+    const displayName = editMode ? newName : (userDetails?.name || userName || 'User');
+    const displayAvatar = editMode ? newAvatarUrl : (userDetails?.avatarUrl || userAvatarUrl || '');
+    const userInitial = displayName ? displayName.charAt(0).toUpperCase() : '?';
     const currentTier = billingInfo?.subscriptionTier || 'Basic';
     const isPremium = currentTier === 'Premium';
 
@@ -233,8 +269,19 @@ export default function ProfilePage() {
         );
     }
 
+    // Display error state
+    if (errorLoading) {
+         return (
+             <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
+                 <AlertCircle className="mx-auto h-10 w-10 text-destructive mb-4" />
+                 <p className="text-destructive">{errorLoading}</p>
+                 <Button onClick={loadProfileData} className="mt-4">Retry</Button>
+             </div>
+         );
+    }
+
+    // This should be caught by the redirect, but as a final fallback
     if (!isAuthenticated || !userId || !userDetails) {
-        // This case should ideally be handled by the redirect, but as a fallback:
         return (
             <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
                 <AlertCircle className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
@@ -258,11 +305,11 @@ export default function ProfilePage() {
                                 </Button>
                             ) : (
                                 <div className="flex gap-2">
-                                     <Button variant="ghost" size="icon" onClick={handleCancelEdit} disabled={isLoading} aria-label="Cancel Edit">
+                                     <Button variant="ghost" size="icon" onClick={handleCancelEdit} disabled={isSavingProfile} aria-label="Cancel Edit">
                                         <X className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isLoading} aria-label="Save Profile">
-                                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
+                                    <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isSavingProfile} aria-label="Save Profile">
+                                        {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
                                     </Button>
                                 </div>
                             )}
@@ -270,9 +317,10 @@ export default function ProfilePage() {
                         <CardDescription>View and manage your account details.</CardDescription>
                     </CardHeader>
                     <CardContent>
+                        {/* User Details Section */}
                         <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
-                            <Avatar className="h-24 w-24 md:h-32 md:w-32 flex-shrink-0">
-                                <AvatarImage src={newAvatarUrl || userDetails.avatarUrl} alt={newName || userDetails.name} />
+                            <Avatar className="h-24 w-24 md:h-32 md:w-32 flex-shrink-0 border">
+                                <AvatarImage src={displayAvatar} alt={displayName} />
                                 <AvatarFallback className="text-4xl">{userInitial}</AvatarFallback>
                             </Avatar>
                             <div className="space-y-2 flex-grow">
@@ -280,23 +328,23 @@ export default function ProfilePage() {
                                     <>
                                         <div className="space-y-1">
                                             <Label htmlFor="profile-name">Name</Label>
-                                            <Input id="profile-name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={isLoading} />
+                                            <Input id="profile-name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={isSavingProfile} />
                                         </div>
                                         <div className="space-y-1">
                                              <Label htmlFor="profile-avatar">Avatar URL</Label>
-                                             <Input id="profile-avatar" value={newAvatarUrl} onChange={(e) => setNewAvatarUrl(e.target.value)} placeholder="https://..." disabled={isLoading} />
+                                             <Input id="profile-avatar" value={newAvatarUrl} onChange={(e) => setNewAvatarUrl(e.target.value)} placeholder="https://..." disabled={isSavingProfile} />
                                         </div>
                                     </>
                                 ) : (
                                     <>
-                                        <h2 className="text-2xl font-semibold flex items-center gap-2">
-                                            {userDetails.name}
-                                             <Badge variant={isPremium ? "default" : "secondary"} className={isPremium ? "bg-yellow-500 text-black" : ""}>
+                                        <h2 className="text-2xl font-semibold flex items-center gap-2 flex-wrap">
+                                            {displayName}
+                                             <Badge variant={isPremium ? "default" : "secondary"} className={isPremium ? "bg-yellow-500 text-black hover:bg-yellow-500/90" : ""}>
                                                 {isPremium && <Star className="h-3 w-3 mr-1" />} {currentTier} Tier
                                             </Badge>
                                         </h2>
-                                        <p className="text-sm text-muted-foreground">{userDetails.email}</p>
-                                        <p className="text-sm text-muted-foreground">{userDetails.phone}</p>
+                                        {userDetails.email && <p className="text-sm text-muted-foreground">{userDetails.email}</p>}
+                                        {userDetails.phone && <p className="text-sm text-muted-foreground">{userDetails.phone}</p>}
                                         <p className="text-xs text-muted-foreground">Role: {userDetails.role}</p>
                                         <p className="text-xs text-muted-foreground">Member since: {new Date(userDetails.memberSince).toLocaleDateString()}</p>
                                     </>
@@ -370,6 +418,7 @@ export default function ProfilePage() {
                                                 <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                                                     <Clock className="h-4 w-4" />
                                                     <span>Ends: {new Date(res.endTime).toLocaleTimeString()}</span>
+                                                    {/* TODO: Add cancel reservation button */}
                                                 </div>
                                             </div>
                                             <Button variant="destructive" size="sm" className="w-full sm:w-auto mt-2 sm:mt-0" onClick={() => handleOpenReportModal(res)}>
@@ -409,9 +458,9 @@ export default function ProfilePage() {
                                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                                             <CheckCircle className="h-4 w-4 text-green-600"/> You have {billingInfo.guaranteedSpotsAvailable} guaranteed spot passes remaining.
                                         </p>
-                                    ) : (
+                                    ) : !isPremium ? (
                                         <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
-                                    )}
+                                    ) : null}
                                 </CardContent>
                              </Card>
 
@@ -423,9 +472,12 @@ export default function ProfilePage() {
                                     </p>
                                 </div>
                                 {billingInfo && billingInfo.accountBalance < 0 ? (
-                                    <Badge variant="destructive" className="flex items-center gap-1">
-                                        <AlertCircle className="h-3 w-3" /> Overdue
-                                    </Badge>
+                                     <div className="flex flex-col items-end">
+                                         <Badge variant="destructive" className="flex items-center gap-1">
+                                             <AlertCircle className="h-3 w-3" /> Overdue
+                                         </Badge>
+                                         <Button variant="link" size="sm" className="text-xs h-auto p-0 mt-1">Top Up Now</Button>
+                                     </div>
                                 ) : (
                                     <Button variant="outline" size="sm">Add Funds</Button>
                                 )}
@@ -441,6 +493,7 @@ export default function ProfilePage() {
                                                     <span>{method.details}</span>
                                                 </div>
                                                 {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                {/* TODO: Add button to remove payment method */}
                                             </div>
                                         ))
                                     ) : (
@@ -461,7 +514,7 @@ export default function ProfilePage() {
                                     <Download className="mr-2 h-4 w-4" /> Download
                                 </Button>
                             </div>
-                             <ScrollArea className="h-[250px] pr-3"> {/* Limit height and add scroll */}
+                             <ScrollArea className="h-[250px] pr-3">
                                 {completedHistory.length > 0 ? (
                                     <div className="space-y-3">
                                         {completedHistory.map((entry) => (
@@ -471,6 +524,7 @@ export default function ProfilePage() {
                                                     <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                                         <Clock className="h-3 w-3" />
                                                         <span>{new Date(entry.startTime).toLocaleString()}</span>
+                                                        {/* Add duration calculation if needed */}
                                                     </div>
                                                 </div>
                                                 <span className="font-semibold text-sm">${entry.cost.toFixed(2)}</span>
@@ -482,6 +536,15 @@ export default function ProfilePage() {
                                 )}
                             </ScrollArea>
                         </section>
+
+                         <Separator className="my-6" />
+
+                         {/* Logout Button */}
+                         <div className="flex justify-center mt-6">
+                             <Button variant="destructive" onClick={handleLogout}>
+                                Log Out
+                             </Button>
+                         </div>
                     </CardContent>
                 </Card>
             </div>
@@ -491,7 +554,7 @@ export default function ProfilePage() {
                 isOpen={isReportModalOpen}
                 onClose={() => {
                     setIsReportModalOpen(false);
-                    setTimeout(() => setReportingReservation(null), 300); // Delay clearing
+                    setTimeout(() => setReportingReservation(null), 300);
                 }}
                 reservation={reportingReservation}
                 userId={userId}
@@ -501,7 +564,7 @@ export default function ProfilePage() {
 }
 
 
-// Skeleton Loader Component (Simplified)
+// Skeleton Loader Component
 const ProfileSkeleton = () => (
     <div className="space-y-6">
         {/* Header Skeleton */}
@@ -552,3 +615,5 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
+
+    
