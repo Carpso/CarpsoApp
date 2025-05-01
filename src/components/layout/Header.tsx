@@ -2,14 +2,16 @@
 'use client';
 
 import Link from 'next/link';
-import { Car, ShieldCheck, Menu, UserCircle, Compass } from 'lucide-react'; // Added Compass
+import { Car, ShieldCheck, Menu, UserCircle, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-// Note: Auth state is handled via context now (AppStateProvider)
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'; // Added SheetClose
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import { useContext } from 'react';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
 
 export default function Header() {
-  // Auth state would come from context if needed here, but primary buttons are in ParkingLotManager
-  // const { isAuthenticated } = useContext(AppStateContext)!;
+  const { isAuthenticated, userRole, userName, userAvatarUrl, logout } = useContext(AppStateContext)!;
+  const userInitial = userName ? userName.charAt(0).toUpperCase() : '?';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -33,23 +35,49 @@ export default function Header() {
                 <span className="font-bold">Carpso</span>
             </Link>
             <nav className="flex flex-col space-y-1 px-2">
-               <Button variant="ghost" className="justify-start" asChild>
-                   {/* Removed extra space before "Carpso Map" */}
-                   <Link href="/">Carpso Map</Link>
-               </Button>
-               <Button variant="ghost" className="justify-start" asChild>
-                 <Link href="/explore" className="flex items-center gap-1">
-                    <Compass className="h-4 w-4" /> Explore
-                 </Link>
-               </Button>
-              {/* TODO: Conditionally show Admin link based on role from context */}
-               <Button variant="ghost" className="justify-start" asChild>
-                   <Link href="/admin" className="flex items-center gap-1">
-                      <ShieldCheck className="h-4 w-4" />
-                      Admin Dashboard
-                   </Link>
-               </Button>
+                <SheetClose asChild>
+                   <Button variant="ghost" className="justify-start" asChild>
+                       <Link href="/">Carpso Map</Link>
+                   </Button>
+                </SheetClose>
+                <SheetClose asChild>
+                   <Button variant="ghost" className="justify-start" asChild>
+                     <Link href="/explore" className="flex items-center gap-1">
+                        <Compass className="h-4 w-4" /> Explore
+                     </Link>
+                   </Button>
+               </SheetClose>
+              {/* Conditionally show Admin link */}
+               {isAuthenticated && (userRole === 'Admin' || userRole === 'ParkingLotOwner') && (
+                   <SheetClose asChild>
+                       <Button variant="ghost" className="justify-start" asChild>
+                           <Link href="/admin" className="flex items-center gap-1">
+                              <ShieldCheck className="h-4 w-4" />
+                              Admin Dashboard
+                           </Link>
+                       </Button>
+                   </SheetClose>
+               )}
+               {/* Conditionally show Profile link */}
+               {isAuthenticated && (
+                   <SheetClose asChild>
+                       <Button variant="ghost" className="justify-start" asChild>
+                           <Link href="/profile" className="flex items-center gap-1">
+                              <UserCircle className="h-4 w-4" />
+                              My Profile
+                           </Link>
+                       </Button>
+                   </SheetClose>
+               )}
             </nav>
+            {/* Logout button at the bottom of mobile menu */}
+            {isAuthenticated && (
+                 <div className="mt-auto p-4">
+                    <SheetClose asChild>
+                        <Button variant="outline" className="w-full" onClick={logout}>Log Out</Button>
+                    </SheetClose>
+                 </div>
+            )}
           </SheetContent>
         </Sheet>
 
@@ -65,33 +93,38 @@ export default function Header() {
 
          {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium flex-1">
-             <Link
-              href="/"
-              className="transition-colors hover:text-foreground/80 text-foreground/60"
-            >
-              Carpso Map {/* Changed label here */}
+             <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60">
+              Carpso Map
             </Link>
-            <Link
-              href="/explore"
-              className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1"
-            >
-               <Compass className="h-4 w-4" />
-               Explore
+            <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+               <Compass className="h-4 w-4" /> Explore
             </Link>
-             {/* TODO: Conditionally show Admin link based on role from context */}
-            <Link
-              href="/admin"
-              className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1"
-            >
-               <ShieldCheck className="h-4 w-4" />
-               Admin Dashboard
-            </Link>
+            {/* Conditionally show Admin link */}
+            {isAuthenticated && (userRole === 'Admin' || userRole === 'ParkingLotOwner') && (
+                <Link href="/admin" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+                   <ShieldCheck className="h-4 w-4" /> Admin
+                </Link>
+            )}
         </nav>
 
-
-        {/* Auth / Profile Button Area - managed in ParkingLotManager */}
-        <div className="flex items-center justify-end space-x-2 ml-auto">
-           {/* The actual button rendering is controlled by ParkingLotManager using context */}
+        {/* Auth / Profile Button Area - Now managed here for desktop */}
+        <div className="hidden md:flex items-center justify-end space-x-2 ml-auto">
+            {isAuthenticated ? (
+                 <Link href="/profile">
+                     <Button variant="ghost" className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                              <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User'} className="object-cover" />
+                              <AvatarFallback className="text-xs bg-muted">{userInitial}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm font-medium">{userName || 'Profile'}</span>
+                     </Button>
+                 </Link>
+            ) : (
+                 // The Auth button is now handled within ParkingLotManager, so nothing needed here for desktop if that's the only place it appears.
+                 // If you want a desktop sign-in button here:
+                 // <Button onClick={() => { /* Need access to modal control */ }}>Sign In</Button>
+                 null // Keep it clean if auth is handled elsewhere
+            )}
         </div>
       </div>
     </header>

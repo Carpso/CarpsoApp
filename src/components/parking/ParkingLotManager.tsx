@@ -8,15 +8,15 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square } from 'lucide-react'; // Added CheckSquare, Square
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle } from 'lucide-react'; // Added CheckSquare, Square, AlertTriangle
 import AuthModal from '@/components/auth/AuthModal';
-import UserProfile from '@/components/profile/UserProfile';
+// import UserProfile from '@/components/profile/UserProfile'; // No longer imported here
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge'; // Import Badge component
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
-import Link from 'next/link';
+// import Link from 'next/link'; // No longer needed for profile here
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
 import { getUserGamification } from '@/services/user-service'; // Import gamification service
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
@@ -34,7 +34,7 @@ export default function ParkingLotManager() {
       userName,
       userAvatarUrl,
       login,
-      logout,
+      // logout, // Logout is handled in profile page or header now
   } = useContext(AppStateContext)!; // Use context
 
   const [locations, setLocations] = useState<ParkingLot[]>([]);
@@ -43,7 +43,7 @@ export default function ParkingLotManager() {
   const [error, setError] = useState<string | null>(null);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  // const [isProfileOpen, setIsProfileOpen] = useState(false); // Removed profile sheet state
 
   const [pinnedSpot, setPinnedSpot] = useState<{ spotId: string, locationId: string } | null>(null);
   const [isPinning, setIsPinning] = useState(false);
@@ -85,7 +85,7 @@ export default function ParkingLotManager() {
            // Prepare input for the recommendation flow
            // Convert locations to JSON string with essential details
            const locationsWithPrice = await Promise.all(locations.map(async loc => {
-               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' ? 'Premium' : 'Basic'); // Estimate for 1 hour, pass correct role
+               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'); // Estimate for 1 hour, pass correct role
                return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
            }));
            const nearbyLotsJson = JSON.stringify(locationsWithPrice);
@@ -221,7 +221,7 @@ export default function ParkingLotManager() {
                 if (entities.spotId) {
                     const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
                      if (location && isAuthenticated) {
-                         const mockReservation = {
+                         const mockReservation: ParkingHistoryEntry = { // Define type explicitly
                              id: `rep_${entities.spotId}`,
                              spotId: entities.spotId,
                              locationId: location.id,
@@ -263,7 +263,7 @@ export default function ParkingLotManager() {
                 description: "Sorry, I couldn't process that request.",
                 variant: "destructive",
             });
-            // Check if voiceAssistant is initialized before speaking
+            // Check if voiceAssistant exists before speaking
             if (voiceAssistant && voiceAssistant.speak) {
                voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
             } else {
@@ -284,7 +284,7 @@ export default function ParkingLotManager() {
        // Start listening automatically when component mounts on client and is supported
        // Ensure it only runs client-side
        if (isClient && voiceAssistant && voiceAssistant.isSupported && voiceAssistant.state === 'idle') {
-           voiceAssistant.startListening();
+           // voiceAssistant.startListening(); // Optional: Auto-start listening
        }
        // No cleanup needed here as the hook manages its own lifecycle
    // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -312,9 +312,7 @@ export default function ParkingLotManager() {
       try {
         const fetchedLocations = await getAvailableParkingLots();
         setLocations(fetchedLocations);
-        if (fetchedLocations.length > 0 && !selectedLocationId) {
-          // Don't auto-select, let recommendations guide or user choose
-        }
+        // No auto-selection here, let recommendations or user choose
       } catch (err) {
         console.error("Failed to fetch parking locations:", err);
         setError("Could not load parking locations. Please try again later.");
@@ -341,18 +339,11 @@ export default function ParkingLotManager() {
     login(newUserId, name || `User ${newUserId.substring(0,5)}`, avatar, role || 'User');
     setIsAuthModalOpen(false);
     toast({title: "Authentication Successful"});
-    fetchRecommendations();
+    fetchRecommendations(); // Fetch recommendations after successful login
   };
 
-  const handleLogout = () => {
-      logout();
-      setIsProfileOpen(false);
-      toast({title: "Logged Out"});
-      setPinnedSpot(null);
-      setRecommendations([]);
-      // Optionally stop voice assistant on logout
-      if (voiceAssistant) voiceAssistant.stopListening();
-  }
+  // Logout is handled in profile page or header now
+  // const handleLogout = () => { ... }
 
    const simulatePinCar = async (spotId: string, locationId: string) => {
        setIsPinning(true);
@@ -369,7 +360,7 @@ export default function ParkingLotManager() {
            description: `Your car's location at ${spotId} (${location?.name || locationId}) has been temporarily saved.`,
        });
        if (userId) {
-          // await awardPoints(userId, 5);
+          // await awardPoints(userId, 5); // Example gamification call
        }
    };
 
@@ -385,7 +376,7 @@ export default function ParkingLotManager() {
        } else {
            simulatePinCar(spotId, locationId);
            if (userId) {
-                // awardBadge(userId, 'badge_first_booking');
+                // awardBadge(userId, 'badge_first_booking'); // Example gamification call
            }
        }
   };
@@ -405,6 +396,9 @@ export default function ParkingLotManager() {
              // Render a placeholder or skeleton server-side or before hydration
              return <MicOff key="loading-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
+        if (!voiceAssistant.isSupported) {
+             return <MicOff key="unsupported-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
+        }
         switch (voiceAssistantState) {
              case 'activated':
                  return <CheckSquare key="activated" className="h-5 w-5 text-green-600 animate-pulse" />;
@@ -418,12 +412,12 @@ export default function ParkingLotManager() {
                  return <MicOff key="error-mic" className="h-5 w-5 text-destructive" />;
             case 'idle':
             default:
-                return <MicOff key="default-mic" className="h-5 w-5 text-muted-foreground" />;
+                return <Mic key="default-mic" className="h-5 w-5" />; // Use Mic icon when idle and supported
         }
     };
 
    const handleVoiceButtonClick = () => {
-       if (!isClient || !voiceAssistant) return;
+       if (!isClient || !voiceAssistant || !voiceAssistant.isSupported) return;
        // Button now just toggles continuous listening on/off
        if (voiceAssistant.state === 'listening' || voiceAssistant.state === 'activated') {
            voiceAssistant.stopListening();
@@ -436,13 +430,13 @@ export default function ParkingLotManager() {
          if (!isClient || !voiceAssistant) return "Loading...";
          if (!voiceAssistant.isSupported) return "Voice commands not supported";
          switch (voiceAssistantState) {
-              case 'activated': return "Listening for command...";
-              case 'listening': return "Listening for 'Hey Carpso'...";
+              case 'activated': return "Say your command...";
+              case 'listening': return "Listening for 'Hey Carpso' or command..."; // Updated tooltip
               case 'processing': return "Processing...";
               case 'speaking': return "Speaking...";
               case 'error': return `Error: ${voiceAssistant.error || 'Unknown'}`;
               case 'idle':
-              default: return "Click to enable voice commands";
+              default: return "Start voice command"; // Updated tooltip
          }
     }
 
@@ -462,32 +456,30 @@ export default function ParkingLotManager() {
                      className={cn(
                          "transition-opacity", // Added for smoother loading
                          !isClient && "opacity-50 cursor-not-allowed", // Style for SSR/before mount
+                         isClient && (!voiceAssistant || !voiceAssistant.isSupported) && "opacity-50 cursor-not-allowed", // Style for unsupported
                          isClient && voiceAssistantState === 'activated' && "border-primary",
                          isClient && voiceAssistantState === 'listening' && "border-blue-600",
                          isClient && voiceAssistantState === 'error' && "border-destructive",
-                         isClient && (!voiceAssistant || !voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking') && "opacity-50 cursor-not-allowed"
+                         isClient && (voiceAssistantState === 'processing' || voiceAssistantState === 'speaking') && "opacity-50 cursor-not-allowed"
                      )}
                  >
                      {getVoiceButtonIcon()}
                  </Button>
 
-               {/* Auth / Profile Button */}
-               {isAuthenticated && userId ? (
-                    <Button variant="outline" onClick={() => setIsProfileOpen(true)}>
-                        View Profile
-                    </Button>
-               ) : (
+               {/* Auth / Profile Button - Only shows Sign In if not authenticated */}
+               {!isAuthenticated && (
                     <Button onClick={() => setIsAuthModalOpen(true)}>
                         Sign In / Sign Up
                     </Button>
                )}
+               {/* Profile button is now in the header for desktop and bottom nav for mobile */}
            </div>
        </div>
         {/* Voice Assistant Status Indicator (More informative) */}
-        {isClient && voiceAssistantState !== 'idle' && (
+        {isClient && voiceAssistant && voiceAssistant.isSupported && voiceAssistantState !== 'idle' && (
             <p className="text-sm text-muted-foreground text-center mb-4 italic">
                  {voiceAssistantState === 'activated' && "Say your command..."}
-                 {voiceAssistantState === 'listening' && "Listening for 'Hey Carpso'..."}
+                 {voiceAssistantState === 'listening' && "Listening..."}
                  {voiceAssistantState === 'processing' && "Processing command..."}
                  {voiceAssistantState === 'speaking' && "Speaking..."}
                  {voiceAssistantState === 'error' && `Error: ${voiceAssistant?.error || 'Unknown'}`}
@@ -509,6 +501,8 @@ export default function ParkingLotManager() {
                     <p className="text-sm text-primary/90">
                         Spot: <span className="font-medium">{pinnedSpot.spotId}</span> at {locations.find(l => l.id === pinnedSpot.locationId)?.name || pinnedSpot.locationId}
                     </p>
+                    {/* TODO: Add button to get directions to pinned spot */}
+                    {/* <Button size="sm" variant="link" className="mt-1 p-0 h-auto">Get Directions</Button> */}
                 </CardContent>
            </Card>
        )}
@@ -612,7 +606,7 @@ export default function ParkingLotManager() {
               key={selectedLocation.id}
               location={selectedLocation}
               onSpotReserved={handleSpotReserved}
-              userTier={userRole === 'PremiumUser' ? 'Premium' : 'Basic'}
+              userTier={userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'}
             />
         </div>
       ) : !isLoadingLocations && !error && locations.length > 0 ? (
@@ -627,17 +621,10 @@ export default function ParkingLotManager() {
            onAuthSuccess={handleAuthSuccess}
        />
 
-       {isAuthenticated && userId && (
-           <UserProfile
-               isOpen={isProfileOpen}
-               onClose={() => setIsProfileOpen(false)}
-               userId={userId}
-               onLogout={handleLogout}
-               userName={userName}
-               userAvatarUrl={userAvatarUrl}
-               userRole={userRole || 'User'}
-           />
-       )}
+       {/* UserProfile component is removed, profile access is via dedicated page */}
+       {/* {isAuthenticated && userId && (
+           <UserProfile ... />
+       )} */}
 
         <BottomNavBar
              isAuthenticated={isAuthenticated}
@@ -645,10 +632,10 @@ export default function ParkingLotManager() {
              userName={userName}
              userAvatarUrl={userAvatarUrl}
              onAuthClick={() => setIsAuthModalOpen(true)}
-             onProfileClick={() => setIsProfileOpen(true)}
+             // onProfileClick is removed
          />
 
-        {/* Report Issue Modal (Now also potentially triggered by voice) */}
+        {/* Report Issue Modal (Still needed for history items, but could be moved to Profile page) */}
         <ReportIssueModal
             isOpen={isReportModalOpen}
             onClose={() => {
