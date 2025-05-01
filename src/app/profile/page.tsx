@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode } from 'lucide-react'; // Added Wallet icons
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info } from 'lucide-react'; // Added Info icon
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
@@ -24,6 +24,7 @@ import TopUpModal from '@/components/wallet/TopUpModal'; // Import TopUpModal
 import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendMoneyModal
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Import Table components
 import { cn } from '@/lib/utils'; // Import cn utility
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
 
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
@@ -37,7 +38,7 @@ interface UserDetails {
 }
 
 interface BillingInfo {
-    accountBalance: number; // This might become deprecated in favor of wallet balance
+    // accountBalance: number; // This might become deprecated in favor of wallet balance
     paymentMethods: { type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
     subscriptionTier?: 'Basic' | 'Premium';
     guaranteedSpotsAvailable?: number;
@@ -378,7 +379,7 @@ export default function ProfilePage() {
                                     <>
                                         <h2 className="text-2xl font-semibold flex items-center gap-2 flex-wrap">
                                             {displayName}
-                                             <Badge variant={isPremium ? "default" : "secondary"} className={isPremium ? "bg-yellow-500 text-black hover:bg-yellow-500/90" : ""}>
+                                             <Badge variant={isPremium ? "default" : "secondary"} className={cn("text-xs", isPremium ? "bg-yellow-500 text-black hover:bg-yellow-500/90" : "")}>
                                                 {isPremium && <Star className="h-3 w-3 mr-1" />} {currentTier} Tier
                                             </Badge>
                                         </h2>
@@ -422,7 +423,7 @@ export default function ProfilePage() {
                                       <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={isLoadingWallet}>
                                          <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
                                       </Button>
-                                      <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
+                                      <Button variant="secondary" size="sm" onClick={()={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
                                          <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
                                       </Button>
                                       {/* Add Receive/Scan button here */}
@@ -460,6 +461,76 @@ export default function ProfilePage() {
                                  )}
                             </div>
                         </section>
+
+                        <Separator className="my-6" />
+
+                         {/* Billing / Payment Methods / Carpso Card Section */}
+                         <section className="mb-6">
+                             <div className="flex justify-between items-center mb-3">
+                                 <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5" /> Billing & Plan</h3>
+                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling}>
+                                     <Download className="mr-2 h-4 w-4" /> Summary
+                                 </Button>
+                             </div>
+                             <Card className="mb-4 border-l-4 border-yellow-500">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base flex justify-between items-center">
+                                        Subscription: {currentTier}
+                                        <Button variant="link" size="sm" className="text-xs h-auto p-0">
+                                            {isPremium ? "Manage Plan" : "Upgrade"}
+                                        </Button>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {isPremium && billingInfo?.guaranteedSpotsAvailable !== undefined ? (
+                                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                            <CheckCircle className="h-4 w-4 text-green-600"/> You have {billingInfo.guaranteedSpotsAvailable} guaranteed spot passes remaining.
+                                        </p>
+                                    ) : !isPremium ? (
+                                        <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
+                                    ) : null}
+                                </CardContent>
+                             </Card>
+
+                             {/* Carpso Card - Coming Soon */}
+                            <Card className="mb-4 border-dashed border-accent">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <CreditCard className="h-4 w-4 text-accent"/> Carpso Card
+                                        <Badge variant="outline" className="border-accent text-accent">Coming Soon</Badge>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-muted-foreground">
+                                        Get a physical Carpso Card for tap-to-pay parking and exclusive partner discounts. Register your interest!
+                                    </p>
+                                     <Button size="sm" variant="outline" className="mt-3">Notify Me</Button>
+                                </CardContent>
+                            </Card>
+
+
+                             <div>
+                                 <p className="text-sm font-medium mb-2">Payment Methods</p>
+                                 <div className="space-y-2 mb-3">
+                                     {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
+                                         billingInfo.paymentMethods.map((method, index) => (
+                                             <div key={index} className="flex items-center justify-between p-3 border rounded-md text-sm">
+                                                 <div className="flex items-center gap-2">
+                                                     {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                                                     <span>{method.details}</span>
+                                                 </div>
+                                                 {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                 {/* TODO: Add button to remove payment method */}
+                                             </div>
+                                         ))
+                                     ) : (
+                                         <p className="text-sm text-muted-foreground">No payment methods saved.</p>
+                                     )}
+                                 </div>
+                                 <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
+                             </div>
+                         </section>
+
 
                         <Separator className="my-6" />
 
@@ -541,60 +612,6 @@ export default function ProfilePage() {
                             )}
                         </section>
 
-
-                        <Separator className="my-6" />
-
-                        {/* Billing / Payment Methods Section */}
-                        <section className="mb-6">
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5" /> Billing & Plan</h3>
-                                <Button variant="ghost" size="sm" onClick={handleDownloadBilling}>
-                                    <Download className="mr-2 h-4 w-4" /> Summary
-                                </Button>
-                            </div>
-                             <Card className="mb-4 border-l-4 border-yellow-500">
-                                <CardHeader className="pb-3">
-                                    <CardTitle className="text-base flex justify-between items-center">
-                                        Subscription: {currentTier}
-                                        <Button variant="link" size="sm" className="text-xs h-auto p-0">
-                                            {isPremium ? "Manage Plan" : "Upgrade"}
-                                        </Button>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    {isPremium && billingInfo?.guaranteedSpotsAvailable !== undefined ? (
-                                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                            <CheckCircle className="h-4 w-4 text-green-600"/> You have {billingInfo.guaranteedSpotsAvailable} guaranteed spot passes remaining.
-                                        </p>
-                                    ) : !isPremium ? (
-                                        <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
-                                    ) : null}
-                                </CardContent>
-                             </Card>
-
-                             {/* Removed Account Balance card - now part of Wallet */}
-
-                            <div>
-                                <p className="text-sm font-medium mb-2">Payment Methods</p>
-                                <div className="space-y-2 mb-3">
-                                    {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
-                                        billingInfo.paymentMethods.map((method, index) => (
-                                            <div key={index} className="flex items-center justify-between p-3 border rounded-md text-sm">
-                                                <div className="flex items-center gap-2">
-                                                    {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-                                                    <span>{method.details}</span>
-                                                </div>
-                                                {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
-                                                {/* TODO: Add button to remove payment method */}
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">No payment methods saved.</p>
-                                    )}
-                                </div>
-                                <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
-                            </div>
-                        </section>
 
                         <Separator className="my-6" />
 
@@ -696,6 +713,17 @@ const ProfileSkeleton = () => (
             <Skeleton className="h-10 w-full"/>
          </div>
         <Separator />
+        {/* Billing/Plan/Card Skeleton */}
+        <div className="space-y-4">
+             <Skeleton className="h-6 w-1/4 mb-3" />
+             <Skeleton className="h-24 w-full mb-4"/> {/* Subscription */}
+             <Skeleton className="h-28 w-full mb-4"/> {/* Carpso Card */}
+             <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
+             <Skeleton className="h-12 w-full"/>
+             <Skeleton className="h-12 w-full"/>
+             <Skeleton className="h-9 w-full mt-1"/> {/* Manage Button */}
+        </div>
+        <Separator />
         {/* Rewards Skeleton */}
         <div className="space-y-4">
             <Skeleton className="h-6 w-1/3 mb-3" />
@@ -712,16 +740,6 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-6 w-1/3 mb-3" />
              <Skeleton className="h-24 w-full" />
          </div>
-        <Separator />
-        {/* Billing/Plan Skeleton */}
-        <div className="space-y-4">
-             <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-24 w-full mb-4"/> {/* Subscription */}
-             <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
-             <Skeleton className="h-12 w-full"/>
-             <Skeleton className="h-12 w-full"/>
-             <Skeleton className="h-9 w-full mt-1"/> {/* Manage Button */}
-        </div>
         <Separator />
         {/* History Skeleton */}
         <div className="space-y-3">
