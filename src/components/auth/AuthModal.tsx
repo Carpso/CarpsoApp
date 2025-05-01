@@ -14,9 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Nfc, Loader2, Smartphone, Car } from 'lucide-react'; // Added Car icon for license plate
+import { Phone, Mail, Nfc, Loader2, Smartphone, Car, Users } from 'lucide-react'; // Added Car, Users icons
 import { useToast } from '@/hooks/use-toast';
 import { checkPlateWithAuthority } from '@/services/authority-check'; // Import the authority check service
+import { Switch } from '@/components/ui/switch'; // Import Switch for multiple cars option
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select for role/purpose
+
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -31,7 +34,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [password, setPassword] = useState('');
   const [name, setName] = useState(''); // Added for sign up
   const [mobileMoneyNumber, setMobileMoneyNumber] = useState('');
-  const [licensePlate, setLicensePlate] = useState(''); // Added for license plate sign in
+  const [licensePlate, setLicensePlate] = useState(''); // Added for license plate sign in/sign up
+  const [ownerPhone, setOwnerPhone] = useState(''); // Separate phone for owner info during signup
+  const [hasMultipleCars, setHasMultipleCars] = useState(false);
+  const [signupPurpose, setSignupPurpose] = useState('personal'); // 'personal' or 'manage_lot'
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const { toast } = useToast();
 
@@ -78,6 +84,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                  id: userId,
                  name: email.split('@')[0] || phone || mobileMoneyNumber || `User ${userId.substring(0, 4)}`,
                  avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
+                 // Assign role based on sign-in method/data (simplified)
                  role: email.includes('admin') ? 'Admin' : email.includes('owner') ? 'ParkingLotOwner' : 'User'
              };
          }
@@ -94,7 +101,18 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
   // Mock Sign Up: Returns basic user info
   const mockSignUp = async (method: 'email' | 'phone' | 'mobileMoney'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: string } }> => {
-     console.log(`Simulating sign up with ${method}:`, { name, email, phone, mobileMoneyNumber });
+     // Log all the signup data captured
+     console.log(`Simulating sign up with ${method}:`, {
+        name,
+        email,
+        phone, // General phone if used for signup method
+        mobileMoneyNumber, // Mobile money if used for signup method
+        licensePlate, // Primary license plate
+        ownerPhone, // Dedicated owner phone field
+        hasMultipleCars,
+        signupPurpose
+     });
+
      setIsLoading(true);
      await new Promise(resolve => setTimeout(resolve, 1500));
      const success = Math.random() > 0.3;
@@ -102,12 +120,18 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
      if (success) {
          const userId = `user_${Math.random().toString(36).substring(7)}`;
+         // Determine role based on signup purpose (basic simulation)
+         // In reality, 'ParkingLotOwner' or 'Admin' roles should require verification/approval
+         const role = signupPurpose === 'manage_lot' ? 'User' : 'User'; // Start as 'User', flag for potential owner later
+
          simulatedUser = {
              id: userId,
              name: name || email.split('@')[0] || phone || mobileMoneyNumber || `User ${userId.substring(0, 4)}`,
              avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-             role: 'User'
+             role: role
          };
+         // TODO: In a real backend, save all the collected fields (licensePlate, ownerPhone, hasMultipleCars, signupPurpose) to the user's profile
+         console.log(`Simulated saving extra signup data for user ${userId}:`, { licensePlate, ownerPhone, hasMultipleCars, signupPurpose });
      }
      setIsLoading(false);
 
@@ -135,10 +159,30 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   };
 
    const handleSignUp = async (method: 'email' | 'phone' | 'mobileMoney') => {
-     if (method === 'email' && !name) {
-        toast({ title: "Missing Information", description: "Please enter your name.", variant: "destructive" });
+     // Basic validation for required signup fields
+     if (!name) {
+        toast({ title: "Missing Information", description: "Please enter your full name.", variant: "destructive" });
         return;
      }
+      if (!licensePlate) {
+        toast({ title: "Missing Information", description: "Please enter your primary vehicle's license plate.", variant: "destructive" });
+        return;
+      }
+       if (!ownerPhone) {
+        toast({ title: "Missing Information", description: "Please enter the vehicle owner's phone number.", variant: "destructive" });
+        return;
+      }
+      // Check method-specific fields
+      if (method === 'email' && !email) {
+         toast({ title: "Missing Information", description: "Please enter your email address.", variant: "destructive" }); return;
+      }
+      if (method === 'phone' && !phone) {
+         toast({ title: "Missing Information", description: "Please enter your phone number for signup.", variant: "destructive" }); return;
+      }
+       if (method === 'mobileMoney' && !mobileMoneyNumber) {
+         toast({ title: "Missing Information", description: "Please enter your Mobile Money number for signup.", variant: "destructive" }); return;
+      }
+
 
     // isLoading is now set inside mockSignUp
     const result = await mockSignUp(method);
@@ -147,13 +191,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
        toast({ title: "Sign Up Successful", description: "Your account has been created." });
        onAuthSuccess(result.user.id, result.user.name, result.user.avatarUrl, result.user.role); // Pass user details
        onClose();
-       // Clear form fields after successful signup
-        setName('');
-        setEmail('');
-        setPassword('');
-        setPhone('');
-        setMobileMoneyNumber('');
-        setLicensePlate(''); // Clear license plate too
+       // Clear form fields after successful signup - Handled by handleDialogClose
     } else {
        toast({ title: "Sign Up Failed", description: "Could not create account. Please try again.", variant: "destructive" });
     }
@@ -180,7 +218,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       }
       // Reset status after a short delay if still scanning or error
       setTimeout(() => {
-           if (rfidStatus === 'scanning' || rfidStatus === 'error') setRfidStatus('idle');
+           // Check current state before resetting, avoid resetting if confirmed/loading
+           setIsLoading(loading => {
+               if (rfidStatus === 'scanning' || rfidStatus === 'error') {
+                   setRfidStatus('idle');
+                   return false; // Ensure loading is false if we reset RFID status here
+               }
+               return loading; // Keep current loading state otherwise
+           });
       }, 2000);
   }
 
@@ -193,6 +238,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             setPhone('');
             setMobileMoneyNumber('');
             setLicensePlate('');
+            setOwnerPhone('');
+            setHasMultipleCars(false);
+            setSignupPurpose('personal');
             setRfidStatus('idle');
             setIsLoading(false); // Ensure loading state is reset
             onClose(); // Call the original onClose handler
@@ -202,7 +250,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogClose}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[450px]"> {/* Slightly wider */}
         <DialogHeader>
           <DialogTitle>Sign In / Sign Up</DialogTitle>
           <DialogDescription>
@@ -260,7 +308,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
               {/* Phone Sign In */}
               <div className="space-y-2">
                  <Label htmlFor="signin-phone">Phone Number</Label>
-                 <Input id="signin-phone" type="tel" placeholder="+1 123 456 7890" value={phone} onChange={e => setPhone(e.target.value)} disabled={isLoading} />
+                 <Input id="signin-phone" type="tel" placeholder="+260 XXX XXX XXX" value={phone} onChange={e => setPhone(e.target.value)} disabled={isLoading} />
               </div>
               <Button onClick={() => handleSignIn('phone')} disabled={isLoading || !phone} variant="outline" className="w-full">
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />} Sign In with Phone
@@ -269,7 +317,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                {/* Mobile Money Sign In */}
                 <div className="space-y-2">
                     <Label htmlFor="signin-mobile-money">Mobile Money Number</Label>
-                    <Input id="signin-mobile-money" type="tel" placeholder="e.g., 07XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
+                    <Input id="signin-mobile-money" type="tel" placeholder="e.g., 09XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
                 </div>
                 <Button onClick={() => handleSignIn('mobileMoney')} disabled={isLoading || !mobileMoneyNumber} variant="outline" className="w-full">
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign In with Mobile Money
@@ -286,23 +334,70 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
           {/* Sign Up Tab */}
            <TabsContent value="signup">
-             <div className="space-y-4 py-4">
-                 {/* Name Field */}
+             <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+                 {/* Purpose */}
                  <div className="space-y-2">
-                   <Label htmlFor="signup-name">Full Name</Label>
-                   <Input id="signup-name" type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} disabled={isLoading}/>
+                    <Label htmlFor="signup-purpose">Purpose</Label>
+                    <Select value={signupPurpose} onValueChange={setSignupPurpose} disabled={isLoading}>
+                        <SelectTrigger id="signup-purpose">
+                            <SelectValue placeholder="Why are you signing up?" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="personal">Personal Parking Use</SelectItem>
+                            <SelectItem value="manage_lot">Manage Parking Lot (Verification Required)</SelectItem>
+                        </SelectContent>
+                    </Select>
                  </div>
 
+                 {/* Name Field */}
+                 <div className="space-y-2">
+                   <Label htmlFor="signup-name">Full Name*</Label>
+                   <Input id="signup-name" type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} disabled={isLoading} required />
+                 </div>
+
+                 {/* Primary License Plate */}
+                 <div className="space-y-2">
+                    <Label htmlFor="signup-license-plate">Primary License Plate*</Label>
+                    <Input
+                        id="signup-license-plate"
+                        type="text"
+                        placeholder="e.g., ABX 1234"
+                        value={licensePlate}
+                        onChange={e => setLicensePlate(e.target.value.toUpperCase())}
+                        disabled={isLoading}
+                        className="uppercase"
+                        required
+                    />
+                 </div>
+
+                  {/* Owner Phone Number */}
+                 <div className="space-y-2">
+                   <Label htmlFor="signup-owner-phone">Owner's Phone Number*</Label>
+                   <Input id="signup-owner-phone" type="tel" placeholder="+260 XXX XXX XXX" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)} disabled={isLoading} required />
+                 </div>
+
+                  {/* Multiple Cars Option */}
+                 <div className="flex items-center justify-between space-x-2 pt-2">
+                    <Label htmlFor="multiple-cars" className="flex flex-col space-y-1">
+                        <span>Do you have multiple cars?</span>
+                        <span className="font-normal leading-snug text-muted-foreground text-xs">
+                            You can add more later in your profile.
+                        </span>
+                    </Label>
+                    <Switch id="multiple-cars" checked={hasMultipleCars} onCheckedChange={setHasMultipleCars} disabled={isLoading} />
+                 </div>
+
+
                {/* Email/Password Sign Up */}
-               <div className="space-y-2">
-                 <Label htmlFor="signup-email">Email</Label>
+               <div className="space-y-2 pt-2">
+                 <Label htmlFor="signup-email">Email (Optional)</Label>
                  <Input id="signup-email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading}/>
                </div>
                <div className="space-y-2">
-                 <Label htmlFor="signup-password">Password</Label>
+                 <Label htmlFor="signup-password">Create Password (Optional)</Label>
                  <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading}/>
                </div>
-               <Button onClick={() => handleSignUp('email')} disabled={isLoading || !email || !password || !name} className="w-full">
+               <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !ownerPhone || !email || !password} className="w-full">
                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
                </Button>
 
@@ -317,19 +412,21 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
                 {/* Phone Sign Up */}
                 <div className="space-y-2">
-                    <Label htmlFor="signup-phone">Phone Number</Label>
-                    <Input id="signup-phone" type="tel" placeholder="+1 123 456 7890" value={phone} onChange={e => setPhone(e.target.value)} disabled={isLoading}/>
+                    <Label htmlFor="signup-phone">Your Phone Number</Label>
+                    <Input id="signup-phone" type="tel" placeholder="+260 XXX XXX XXX" value={phone} onChange={e => setPhone(e.target.value)} disabled={isLoading}/>
+                     <p className="text-xs text-muted-foreground">Use this if you prefer phone-based login.</p>
                 </div>
-               <Button onClick={() => handleSignUp('phone')} disabled={isLoading || !phone} variant="outline" className="w-full">
+               <Button onClick={() => handleSignUp('phone')} disabled={isLoading || !name || !licensePlate || !ownerPhone || !phone} variant="outline" className="w-full">
                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />} Sign Up with Phone
                </Button>
 
                {/* Mobile Money Sign Up */}
                <div className="space-y-2">
                     <Label htmlFor="signup-mobile-money">Mobile Money Number</Label>
-                    <Input id="signup-mobile-money" type="tel" placeholder="e.g., 07XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
+                    <Input id="signup-mobile-money" type="tel" placeholder="e.g., 09XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading} />
+                    <p className="text-xs text-muted-foreground">Use this for Mobile Money payments and login.</p>
                 </div>
-                <Button onClick={() => handleSignUp('mobileMoney')} disabled={isLoading || !mobileMoneyNumber} variant="outline" className="w-full">
+                <Button onClick={() => handleSignUp('mobileMoney')} disabled={isLoading || !name || !licensePlate || !ownerPhone || !mobileMoneyNumber} variant="outline" className="w-full">
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign Up with Mobile Money
                 </Button>
                  {/* Note: License plate sign-up is implicitly handled by sign-in if plate is recognized */}
@@ -339,6 +436,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
         <DialogFooter>
             {/* Optional social logins or other methods here */}
+             <p className="text-xs text-muted-foreground text-center px-4">
+                 By signing up, you agree to Carpso's Terms of Service and Privacy Policy.
+             </p>
         </DialogFooter>
       </DialogContent>
     </Dialog>
