@@ -127,30 +127,58 @@ const processVoiceCommandFlow = ai.defineFlow<
     outputSchema: ProcessVoiceCommandOutputSchema,
   },
   async (input) => {
-    const { output } = await processVoiceCommandPrompt(input);
+    let output;
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      try {
+        const result = await processVoiceCommandPrompt(input);
+        output = result.output;
+        break; // Success, exit the loop
+      } catch (error: any) {
+        console.error('Error processing voice command:', error);
+        if (error.message.includes('The model is overloaded')) {
+          retryCount++;
+          console.log(`Retry attempt ${retryCount}/${maxRetries}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+        } else {
+          // Non-recoverable error, re-throw
+          throw error;
+        }
+      }
+    }
+
+    if (!output) {
+      console.error('Failed to process voice command after multiple retries.');
+      return {
+        intent: 'unknown',
+        entities: {},
+        responseText: "Sorry, I couldn't process that request. Please try again later.",
+      };
+    }
 
     // Basic validation or post-processing of the output if needed
     if (!output?.intent || !output.responseText) {
-        console.error("Invalid output format from voice command prompt.");
-        // Return a fallback response
-        return {
-            intent: 'unknown',
-            entities: {},
-            responseText: "Sorry, I didn't quite understand that. Can you please repeat or try phrasing it differently?",
-        };
+      console.error("Invalid output format from voice command prompt.");
+      // Return a fallback response
+      return {
+        intent: 'unknown',
+        entities: {},
+        responseText: "Sorry, I didn't quite understand that. Can you please repeat or try phrasing it differently?",
+      };
     }
 
     // Simple normalization example (can be expanded)
     if (output.entities.spotId) {
-        output.entities.spotId = output.entities.spotId.replace(/\s+/g, '').toUpperCase();
+      output.entities.spotId = output.entities.spotId.replace(/\s+/g, '').toUpperCase();
     }
     if (output.entities.locationId) {
-        // Map common names to IDs if necessary
-        if (output.entities.locationId.toLowerCase().includes('downtown')) output.entities.locationId = 'lot_A';
-        if (output.entities.locationId.toLowerCase().includes('airport')) output.entities.locationId = 'lot_B';
-        if (output.entities.locationId.toLowerCase().includes('mall')) output.entities.locationId = 'lot_C';
+      // Map common names to IDs if necessary
+      if (output.entities.locationId.toLowerCase().includes('downtown')) output.entities.locationId = 'lot_A';
+      if (output.entities.locationId.toLowerCase().includes('airport')) output.entities.locationId = 'lot_B';
+      if (output.entities.locationId.toLowerCase().includes('mall')) output.entities.locationId = 'lot_C';
     }
-
 
     return output;
   }
