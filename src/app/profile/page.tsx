@@ -13,12 +13,18 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2 } from 'lucide-react'; // Added Loader2
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode } from 'lucide-react'; // Added Wallet icons
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge } from '@/services/user-service';
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
+import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction } from '@/services/wallet-service'; // Import wallet service
+import TopUpModal from '@/components/wallet/TopUpModal'; // Import TopUpModal
+import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendMoneyModal
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Import Table components
+import { cn } from '@/lib/utils'; // Import cn utility
+
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
@@ -31,7 +37,7 @@ interface UserDetails {
 }
 
 interface BillingInfo {
-    accountBalance: number;
+    accountBalance: number; // This might become deprecated in favor of wallet balance
     paymentMethods: { type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
     subscriptionTier?: 'Basic' | 'Premium';
     guaranteedSpotsAvailable?: number;
@@ -57,12 +63,13 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
     return { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role };
 };
 
-const fetchBillingInfo = async (userId: string, role: string): Promise<BillingInfo> => {
+// Billing info might only contain payment methods now, balance is in wallet
+const fetchBillingInfo = async (userId: string, role: string): Promise<Omit<BillingInfo, 'accountBalance'>> => {
     await new Promise(resolve => setTimeout(resolve, 500));
-    const randomBalance = (Math.random() * 10) - 5;
     const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
-    return { accountBalance: parseFloat(randomBalance.toFixed(2)), paymentMethods: [{ type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
+    return { paymentMethods: [{ type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
 };
+
 
 const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[]> => {
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -98,10 +105,13 @@ export default function ProfilePage() {
     const { toast } = useToast();
 
     const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
-    const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
+    const [billingInfo, setBillingInfo] = useState<Omit<BillingInfo, 'accountBalance'> | null>(null); // Exclude accountBalance
     const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
     const [gamification, setGamification] = useState<UserGamification | null>(null);
+    const [wallet, setWallet] = useState<Wallet | null>(null); // Wallet state
+    const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]); // Wallet transactions state
     const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingWallet, setIsLoadingWallet] = useState(true); // Specific loading for wallet
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
@@ -110,6 +120,8 @@ export default function ProfilePage() {
     const [isSavingProfile, setIsSavingProfile] = useState(false); // Specific state for saving profile
     const [newName, setNewName] = useState('');
     const [newAvatarUrl, setNewAvatarUrl] = useState('');
+    const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false); // State for TopUpModal
+    const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false); // State for SendMoneyModal
 
      // Redirect if not authenticated
      useEffect(() => {
@@ -120,53 +132,80 @@ export default function ProfilePage() {
      }, [isAuthenticated, router, toast]);
 
 
-    // Fetch data when authenticated user ID is available
+    // Combined data fetching function
     const loadProfileData = useCallback(async () => {
         if (userId) {
             setIsLoading(true);
+            setIsLoadingWallet(true); // Start wallet loading
             setErrorLoading(null);
             try {
-                const roleToUse = userRole || 'User'; // Use context role or default
-                const [details, billing, history, gamificationData] = await Promise.all([
-                    fetchUserDetails(userId, userName, userAvatarUrl, roleToUse), // Use context name/avatar initially
+                const roleToUse = userRole || 'User';
+                const [details, billing, history, gamificationData, walletData, transactionsData] = await Promise.all([
+                    fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                     fetchBillingInfo(userId, roleToUse),
                     fetchParkingHistory(userId),
                     getUserGamification(userId),
+                    getWalletBalance(userId), // Fetch wallet balance
+                    getWalletTransactions(userId, 5), // Fetch recent transactions
                 ]);
                 setUserDetails(details);
                 setBillingInfo(billing);
                 setParkingHistory(history);
                 setGamification(gamificationData);
-                // Initialize edit form fields with fetched/context data
+                setWallet(walletData); // Set wallet state
+                setWalletTransactions(transactionsData); // Set transactions state
                 setNewName(details.name || userName || '');
                 setNewAvatarUrl(details.avatarUrl || userAvatarUrl || '');
             } catch (error) {
                 console.error("Failed to load user profile data:", error);
                 setErrorLoading("Could not fetch profile data.");
-                toast({ title: "Error Loading Profile", description: "Could not fetch profile data.", variant: "destructive" });
+                toast({ title: "Error Loading Profile", description: "Could not fetch some profile data.", variant: "destructive" });
             } finally {
                 setIsLoading(false);
+                setIsLoadingWallet(false); // End wallet loading
             }
         } else {
-             // If userId is somehow null after authentication check passes, stop loading
              setIsLoading(false);
+             setIsLoadingWallet(false);
              if (isAuthenticated) {
                 setErrorLoading("User ID not found. Please try logging in again.");
              }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, userRole, toast]); // Don't include userName/userAvatarUrl here to avoid re-fetch on profile update
+    }, [userId, userRole, toast]); // userName/userAvatarUrl removed from deps
+
+    // Refetch wallet balance and transactions after modal actions
+    const refreshWalletData = useCallback(async () => {
+        if (!userId) return;
+        setIsLoadingWallet(true);
+        try {
+            const [walletData, transactionsData] = await Promise.all([
+                getWalletBalance(userId),
+                getWalletTransactions(userId, 5),
+            ]);
+            setWallet(walletData);
+            setWalletTransactions(transactionsData);
+        } catch (error) {
+             console.error("Failed to refresh wallet data:", error);
+             toast({ title: "Wallet Update Error", description: "Could not refresh wallet balance/transactions.", variant: "destructive" });
+        } finally {
+             setIsLoadingWallet(false);
+        }
+    }, [userId, toast]);
+
 
     useEffect(() => {
         if (isAuthenticated) {
             loadProfileData();
         } else {
-            // If not authenticated, stop loading and potentially clear data
             setIsLoading(false);
+            setIsLoadingWallet(false);
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
             setGamification(null);
+            setWallet(null);
+            setWalletTransactions([]);
         }
     }, [isAuthenticated, loadProfileData]);
 
@@ -181,17 +220,17 @@ export default function ProfilePage() {
     };
 
     const handleDownloadBilling = () => {
-        console.log("Download billing statement:", billingInfo);
-        toast({ title: "Download Started (Simulation)", description: "Downloading billing statement." });
+        console.log("Download billing statement (payment methods, subscriptions):", billingInfo);
+        toast({ title: "Download Started (Simulation)", description: "Downloading billing summary." });
         // TODO: Implement actual CSV/spreadsheet generation and download
     };
+     // Update download history to potentially include wallet txns if relevant
+     const handleDownloadHistory = () => {
+         console.log("Download history (parking & wallet):", { parking: completedHistory, wallet: walletTransactions });
+         toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
+         // TODO: Implement combined CSV/spreadsheet generation
+     };
 
-    const handleDownloadHistory = () => {
-        const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
-        console.log("Download parking history:", completedHistory);
-        toast({ title: "Download Started (Simulation)", description: "Downloading parking history." });
-         // TODO: Implement actual CSV/spreadsheet generation and download
-    };
 
     const handleCarpoolToggle = async (checked: boolean) => {
         if (!userId) return;
@@ -199,7 +238,6 @@ export default function ProfilePage() {
         try {
             const success = await updateCarpoolEligibility(userId, checked);
             if (success) {
-                // Ensure gamification state exists before updating
                 setGamification(prev => prev ? ({ ...prev, isCarpoolEligible: checked }) : ({ points: 0, badges: [], isCarpoolEligible: checked }));
                 toast({ title: "Carpool Status Updated", description: checked ? "Eligible for carpooling benefits!" : "Carpooling benefits disabled." });
             } else { throw new Error("Failed to update carpool status."); }
@@ -214,18 +252,12 @@ export default function ProfilePage() {
             toast({ title: "Missing Information", description: "Name cannot be empty.", variant: "destructive" });
             return;
         }
-        setIsSavingProfile(true); // Use specific saving state
+        setIsSavingProfile(true);
         try {
-            // Simulate backend update call (replace with actual API call)
             await new Promise(resolve => setTimeout(resolve, 800));
             console.log("Simulating profile update for:", userId, { name: newName, avatarUrl: newAvatarUrl });
-
-            // Update global state via context
             updateUserProfile(newName, newAvatarUrl);
-
-            // Update local state for immediate feedback
             setUserDetails(prev => prev ? { ...prev, name: newName, avatarUrl: newAvatarUrl } : null);
-
             toast({ title: "Profile Updated" });
             setEditMode(false);
         } catch (error) {
@@ -237,7 +269,6 @@ export default function ProfilePage() {
     };
 
      const handleCancelEdit = () => {
-        // Reset form fields to original values from userDetails or context
         const originalName = userDetails?.name || userName || '';
         const originalAvatar = userDetails?.avatarUrl || userAvatarUrl || '';
         setNewName(originalName);
@@ -249,6 +280,16 @@ export default function ProfilePage() {
         logout();
         toast({ title: "Logged Out"});
         router.push('/'); // Redirect to home after logout
+    };
+
+    const getTransactionIcon = (type: WalletTransaction['type']) => {
+        switch(type) {
+            case 'top-up': return <PlusCircle className="h-4 w-4 text-green-600" />;
+            case 'send': return <ArrowUpRight className="h-4 w-4 text-orange-600" />;
+            case 'receive': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
+            case 'payment': return <DollarSign className="h-4 w-4 text-red-600" />;
+            default: return <WalletIcon className="h-4 w-4 text-muted-foreground" />;
+        }
     };
 
 
@@ -263,13 +304,12 @@ export default function ProfilePage() {
     // Render loading or empty state if not authenticated or data is loading
     if (isLoading) {
         return (
-            <div className="container py-8 px-4 md:px-6 lg:px-8">
+            <div className="container py-8 px-4 md:px-6 lg:px-8 max-w-4xl mx-auto">
                 <ProfileSkeleton />
             </div>
         );
     }
 
-    // Display error state
     if (errorLoading) {
          return (
              <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
@@ -280,7 +320,6 @@ export default function ProfilePage() {
          );
     }
 
-    // This should be caught by the redirect, but as a final fallback
     if (!isAuthenticated || !userId || !userDetails) {
         return (
             <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
@@ -314,7 +353,7 @@ export default function ProfilePage() {
                                 </div>
                             )}
                         </div>
-                        <CardDescription>View and manage your account details.</CardDescription>
+                        <CardDescription>View and manage your account details, wallet, and history.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {/* User Details Section */}
@@ -351,6 +390,76 @@ export default function ProfilePage() {
                                 )}
                             </div>
                         </div>
+
+                         <Separator className="my-6" />
+
+                        {/* Wallet Section */}
+                        <section className="mb-6">
+                             <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><WalletIcon className="h-5 w-5 text-primary" /> Wallet</h3>
+                                <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet}>
+                                    {isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
+                                </Button>
+                             </div>
+                             <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground">
+                                 <div className="flex justify-between items-start">
+                                     <div>
+                                        <p className="text-sm font-medium opacity-80">Available Balance</p>
+                                        {isLoadingWallet ? (
+                                             <Skeleton className="h-8 w-24 mt-1 bg-primary/50" />
+                                        ) : (
+                                            <p className="text-3xl font-bold">
+                                                {wallet?.currency} {wallet?.balance?.toFixed(2) ?? '0.00'}
+                                            </p>
+                                        )}
+                                     </div>
+                                     <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
+                                         <QrCode className="h-5 w-5" />
+                                         <span className="sr-only">Show QR Code</span>
+                                     </Button>
+                                 </div>
+                                 <div className="mt-4 flex gap-2">
+                                      <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={isLoadingWallet}>
+                                         <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
+                                      </Button>
+                                      <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
+                                         <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
+                                      </Button>
+                                      {/* Add Receive/Scan button here */}
+                                 </div>
+                             </Card>
+
+                            <div>
+                                 <p className="text-sm font-medium mb-2">Recent Transactions</p>
+                                 {isLoadingWallet ? (
+                                     <div className="space-y-2">
+                                         <Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" />
+                                     </div>
+                                 ) : walletTransactions.length > 0 ? (
+                                     <div className="space-y-2">
+                                         {walletTransactions.map(txn => (
+                                             <div key={txn.id} className="flex items-center justify-between p-2 border rounded-md text-sm bg-background hover:bg-muted/50">
+                                                 <div className="flex items-center gap-2 overflow-hidden">
+                                                     {getTransactionIcon(txn.type)}
+                                                     <div className="flex-1 truncate">
+                                                         <p className="text-xs font-medium truncate">{txn.description}</p>
+                                                         <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
+                                                     </div>
+                                                 </div>
+                                                 <span className={cn(
+                                                     "font-semibold text-xs whitespace-nowrap",
+                                                     txn.amount >= 0 ? "text-green-600" : "text-red-600"
+                                                 )}>
+                                                     {txn.amount >= 0 ? '+' : ''}{wallet?.currency} {txn.amount.toFixed(2)}
+                                                 </span>
+                                             </div>
+                                         ))}
+                                     </div>
+                                 ) : (
+                                     <p className="text-sm text-muted-foreground text-center py-3">No recent wallet transactions.</p>
+                                 )}
+                            </div>
+                        </section>
 
                         <Separator className="my-6" />
 
@@ -435,15 +544,14 @@ export default function ProfilePage() {
 
                         <Separator className="my-6" />
 
-                        {/* Billing Section */}
+                        {/* Billing / Payment Methods Section */}
                         <section className="mb-6">
                             <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><DollarSign className="h-5 w-5" /> Billing</h3>
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5" /> Billing & Plan</h3>
                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling}>
-                                    <Download className="mr-2 h-4 w-4" /> Statement
+                                    <Download className="mr-2 h-4 w-4" /> Summary
                                 </Button>
                             </div>
-                             {/* Subscription / Premium Features */}
                              <Card className="mb-4 border-l-4 border-yellow-500">
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex justify-between items-center">
@@ -464,24 +572,8 @@ export default function ProfilePage() {
                                 </CardContent>
                              </Card>
 
-                            <Card className="flex justify-between items-center p-4 mb-4">
-                                <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Account Balance</p>
-                                    <p className={`text-2xl font-bold ${billingInfo && billingInfo.accountBalance < 0 ? 'text-destructive' : 'text-primary'}`}>
-                                        ${billingInfo?.accountBalance?.toFixed(2) ?? '0.00'}
-                                    </p>
-                                </div>
-                                {billingInfo && billingInfo.accountBalance < 0 ? (
-                                     <div className="flex flex-col items-end">
-                                         <Badge variant="destructive" className="flex items-center gap-1">
-                                             <AlertCircle className="h-3 w-3" /> Overdue
-                                         </Badge>
-                                         <Button variant="link" size="sm" className="text-xs h-auto p-0 mt-1">Top Up Now</Button>
-                                     </div>
-                                ) : (
-                                    <Button variant="outline" size="sm">Add Funds</Button>
-                                )}
-                            </Card>
+                             {/* Removed Account Balance card - now part of Wallet */}
+
                             <div>
                                 <p className="text-sm font-medium mb-2">Payment Methods</p>
                                 <div className="space-y-2 mb-3">
@@ -524,7 +616,6 @@ export default function ProfilePage() {
                                                     <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                                         <Clock className="h-3 w-3" />
                                                         <span>{new Date(entry.startTime).toLocaleString()}</span>
-                                                        {/* Add duration calculation if needed */}
                                                     </div>
                                                 </div>
                                                 <span className="font-semibold text-sm">${entry.cost.toFixed(2)}</span>
@@ -559,6 +650,24 @@ export default function ProfilePage() {
                 reservation={reportingReservation}
                 userId={userId}
             />
+             {/* Top Up Modal */}
+            <TopUpModal
+                isOpen={isTopUpModalOpen}
+                onClose={() => setIsTopUpModalOpen(false)}
+                userId={userId}
+                currentBalance={wallet?.balance ?? 0}
+                currency={wallet?.currency ?? 'ZMW'}
+                onSuccess={refreshWalletData} // Refresh data on success
+            />
+             {/* Send Money Modal */}
+            <SendMoneyModal
+                isOpen={isSendMoneyModalOpen}
+                onClose={() => setIsSendMoneyModalOpen(false)}
+                userId={userId}
+                currentBalance={wallet?.balance ?? 0}
+                currency={wallet?.currency ?? 'ZMW'}
+                onSuccess={refreshWalletData} // Refresh data on success
+            />
         </TooltipProvider>
     );
 }
@@ -578,6 +687,15 @@ const ProfileSkeleton = () => (
             </div>
         </div>
         <Separator />
+         {/* Wallet Skeleton */}
+         <div className="space-y-4">
+            <Skeleton className="h-6 w-1/4 mb-3" />
+            <Skeleton className="h-32 w-full mb-4" /> {/* Balance card */}
+            <Skeleton className="h-5 w-1/3 mb-2"/> {/* Transactions Title */}
+            <Skeleton className="h-10 w-full"/>
+            <Skeleton className="h-10 w-full"/>
+         </div>
+        <Separator />
         {/* Rewards Skeleton */}
         <div className="space-y-4">
             <Skeleton className="h-6 w-1/3 mb-3" />
@@ -595,11 +713,10 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-24 w-full" />
          </div>
         <Separator />
-        {/* Billing Skeleton */}
+        {/* Billing/Plan Skeleton */}
         <div className="space-y-4">
              <Skeleton className="h-6 w-1/4 mb-3" />
              <Skeleton className="h-24 w-full mb-4"/> {/* Subscription */}
-             <Skeleton className="h-20 w-full mb-4"/> {/* Balance */}
              <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
              <Skeleton className="h-12 w-full"/>
              <Skeleton className="h-12 w-full"/>
@@ -615,5 +732,3 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
-
-    
