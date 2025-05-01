@@ -1,9 +1,9 @@
 'use client'; // Required for state and effects
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag } from "lucide-react"; // Added DollarSign, Clock, Users, Tag
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag } from "lucide-react"; // Correctly import Bath, Added DollarSign, Clock, Users, Tag
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,9 +23,9 @@ import type { PricingRule } from '@/services/pricing-service'; // Import Pricing
 import { getAllPricingRules, savePricingRule, deletePricingRule } from '@/services/pricing-service'; // Import pricing services
 import Image from "next/image";
 import { AppStateContext } from '@/context/AppStateProvider';
-import { useContext } from 'react';
 import { Input as ShadInput } from "@/components/ui/input"; // Alias ShadCN input to avoid conflict
 import { MultiSelect } from '@/components/ui/multi-select'; // Assuming a MultiSelect component exists
+import { Separator } from '@/components/ui/separator'; // Import Separator
 
 // TODO: Protect this route/page to be accessible only by users with 'Admin' or 'ParkingLotOwner' roles.
 
@@ -51,6 +51,8 @@ const sampleAnalyticsData: Record<string, { revenue: number; avgOccupancy: numbe
 const allAvailableServices: ParkingLotService[] = ['EV Charging', 'Car Wash', 'Mobile Money Agent', 'Valet', 'Restroom', 'Wifi'];
 const userTiers = ['Basic', 'Premium']; // Available subscription tiers
 const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const daysOfWeekOptions = daysOfWeek.map(day => ({ value: day, label: day }));
+const userTierOptions = userTiers.map(tier => ({ value: tier, label: tier }));
 
 // Initial state for the Ad form
 const initialAdFormState: Partial<Advertisement> = {
@@ -112,9 +114,25 @@ export default function AdminDashboardPage() {
       try {
           let lots = await getAvailableParkingLots();
           if (isParkingLotOwner && userId) {
-              const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
-              lots = lots.filter(lot => ownerLots.includes(lot.id));
+              // Find the owner object from sampleUsers based on userId
+              const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+              const ownerLots = ownerUser?.associatedLots || [];
+              // If owner has '*', they see all lots (like admin)
+              if (!ownerLots.includes('*')) {
+                 lots = lots.filter(lot => ownerLots.includes(lot.id));
+              }
+              // If owner has only one lot, select it by default
+              if (lots.length === 1) {
+                  setSelectedLotId(lots[0].id);
+              } else if (!isAdmin && lots.length > 1 && selectedLotId === 'all') {
+                  // If owner has multiple lots but no selection yet, select first one instead of 'all'
+                  setSelectedLotId(lots[0].id);
+              }
+          } else if (!isAdmin && !isParkingLotOwner) {
+              // Standard user should not see anything here ideally, but if they land here, show no lots.
+              lots = [];
           }
+
           setParkingLots(lots);
       } catch (err) {
         console.error("Failed to fetch parking lots:", err);
@@ -123,16 +141,20 @@ export default function AdminDashboardPage() {
       } finally {
         setIsLoadingLots(false);
       }
-    }, [isParkingLotOwner, userId, toast]);
+    }, [isParkingLotOwner, isAdmin, userId, toast, selectedLotId]); // Added isAdmin, selectedLotId
 
-  const fetchAds = useCallback(async (locationId: string) => {
+
+  const fetchAds = useCallback(async (scopeId: string) => {
       setIsLoadingAds(true);
       setErrorLoadingAds(null);
       try {
-          let ads = await getAdvertisements(locationId === 'all' ? undefined : locationId);
+          let ads = await getAdvertisements(scopeId === 'all' ? undefined : scopeId);
            if (isParkingLotOwner && userId) {
-               const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
-               ads = ads.filter(ad => !ad.targetLocationId || ownerLots.includes(ad.targetLocationId)); // Show global or owned lot ads
+               const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+               const ownerLots = ownerUser?.associatedLots || [];
+               if (!ownerLots.includes('*')) {
+                   ads = ads.filter(ad => !ad.targetLocationId || ownerLots.includes(ad.targetLocationId)); // Show global or owned lot ads
+               }
            }
           const adsWithLocationNames = ads.map(ad => ({ ...ad, targetLotName: parkingLots.find(lot => lot.id === ad.targetLocationId)?.name }));
           setAdvertisements(adsWithLocationNames);
@@ -145,14 +167,17 @@ export default function AdminDashboardPage() {
       }
   }, [isParkingLotOwner, userId, parkingLots, toast]);
 
-  const fetchPricingRules = useCallback(async () => {
+  const fetchPricingRules = useCallback(async (scopeId: string) => {
       setIsLoadingRules(true);
       setErrorLoadingRules(null);
       try {
           let rules = await getAllPricingRules();
           if (isParkingLotOwner && userId) {
-               const ownerLots = sampleUsers.find(user => user.id === userId)?.associatedLots || [];
-               rules = rules.filter(rule => !rule.lotId || ownerLots.includes(rule.lotId)); // Show global or owned lot rules
+               const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+               const ownerLots = ownerUser?.associatedLots || [];
+                if (!ownerLots.includes('*')) {
+                   rules = rules.filter(rule => !rule.lotId || ownerLots.includes(rule.lotId)); // Show global or owned lot rules
+               }
           }
           setPricingRules(rules.map(rule => ({ ...rule, lotName: parkingLots.find(lot => lot.id === rule.lotId)?.name }))); // Add lot name
       } catch (err) {
@@ -166,15 +191,22 @@ export default function AdminDashboardPage() {
 
 
   useEffect(() => {
-    fetchLots();
-  }, [fetchLots]);
+    // Only fetch if authorized
+     if (isAdmin || isParkingLotOwner) {
+        fetchLots();
+    } else {
+         setIsLoadingLots(false); // Not authorized, stop loading
+    }
+  }, [fetchLots, isAdmin, isParkingLotOwner]); // Added isAdmin, isParkingLotOwner
 
   useEffect(() => {
-    if (parkingLots.length > 0) {
+    // Fetch ads/rules only if authorized and lots are available
+    if ((isAdmin || isParkingLotOwner) && parkingLots.length > 0) {
          fetchAds(selectedLotId);
-         fetchPricingRules(); // Fetch rules after lots are available
+         fetchPricingRules(selectedLotId);
     }
-  }, [selectedLotId, parkingLots, fetchAds, fetchPricingRules]); // Re-fetch ads/rules when scope changes
+  }, [selectedLotId, parkingLots, fetchAds, fetchPricingRules, isAdmin, isParkingLotOwner]); // Re-fetch ads/rules when scope changes or auth status relevant
+
 
   // --- Component State & Logic ---
   const selectedLot = parkingLots.find(lot => lot.id === selectedLotId);
@@ -251,22 +283,29 @@ export default function AdminDashboardPage() {
 
     // --- Advertisement Management ---
     const handleOpenAdModal = (ad: Advertisement | null = null) => {
-         if (ad && isParkingLotOwner && ad.targetLocationId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(ad.targetLocationId)) {
+         const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+         const ownerLots = ownerUser?.associatedLots || [];
+
+         if (ad && isParkingLotOwner && !isAdmin && ad.targetLocationId && !ownerLots.includes('*') && !ownerLots.includes(ad.targetLocationId)) {
               toast({ title: "Unauthorized", description: "You can only edit ads associated with your parking lots.", variant: "destructive" });
               return;
           }
-         // Ensure owner cannot edit global ads unless they are also Admin
-         if (ad && isParkingLotOwner && !isAdmin && !ad.targetLocationId) {
+         // Ensure owner cannot edit global ads unless they are also Admin or have wildcard access
+         if (ad && isParkingLotOwner && !isAdmin && !ad.targetLocationId && !ownerLots.includes('*')) {
               toast({ title: "Unauthorized", description: "You cannot edit global advertisements.", variant: "destructive" });
               return;
          }
 
         if (ad) {
-            setCurrentAd(ad);
+            setCurrentAd({
+                ...ad,
+                targetLocationId: ad.targetLocationId || 'all', // Map empty/undefined to 'all' for select default
+            });
         } else {
             setCurrentAd({
                 ...initialAdFormState,
-                targetLocationId: selectedLotId !== 'all' ? selectedLotId : '', // Pre-fill if a specific lot is selected
+                // Pre-fill target location if a specific lot is selected and user is authorized for it
+                targetLocationId: selectedLotId !== 'all' && (isAdmin || (isParkingLotOwner && ownerLots.includes(selectedLotId))) ? selectedLotId : (isAdmin ? 'all' : ''),
             });
         }
         setIsAdModalOpen(true);
@@ -284,11 +323,18 @@ export default function AdminDashboardPage() {
             toast({ title: "Missing Information", description: "Please fill in title and description.", variant: "destructive" });
             return;
         }
-         // Admin can create global ads (targetLocationId = '')
-         // Owner can only create ads for their lots (targetLocationId must be one of their lots)
-         if (isParkingLotOwner && !isAdmin && (!currentAd.targetLocationId || !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(currentAd.targetLocationId))) {
-            toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots as the target location.", variant: "destructive" });
-            return;
+         // Authorization checks for saving
+          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+         const ownerLots = ownerUser?.associatedLots || [];
+         const targetLocation = currentAd.targetLocationId === 'all' ? '' : currentAd.targetLocationId;
+
+         if (isParkingLotOwner && !isAdmin && !ownerLots.includes('*')) {
+             if (!targetLocation) { // Trying to create/edit global ad
+                 toast({ title: "Unauthorized", description: "Only Admins can create global advertisements.", variant: "destructive" }); return;
+             }
+             if (targetLocation && !ownerLots.includes(targetLocation)) { // Trying to create/edit ad for non-owned lot
+                toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots as the target location.", variant: "destructive" }); return;
+             }
          }
 
         setIsSavingAd(true);
@@ -296,7 +342,7 @@ export default function AdminDashboardPage() {
             let savedAd: Advertisement | null = null;
             const adDataToSave = {
                 ...currentAd,
-                targetLocationId: currentAd.targetLocationId === 'all' ? '' : currentAd.targetLocationId, // Ensure 'all' maps to empty string
+                targetLocationId: targetLocation, // Use cleaned targetLocation
                 targetLotName: undefined, // Don't save temporary name
             };
 
@@ -324,11 +370,15 @@ export default function AdminDashboardPage() {
          if (!adToDelete) return;
 
          // Authorization check
-         if (isParkingLotOwner && !isAdmin && adToDelete.targetLocationId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(adToDelete.targetLocationId)) {
-             toast({ title: "Unauthorized", description: "You can only delete ads associated with your parking lots.", variant: "destructive" }); return;
-         }
-         if (isParkingLotOwner && !isAdmin && !adToDelete.targetLocationId) {
-              toast({ title: "Unauthorized", description: "You cannot delete global advertisements.", variant: "destructive" }); return;
+         const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+         const ownerLots = ownerUser?.associatedLots || [];
+         if (isParkingLotOwner && !isAdmin && !ownerLots.includes('*')) {
+            if (!adToDelete.targetLocationId) { // Trying to delete global ad
+                 toast({ title: "Unauthorized", description: "You cannot delete global advertisements.", variant: "destructive" }); return;
+            }
+            if (adToDelete.targetLocationId && !ownerLots.includes(adToDelete.targetLocationId)) { // Trying to delete non-owned lot ad
+                 toast({ title: "Unauthorized", description: "You can only delete ads associated with your parking lots.", variant: "destructive" }); return;
+            }
          }
         // Optional: Confirmation dialog
 
@@ -350,17 +400,24 @@ export default function AdminDashboardPage() {
 
     // --- Pricing Rule Management ---
     const handleOpenRuleModal = (rule: PricingRule | null = null) => {
-         // Authorization: Only Admins can edit global rules or rules for lots they don't own
-         if (rule && !isAdmin && rule.lotId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(rule.lotId)) {
-              toast({ title: "Unauthorized", description: "You can only manage rules for your assigned lots.", variant: "destructive" }); return;
+          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+         const ownerLots = ownerUser?.associatedLots || [];
+
+         // Authorization: Only Admins can edit global rules or rules for lots they don't own (unless owner has wildcard)
+         if (rule && isParkingLotOwner && !isAdmin && !ownerLots.includes('*')) {
+             if (!rule.lotId) { // Trying to edit global rule
+                 toast({ title: "Unauthorized", description: "Only Admins can manage global rules.", variant: "destructive" }); return;
+             }
+              if (rule.lotId && !ownerLots.includes(rule.lotId)) { // Trying to edit non-owned lot rule
+                 toast({ title: "Unauthorized", description: "You can only manage rules for your assigned lots.", variant: "destructive" }); return;
+             }
          }
-         if (rule && !isAdmin && !rule.lotId) {
-             toast({ title: "Unauthorized", description: "Only Admins can manage global rules.", variant: "destructive" }); return;
-         }
+
 
         if (rule) {
             setCurrentRule({
                 ...rule,
+                 lotId: rule.lotId || 'all', // Map empty/undefined to 'all' for select default
                 // Ensure timeCondition exists for the form
                 timeCondition: rule.timeCondition || { daysOfWeek: [], startTime: '', endTime: '' },
                 userTierCondition: rule.userTierCondition || [],
@@ -371,8 +428,11 @@ export default function AdminDashboardPage() {
             setCurrentRule({
                 ...initialPricingRuleFormState,
                 ruleId: newRuleId, // Generate a temporary ID or handle on backend
-                lotId: selectedLotId !== 'all' ? selectedLotId : '', // Pre-fill if specific lot selected
+                // Pre-fill if specific lot selected and authorized
+                lotId: selectedLotId !== 'all' && (isAdmin || (isParkingLotOwner && ownerLots.includes(selectedLotId))) ? selectedLotId : (isAdmin ? 'all' : ''),
                 priority: 100, // Default priority
+                 timeCondition: { daysOfWeek: [], startTime: '', endTime: '' }, // Ensure structure exists
+                 userTierCondition: [],
             });
         }
         setIsRuleModalOpen(true);
@@ -394,7 +454,7 @@ export default function AdminDashboardPage() {
         const { name, value } = e.target; // name will be 'startTime' or 'endTime'
         setCurrentRule(prev => ({
             ...prev,
-            timeCondition: { ...prev?.timeCondition, [name]: value }
+            timeCondition: { ...(prev?.timeCondition || {}), [name]: value } as any
         }));
     };
 
@@ -413,7 +473,7 @@ export default function AdminDashboardPage() {
 
 
     const handleSaveRule = async () => {
-        if (!currentRule.description || !currentRule.priority) {
+        if (!currentRule.description || currentRule.priority === undefined) {
             toast({ title: "Missing Information", description: "Please fill in description and priority.", variant: "destructive" });
             return;
         }
@@ -422,10 +482,18 @@ export default function AdminDashboardPage() {
              toast({ title: "Invalid Rule", description: "Rule must define a base rate, flat rate, or discount percentage.", variant: "destructive" });
              return;
         }
-         // Authorization: Owner cannot create global rules
-         if (isParkingLotOwner && !isAdmin && (!currentRule.lotId || !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(currentRule.lotId))) {
-            toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots or leave blank only if you are an Admin.", variant: "destructive" });
-            return;
+        // Authorization: Owner cannot create/save global rules unless admin or wildcard
+         const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+         const ownerLots = ownerUser?.associatedLots || [];
+         const targetLotId = currentRule.lotId === 'all' ? '' : currentRule.lotId;
+
+          if (isParkingLotOwner && !isAdmin && !ownerLots.includes('*')) {
+             if (!targetLotId) { // Trying to save global rule
+                 toast({ title: "Unauthorized", description: "Only Admins can save global rules.", variant: "destructive" }); return;
+             }
+             if (targetLotId && !ownerLots.includes(targetLotId)) { // Trying to save for non-owned lot
+                 toast({ title: "Invalid Location", description: "Please select one of your assigned parking lots.", variant: "destructive" }); return;
+             }
          }
 
         setIsSavingRule(true);
@@ -433,7 +501,7 @@ export default function AdminDashboardPage() {
             // Prepare data for saving (ensure empty strings/arrays are handled if needed by backend)
             const ruleToSave: PricingRule = {
                 ...(currentRule as PricingRule), // Assume complete structure by now
-                lotId: currentRule.lotId === 'all' || currentRule.lotId === '' ? undefined : currentRule.lotId, // Map empty/all to undefined
+                lotId: targetLotId || undefined, // Map empty/all to undefined
                 // Clean up empty conditions before saving? Depends on backend expectations.
                  timeCondition: (currentRule.timeCondition?.daysOfWeek?.length || currentRule.timeCondition?.startTime || currentRule.timeCondition?.endTime) ? currentRule.timeCondition : undefined,
                  userTierCondition: currentRule.userTierCondition?.length ? currentRule.userTierCondition : undefined,
@@ -443,7 +511,7 @@ export default function AdminDashboardPage() {
             const savedRule = await savePricingRule(ruleToSave);
 
             if (savedRule) {
-                 await fetchPricingRules(); // Re-fetch rules
+                 await fetchPricingRules(selectedLotId); // Re-fetch rules for current scope
                 toast({ title: "Pricing Rule Saved", description: `Rule "${savedRule.description}" has been saved.` });
                 setIsRuleModalOpen(false);
             } else { throw new Error("Backend save failed."); }
@@ -458,13 +526,18 @@ export default function AdminDashboardPage() {
      const handleDeleteRule = async (ruleId: string) => {
           const ruleToDelete = pricingRules.find(r => r.ruleId === ruleId);
          if (!ruleToDelete) return;
-         // Authorization check
-         if (!isAdmin && ruleToDelete.lotId && !sampleUsers.find(user => user.id === userId)?.associatedLots.includes(ruleToDelete.lotId)) {
-             toast({ title: "Unauthorized", description: "You can only delete rules for your assigned lots.", variant: "destructive" }); return;
-         }
-          if (!isAdmin && !ruleToDelete.lotId) {
-             toast({ title: "Unauthorized", description: "Only Admins can delete global rules.", variant: "destructive" }); return;
-         }
+
+          // Authorization check
+           const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+           const ownerLots = ownerUser?.associatedLots || [];
+           if (isParkingLotOwner && !isAdmin && !ownerLots.includes('*')) {
+              if (!ruleToDelete.lotId) { // Trying to delete global rule
+                  toast({ title: "Unauthorized", description: "Only Admins can delete global rules.", variant: "destructive" }); return;
+              }
+               if (ruleToDelete.lotId && !ownerLots.includes(ruleToDelete.lotId)) { // Trying to delete non-owned lot rule
+                   toast({ title: "Unauthorized", description: "You can only delete rules for your assigned lots.", variant: "destructive" }); return;
+               }
+           }
         // Optional: Confirmation dialog
 
          setIsDeletingRule(true);
@@ -491,29 +564,52 @@ export default function AdminDashboardPage() {
        case 'Car Wash': return <SprayCan className={className} />;
        case 'Mobile Money Agent': return <BadgeCent className={className} />;
        case 'Wifi': return <Wifi className={className} />;
-       case 'Restroom': return <Bath className={className} />;
+       case 'Restroom': return <Bath className={className} />; // Use correct Bath icon
        case 'Valet': return <ConciergeBell className={className} />;
        default: return <Sparkles className={className} />;
      }
    };
 
-   const isAuthorizedForLot = (lotId: string) => {
-        return isAdmin || !isParkingLotOwner || sampleUsers.find(user => user.id === userId)?.associatedLots.includes(lotId) || lotId === 'all';
-    };
+    const isAuthorizedForLot = (lotId: string) => {
+         if (isAdmin) return true;
+         if (isParkingLotOwner && userId) {
+            const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+            const ownerLots = ownerUser?.associatedLots || [];
+            return ownerLots.includes('*') || ownerLots.includes(lotId);
+         }
+         return false;
+     };
 
    const getDisplayLots = () => {
-        return parkingLots.filter(lot => isAuthorizedForLot(lot.id));
+       if (isAdmin) return parkingLots;
+       if (isParkingLotOwner && userId) {
+          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+          const ownerLots = ownerUser?.associatedLots || [];
+          if (ownerLots.includes('*')) return parkingLots;
+          return parkingLots.filter(lot => ownerLots.includes(lot.id));
+       }
+       return []; // Standard user sees no lots in admin panel
     };
 
    const calculateAverageRevenue = () => {
          const lots = getDisplayLots();
          if (!lots || lots.length === 0) return 0;
-        const totalRevenue = lots.reduce((sum, lot) => sum + (sampleAnalyticsData[lot.id]?.revenue || 0), 0);
-        return totalRevenue / lots.length;
+         const totalRevenue = lots.reduce((sum, lot) => sum + (sampleAnalyticsData[lot.id]?.revenue || 0), 0);
+         return totalRevenue / lots.length;
     };
     const averageRevenue = calculateAverageRevenue();
    // --- End Helper Functions ---
 
+  // Handle unauthorized access
+  if (!isAdmin && !isParkingLotOwner) {
+      return (
+         <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
+              <ShieldCheck className="mx-auto h-12 w-12 text-destructive mb-4" />
+              <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+              <p className="text-muted-foreground">You do not have permission to view this page.</p>
+          </div>
+      );
+  }
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
@@ -527,12 +623,12 @@ export default function AdminDashboardPage() {
                 </CardTitle>
                 <CardDescription>
                     Manage users, lots, services, ads, pricing, and view analytics.
-                    {selectedLot ? ` (Viewing: ${selectedLot.name})` : ' (Viewing: All Locations)'}
+                    {selectedLotId !== 'all' && selectedLot ? ` (Viewing: ${selectedLot.name})` : isAdmin ? ' (Viewing: All Locations)' : ''}
                 </CardDescription>
                  <Badge variant="secondary">{userRole}</Badge>
              </div>
              {/* Parking Lot Selector */}
-             {(isAdmin || isParkingLotOwner) && (
+             {(isAdmin || (isParkingLotOwner && getDisplayLots().length > 1)) && ( // Only show if admin or owner with multiple lots
              <div className="min-w-[250px]">
                  {isLoadingLots ? (
                      <Skeleton className="h-10 w-full" />
@@ -542,7 +638,7 @@ export default function AdminDashboardPage() {
                     <Select
                         value={selectedLotId}
                         onValueChange={(value) => setSelectedLotId(value)}
-                        disabled={!isAdmin && parkingLots.length <= 1} // Disable if owner only has 1 lot
+                        disabled={!isAdmin && !isParkingLotOwner} // Should not be disabled if condition to show is met
                     >
                         <SelectTrigger>
                             <SelectValue placeholder="Select location scope..." />
@@ -579,12 +675,12 @@ export default function AdminDashboardPage() {
              <TabsContent value="users">
                <Card>
                  <CardHeader>
-                   <CardTitle>User Management {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
-                   <CardDescription>View, edit, or remove users and manage their roles {selectedLot ? ` associated with ${selectedLot.name}` : (isAdmin ? 'across all locations' : '(Admin only)')}.</CardDescription>
+                   <CardTitle>User Management {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : isAdmin ? ' - All Locations' : ''}</CardTitle>
+                   <CardDescription>View, edit, or remove users and manage their roles {selectedLotId !== 'all' && selectedLot ? ` associated with ${selectedLot.name}` : (isAdmin ? 'across all locations' : '')}.</CardDescription>
                     <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search users..." className="max-w-sm" />
                         <Button>Search</Button>
-                        {isAdmin && (
+                        {isAdmin && ( // Only Admin can add/download all users
                             <div className="ml-auto flex gap-2">
                                 <Button variant="outline" onClick={handleDownloadUsers}>
                                     <Download className="mr-2 h-4 w-4" /> Download List
@@ -595,6 +691,7 @@ export default function AdminDashboardPage() {
                     </div>
                  </CardHeader>
                  <CardContent>
+                    {/* Show users if Admin, or if Owner viewing specific lot */}
                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                        displayedUsers.length > 0 ? (
                            <Table>
@@ -615,8 +712,8 @@ export default function AdminDashboardPage() {
                                    <TableCell>{user.role}</TableCell>
                                    {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
                                    <TableCell className="text-right space-x-1">
-                                     <Button variant="ghost" size="sm">Edit</Button>
-                                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                                     <Button variant="ghost" size="sm" disabled={!isAdmin}>Edit</Button> {/* Only Admin can edit for now */}
+                                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={!isAdmin}> {/* Only Admin can delete for now */}
                                         <Trash2 className="h-4 w-4 sm:mr-1" />
                                         <span className="hidden sm:inline">Delete</span>
                                      </Button>
@@ -712,15 +809,16 @@ export default function AdminDashboardPage() {
               <TabsContent value="services">
                 <Card>
                   <CardHeader>
-                     <CardTitle>Manage Lot Services {selectedLot ? ` - ${selectedLot.name}` : ''}</CardTitle>
+                     <CardTitle>Manage Lot Services {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : ''}</CardTitle>
                      <CardDescription>
-                       {selectedLot ? `Enable or disable services offered at ${selectedLot.name}.` : 'Please select a specific parking lot to manage its services.'}
+                       {selectedLotId !== 'all' && selectedLot ? `Enable or disable services offered at ${selectedLot.name}.` : 'Please select a specific parking lot to manage its services.'}
                      </CardDescription>
                   </CardHeader>
                   <CardContent>
                       {isLoadingLots ? ( <Skeleton className="h-24 w-full" /> )
                       : errorLoadingLots ? ( <p className="text-destructive text-center py-4">{errorLoadingLots}</p> )
-                      : !selectedLot ? ( <p className="text-muted-foreground text-center py-4">Select a parking lot from the dropdown above.</p> )
+                      : selectedLotId === 'all' ? ( <p className="text-muted-foreground text-center py-4">Select a specific parking lot from the dropdown above to manage services.</p> )
+                      : !selectedLot ? ( <p className="text-muted-foreground text-center py-4">Selected lot not found or not accessible.</p> )
                       : (
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                              {allAvailableServices.map((service) => {
@@ -752,15 +850,17 @@ export default function AdminDashboardPage() {
              <TabsContent value="ads">
                <Card>
                  <CardHeader>
-                   <CardTitle>Advertisement Management {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
+                   <CardTitle>Advertisement Management {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : isAdmin ? ' - All Locations' : ''}</CardTitle>
                    <CardDescription>Create and manage advertisements shown to users.</CardDescription>
                    <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search ads by title..." className="max-w-sm" />
                         <Button>Search</Button>
                         <div className="ml-auto flex gap-2">
+                             {/* Download available to all authorized */}
                             <Button variant="outline" onClick={handleDownloadAds}>
                                 <Download className="mr-2 h-4 w-4" /> Download List
                             </Button>
+                             {/* Create button available to all authorized */}
                             <Button variant="default" onClick={() => handleOpenAdModal()}>
                                 <PlusCircle className="mr-2 h-4 w-4" /> Create Ad
                             </Button>
@@ -787,8 +887,10 @@ export default function AdminDashboardPage() {
                                 {advertisements.map((ad) => {
                                      const targetLotName = ad.targetLotName || (ad.targetLocationId ? 'Unknown Lot' : 'All Locations');
                                      const statusColor = ad.status === 'active' ? 'text-green-600' : ad.status === 'inactive' ? 'text-orange-600' : 'text-gray-500';
-                                     const canEdit = isAdmin || (isParkingLotOwner && (!ad.targetLocationId || sampleUsers.find(u=>u.id===userId)?.associatedLots.includes(ad.targetLocationId)));
-                                     const canDelete = canEdit;
+                                      const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+                                      const ownerLots = ownerUser?.associatedLots || [];
+                                      const canEdit = isAdmin || (isParkingLotOwner && (ownerLots.includes('*') || (ad.targetLocationId && ownerLots.includes(ad.targetLocationId)) || (!ad.targetLocationId && ownerLots.includes('*')))); // Admins, or owners if global with wildcard, or owners if for their lot
+                                      const canDelete = canEdit; // Same logic for delete
                                      return (
                                         <TableRow key={ad.id}>
                                             <TableCell><Image src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`} alt={ad.title} width={80} height={40} className="rounded object-cover aspect-[2/1]" /></TableCell>
@@ -813,7 +915,7 @@ export default function AdminDashboardPage() {
                    ) : (
                        <div className="text-center py-10 text-muted-foreground">
                             <Megaphone className="mx-auto h-10 w-10 mb-2" />
-                            <p>No advertisements found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
+                            <p>No advertisements found for {selectedLotId !== 'all' && selectedLot ? selectedLot.name : 'the selected scope'}.</p>
                              <Button size="sm" className="mt-4" onClick={() => handleOpenAdModal()}>
                                 <PlusCircle className="mr-2 h-4 w-4" /> Create First Ad
                             </Button>
@@ -827,17 +929,18 @@ export default function AdminDashboardPage() {
             <TabsContent value="pricing">
                <Card>
                  <CardHeader>
-                   <CardTitle>Dynamic Pricing Rules {selectedLot ? ` - ${selectedLot.name}` : ' - All Locations'}</CardTitle>
+                   <CardTitle>Dynamic Pricing Rules {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : isAdmin ? ' - All Locations' : ''}</CardTitle>
                    <CardDescription>Manage pricing rules based on time, events, or user tiers.</CardDescription>
                    <div className="flex flex-wrap items-center gap-2 pt-4">
                         <Input placeholder="Search rules by description..." className="max-w-sm" />
                         <Button>Search</Button>
                         <div className="ml-auto flex gap-2">
+                            {/* Download available to all authorized */}
                             <Button variant="outline" onClick={handleDownloadRules}>
                                 <Download className="mr-2 h-4 w-4" /> Download Rules
                             </Button>
-                            {/* Only Admin can create global rules, Owner can create for their lots */}
-                            {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                            {/* Create button available to all authorized (Owner restricted by lot selection) */}
+                            {(isAdmin || isParkingLotOwner) && (
                                 <Button variant="default" onClick={() => handleOpenRuleModal(null)}>
                                     <PlusCircle className="mr-2 h-4 w-4" /> Create Rule
                                 </Button>
@@ -862,7 +965,9 @@ export default function AdminDashboardPage() {
                            </TableHeader>
                            <TableBody>
                              {displayedPricingRules.map((rule) => {
-                                const canEdit = isAdmin || (isParkingLotOwner && (!rule.lotId || sampleUsers.find(u=>u.id===userId)?.associatedLots.includes(rule.lotId)));
+                                const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
+                                const ownerLots = ownerUser?.associatedLots || [];
+                                const canEdit = isAdmin || (isParkingLotOwner && (ownerLots.includes('*') || (rule.lotId && ownerLots.includes(rule.lotId)) || (!rule.lotId && ownerLots.includes('*'))));
                                 const canDelete = canEdit;
                                 return (
                                    <TableRow key={rule.ruleId}>
@@ -874,12 +979,12 @@ export default function AdminDashboardPage() {
                                          {rule.discountPercentage !== undefined && `-${rule.discountPercentage}%`}
                                      </TableCell>
                                      <TableCell className="text-xs space-y-0.5">
-                                          {rule.timeCondition && (
+                                          {rule.timeCondition && (rule.timeCondition.daysOfWeek?.length || rule.timeCondition.startTime || rule.timeCondition.endTime) ? (
                                              <div className="flex items-center gap-1 text-muted-foreground">
                                                  <Clock className="h-3 w-3"/>
-                                                 <span>{rule.timeCondition.daysOfWeek?.join(', ') || 'Any Day'} {rule.timeCondition.startTime || ''}-{rule.timeCondition.endTime || ''}</span>
+                                                 <span>{rule.timeCondition.daysOfWeek?.join(', ') || 'Any Day'} {rule.timeCondition.startTime || ''}{rule.timeCondition.startTime && rule.timeCondition.endTime ? '-' : ''}{rule.timeCondition.endTime || ''}</span>
                                              </div>
-                                          )}
+                                          ) : null}
                                            {rule.userTierCondition?.length > 0 && (
                                              <div className="flex items-center gap-1 text-muted-foreground">
                                                  <Users className="h-3 w-3"/>
@@ -892,6 +997,8 @@ export default function AdminDashboardPage() {
                                                  <span>Event: {rule.eventCondition}</span>
                                              </div>
                                           )}
+                                          {/* Show if no specific conditions */}
+                                           {!rule.timeCondition && !rule.userTierCondition?.length && !rule.eventCondition && <span className="text-muted-foreground">Always</span>}
                                      </TableCell>
                                      <TableCell>{rule.priority}</TableCell>
                                      <TableCell className="text-right space-x-1">
@@ -908,8 +1015,8 @@ export default function AdminDashboardPage() {
                      ) : (
                          <div className="text-center py-10 text-muted-foreground">
                            <DollarSign className="mx-auto h-10 w-10 mb-2" />
-                           <p>No pricing rules found for {selectedLot ? selectedLot.name : 'all locations'}.</p>
-                           {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                           <p>No pricing rules found for {selectedLotId !== 'all' && selectedLot ? selectedLot.name : 'the selected scope'}.</p>
+                           {(isAdmin || isParkingLotOwner) && ( // Check if authorized to create
                              <Button size="sm" className="mt-4" onClick={() => handleOpenRuleModal(null)}>
                                <PlusCircle className="mr-2 h-4 w-4" /> Create First Rule
                              </Button>
@@ -925,9 +1032,9 @@ export default function AdminDashboardPage() {
              <TabsContent value="analytics">
                <Card>
                  <CardHeader>
-                   <CardTitle>System Analytics {selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Overall' : '')}</CardTitle>
-                   <CardDescription>View performance and financial reports {selectedLot ? `for ${selectedLot.name}` : (isAdmin ? 'for all locations' : '(Admin only)')}.</CardDescription>
-                   {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && (
+                   <CardTitle>System Analytics {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Overall' : '')}</CardTitle>
+                   <CardDescription>View performance and financial reports {selectedLotId !== 'all' && selectedLot ? `for ${selectedLot.name}` : (isAdmin ? 'for all locations' : '')}.</CardDescription>
+                   {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) && ( // Show download if Admin or Owner viewing specific lot
                        <div className="pt-4 flex justify-end">
                           <Button variant="outline" onClick={handleDownloadAnalytics}>
                               <Download className="mr-2 h-4 w-4" /> Download Report
@@ -936,6 +1043,7 @@ export default function AdminDashboardPage() {
                    )}
                  </CardHeader>
                  <CardContent>
+                     {/* Show analytics if Admin, or if Owner viewing specific lot */}
                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                        <>
                            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -962,10 +1070,11 @@ export default function AdminDashboardPage() {
              <TabsContent value="settings">
                <Card>
                  <CardHeader>
-                   <CardTitle>System Settings {selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Global' : '')}</CardTitle>
-                   <CardDescription>Configure application settings, integrations, and defaults {selectedLot ? `specific to ${selectedLot.name}` : (isAdmin ? 'globally' : '(Admin only)')}.</CardDescription>
+                   <CardTitle>System Settings {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Global' : '')}</CardTitle>
+                   <CardDescription>Configure application settings, integrations, and defaults {selectedLotId !== 'all' && selectedLot ? `specific to ${selectedLot.name}` : (isAdmin ? 'globally' : '')}.</CardDescription>
                  </CardHeader>
                  <CardContent>
+                     {/* Show settings if Admin, or if Owner viewing specific lot */}
                      {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                          <div className="mt-4 space-y-4">
                            {selectedLotId === 'all' && isAdmin && ( // Only show global settings when 'all' is selected by Admin
@@ -1021,26 +1130,26 @@ export default function AdminDashboardPage() {
            <DialogContent className="sm:max-w-lg">
                <DialogHeader><DialogTitle>{currentAd.id ? 'Edit' : 'Create'} Advertisement</DialogTitle><DialogDescription>Fill in the details for the advertisement.</DialogDescription></DialogHeader>
                <div className="grid gap-4 py-4">
-                   {/* Title */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="title" className="text-right">Title*</Label><Input id="title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
-                   {/* Description */} <div className="grid grid-cols-4 items-start gap-4"><Label htmlFor="description" className="text-right pt-2">Description*</Label><Textarea id="description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} /></div>
-                   {/* Image URL */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="imageUrl" className="text-right">Image URL</Label><Input id="imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} /></div>
+                   {/* Title */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-title" className="text-right">Title*</Label><Input id="ad-title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* Description */} <div className="grid grid-cols-4 items-start gap-4"><Label htmlFor="ad-description" className="text-right pt-2">Description*</Label><Textarea id="ad-description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} /></div>
+                   {/* Image URL */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-imageUrl" className="text-right">Image URL</Label><Input id="ad-imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} /></div>
                    {/* Image Preview */} {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e) => { e.currentTarget.style.display = 'none'; }}/></div></div>)}
                    {/* Target Location */}
                    <div className="grid grid-cols-4 items-center gap-4">
-                       <Label htmlFor="targetLocationId" className="text-right">Location*</Label>
-                       <Select name="targetLocationId" value={currentAd.targetLocationId || 'all'} onValueChange={(value) => handleAdSelectChange('targetLocationId', value)} disabled={isSavingAd || (!isAdmin && isParkingLotOwner && parkingLots.length <=1 && !currentAd.id)}>
-                           <SelectTrigger className="col-span-3"><SelectValue placeholder="Select target location" /></SelectTrigger>
+                       <Label htmlFor="ad-targetLocationId" className="text-right">Location*</Label>
+                        <Select name="targetLocationId" value={currentAd.targetLocationId || 'all'} onValueChange={(value) => handleAdSelectChange('targetLocationId', value)} disabled={isSavingAd || (!isAdmin && isParkingLotOwner && getDisplayLots().length <=1 && !currentAd.id)}>
+                           <SelectTrigger id="ad-targetLocationId" className="col-span-3"><SelectValue placeholder="Select target location" /></SelectTrigger>
                            <SelectContent>
-                               { isAdmin && <SelectItem value="all">All Locations (Global)</SelectItem> }
-                               {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
+                                { (isAdmin || (isParkingLotOwner && sampleUsers.find(u => u.id === userId)?.associatedLots.includes('*'))) && <SelectItem value="all">All Locations (Global)</SelectItem> }
+                                {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
                            </SelectContent>
                        </Select>
                    </div>
                    {/* Associated Service */}
-                   <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="associatedService" className="text-right">Link to Service</Label><Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )} disabled={isSavingAd}><SelectTrigger className="col-span-3"><SelectValue placeholder="Link to a specific service..." /></SelectTrigger><SelectContent><SelectItem value="">None</SelectItem>{allAvailableServices.map(service => (<SelectItem key={service} value={service}><span className="flex items-center gap-2">{getServiceIcon(service, "h-4 w-4 mr-2")} {service}</span></SelectItem>))}</SelectContent></Select></div>
-                   {/* Start Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="startDate" className="text-right">Start Date</Label><Input id="startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
-                   {/* End Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="endDate" className="text-right">End Date</Label><Input id="endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
-                   {/* Status */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="status" className="text-right">Status</Label><Select name="status" value={currentAd.status || 'active'} onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')} disabled={isSavingAd}><SelectTrigger className="col-span-3"><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent></Select></div>
+                   <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-associatedService" className="text-right">Link to Service</Label><Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )} disabled={isSavingAd}><SelectTrigger id="ad-associatedService" className="col-span-3"><SelectValue placeholder="Link to a specific service..." /></SelectTrigger><SelectContent><SelectItem value="">None</SelectItem>{allAvailableServices.map(service => (<SelectItem key={service} value={service}><span className="flex items-center gap-2">{getServiceIcon(service, "h-4 w-4 mr-2")} {service}</span></SelectItem>))}</SelectContent></Select></div>
+                   {/* Start Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-startDate" className="text-right">Start Date</Label><Input id="ad-startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* End Date */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-endDate" className="text-right">End Date</Label><Input id="ad-endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
+                   {/* Status */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-status" className="text-right">Status</Label><Select name="status" value={currentAd.status || 'active'} onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')} disabled={isSavingAd}><SelectTrigger id="ad-status" className="col-span-3"><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent></Select></div>
                </div>
                <DialogFooter><DialogClose asChild><Button type="button" variant="outline" disabled={isSavingAd}>Cancel</Button></DialogClose><Button type="submit" onClick={handleSaveAd} disabled={isSavingAd}>{isSavingAd ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{currentAd.id ? 'Save Changes' : 'Create Ad'}</Button></DialogFooter>
            </DialogContent>
@@ -1049,48 +1158,59 @@ export default function AdminDashboardPage() {
         {/* Add/Edit Pricing Rule Modal */}
         <Dialog open={isRuleModalOpen} onOpenChange={setIsRuleModalOpen}>
             <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>{currentRule.id ? 'Edit' : 'Create'} Pricing Rule</DialogTitle><DialogDescription>Define conditions and rates for dynamic pricing.</DialogDescription></DialogHeader>
-                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-                     {/* Rule ID (Readonly) */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ruleId" className="text-right">Rule ID</Label><Input id="ruleId" name="ruleId" value={currentRule.ruleId || ''} readOnly disabled className="col-span-3 bg-muted text-muted-foreground text-xs" /></div>
-                     {/* Description */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="description" className="text-right">Description*</Label><Input id="description" name="description" value={currentRule.description || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} /></div>
-                     {/* Priority */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="priority" className="text-right">Priority*</Label><Input id="priority" name="priority" type="number" value={currentRule.priority ?? 100} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="Lower number = higher priority" min="1" /></div>
-                     {/* Lot Scope */}
-                     <div className="grid grid-cols-4 items-center gap-4">
-                         <Label htmlFor="lotId" className="text-right">Lot Scope</Label>
-                         <Select name="lotId" value={currentRule.lotId || 'all'} onValueChange={(value) => handleRuleSelectChange('lotId', value)} disabled={isSavingRule || (!isAdmin && isParkingLotOwner)}>
-                             <SelectTrigger className="col-span-3"><SelectValue placeholder="Select lot scope" /></SelectTrigger>
-                             <SelectContent>
-                                 { isAdmin && <SelectItem value="all">Global (All Lots)</SelectItem> }
-                                 {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
-                             </SelectContent>
-                         </Select>
-                     </div>
-                     {/* Rate Options */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Rate/Discount (Define ONE type per rule)</p>
-                     {/* Base Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="baseRatePerHour" className="text-right">Base Rate ($/hr)</Label><ShadInput id="baseRatePerHour" name="baseRatePerHour" type="number" value={currentRule.baseRatePerHour ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.flatRate !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 2.50" step="0.01" min="0"/></div>
-                     {/* Flat Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="flatRate" className="text-right">Flat Rate ($)</Label><ShadInput id="flatRate" name="flatRate" type="number" value={currentRule.flatRate ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 10.00" step="0.01" min="0"/></div>
-                     {/* Flat Rate Duration */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="flatRateDurationMinutes" className="text-right">Duration (min)</Label><ShadInput id="flatRateDurationMinutes" name="flatRateDurationMinutes" type="number" value={currentRule.flatRateDurationMinutes ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined || currentRule.flatRate === undefined} placeholder="e.g., 1440 for daily" min="1"/></div>
-                     {/* Discount */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="discountPercentage" className="text-right">Discount (%)</Label><ShadInput id="discountPercentage" name="discountPercentage" type="number" value={currentRule.discountPercentage ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.flatRate !== undefined} placeholder="e.g., 10 for 10%" min="0" max="100"/></div>
-                     {/* Conditions */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Conditions (Optional)</p>
-                     {/* Days of Week */}
-                      <div className="grid grid-cols-4 items-start gap-4">
-                          <Label className="text-right pt-2">Days of Week</Label>
-                          {/* Replace with actual MultiSelect component if available */}
-                           <div className="col-span-3 space-x-2"> {/* Placeholder for MultiSelect */}
-                               <span className="text-xs text-muted-foreground">[MultiSelect Placeholder: {currentRule.timeCondition?.daysOfWeek?.join(', ') || 'Any'}]</span>
-                           </div>
-                      </div>
-                     {/* Time Range */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="startTime" className="text-right">Time Range</Label><div className="col-span-3 flex items-center gap-2"><ShadInput id="startTime" name="startTime" type="time" value={currentRule.timeCondition?.startTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /><span className="text-muted-foreground">-</span><ShadInput id="endTime" name="endTime" type="time" value={currentRule.timeCondition?.endTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /></div></div>
-                      {/* User Tiers */}
-                      <div className="grid grid-cols-4 items-start gap-4">
-                          <Label className="text-right pt-2">User Tiers</Label>
-                           {/* Replace with actual MultiSelect component if available */}
-                           <div className="col-span-3 space-x-2"> {/* Placeholder for MultiSelect */}
-                               <span className="text-xs text-muted-foreground">[MultiSelect Placeholder: {currentRule.userTierCondition?.join(', ') || 'Any'}]</span>
-                           </div>
-                      </div>
-                     {/* Event */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="eventCondition" className="text-right">Event Name</Label><Input id="eventCondition" name="eventCondition" value={currentRule.eventCondition || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="e.g., Concert Night"/></div>
-                </div>
-                <DialogFooter><DialogClose asChild><Button type="button" variant="outline" disabled={isSavingRule}>Cancel</Button></DialogClose><Button type="submit" onClick={handleSaveRule} disabled={isSavingRule}>{isSavingRule ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{currentRule.id ? 'Save Changes' : 'Create Rule'}</Button></DialogFooter>
+                <DialogHeader><DialogTitle>{currentRule.ruleId ? 'Edit' : 'Create'} Pricing Rule</DialogTitle><DialogDescription>Define conditions and rates for dynamic pricing.</DialogDescription></DialogHeader>
+                {/* Added ScrollArea for potentially long forms */}
+                <ScrollArea className="max-h-[70vh] pr-6">
+                    <div className="grid gap-4 py-4">
+                         {/* Rule ID (Readonly) */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-ruleId" className="text-right">Rule ID</Label><Input id="rule-ruleId" name="ruleId" value={currentRule.ruleId || ''} readOnly disabled className="col-span-3 bg-muted text-muted-foreground text-xs" /></div>
+                         {/* Description */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-description" className="text-right">Description*</Label><Input id="rule-description" name="description" value={currentRule.description || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} /></div>
+                         {/* Priority */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-priority" className="text-right">Priority*</Label><Input id="rule-priority" name="priority" type="number" value={currentRule.priority ?? 100} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="Lower number = higher priority" min="1" /></div>
+                         {/* Lot Scope */}
+                         <div className="grid grid-cols-4 items-center gap-4">
+                             <Label htmlFor="rule-lotId" className="text-right">Lot Scope</Label>
+                             <Select name="lotId" value={currentRule.lotId || 'all'} onValueChange={(value) => handleRuleSelectChange('lotId', value)} disabled={isSavingRule || (!isAdmin && isParkingLotOwner && !sampleUsers.find(u => u.id === userId)?.associatedLots.includes('*'))}>
+                                 <SelectTrigger id="rule-lotId" className="col-span-3"><SelectValue placeholder="Select lot scope" /></SelectTrigger>
+                                 <SelectContent>
+                                      { (isAdmin || (isParkingLotOwner && sampleUsers.find(u => u.id === userId)?.associatedLots.includes('*'))) && <SelectItem value="all">Global (All Lots)</SelectItem> }
+                                     {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
+                                 </SelectContent>
+                             </Select>
+                         </div>
+                         {/* Rate Options */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Rate/Discount (Define ONE type per rule)</p>
+                         {/* Base Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-baseRatePerHour" className="text-right">Base Rate ($/hr)</Label><ShadInput id="rule-baseRatePerHour" name="baseRatePerHour" type="number" value={currentRule.baseRatePerHour ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.flatRate !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 2.50" step="0.01" min="0"/></div>
+                         {/* Flat Rate */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-flatRate" className="text-right">Flat Rate ($)</Label><ShadInput id="rule-flatRate" name="flatRate" type="number" value={currentRule.flatRate ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined} placeholder="e.g., 10.00" step="0.01" min="0"/></div>
+                         {/* Flat Rate Duration */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-flatRateDurationMinutes" className="text-right">Duration (min)</Label><ShadInput id="rule-flatRateDurationMinutes" name="flatRateDurationMinutes" type="number" value={currentRule.flatRateDurationMinutes ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.discountPercentage !== undefined || currentRule.flatRate === undefined} placeholder="e.g., 1440 for daily" min="1"/></div>
+                         {/* Discount */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-discountPercentage" className="text-right">Discount (%)</Label><ShadInput id="rule-discountPercentage" name="discountPercentage" type="number" value={currentRule.discountPercentage ?? ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule || currentRule.baseRatePerHour !== undefined || currentRule.flatRate !== undefined} placeholder="e.g., 10 for 10%" min="0" max="100"/></div>
+                         {/* Conditions */} <Separator className="col-span-4 my-2" /> <p className="col-span-4 text-sm font-medium text-muted-foreground -mb-2">Conditions (Optional)</p>
+                         {/* Days of Week */}
+                          <div className="grid grid-cols-4 items-start gap-4">
+                              <Label className="text-right pt-2">Days of Week</Label>
+                              <MultiSelect
+                                  options={daysOfWeekOptions}
+                                  selected={currentRule.timeCondition?.daysOfWeek || []}
+                                  onChange={handleRuleDaysOfWeekChange}
+                                  placeholder="Select days..."
+                                  className="col-span-3"
+                                  disabled={isSavingRule}
+                              />
+                          </div>
+                         {/* Time Range */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-startTime" className="text-right">Time Range</Label><div className="col-span-3 flex items-center gap-2"><ShadInput id="rule-startTime" name="startTime" type="time" value={currentRule.timeCondition?.startTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /><span className="text-muted-foreground">-</span><ShadInput id="rule-endTime" name="endTime" type="time" value={currentRule.timeCondition?.endTime || ''} onChange={handleRuleTimeConditionChange} className="flex-1" disabled={isSavingRule} /></div></div>
+                          {/* User Tiers */}
+                          <div className="grid grid-cols-4 items-start gap-4">
+                              <Label className="text-right pt-2">User Tiers</Label>
+                              <MultiSelect
+                                  options={userTierOptions}
+                                  selected={currentRule.userTierCondition || []}
+                                  onChange={handleRuleUserTiersChange}
+                                  placeholder="Select tiers..."
+                                  className="col-span-3"
+                                  disabled={isSavingRule}
+                              />
+                          </div>
+                         {/* Event */} <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="rule-eventCondition" className="text-right">Event Name</Label><Input id="rule-eventCondition" name="eventCondition" value={currentRule.eventCondition || ''} onChange={handleRuleFormChange} className="col-span-3" disabled={isSavingRule} placeholder="e.g., Concert Night"/></div>
+                    </div>
+                </ScrollArea>
+                <DialogFooter><DialogClose asChild><Button type="button" variant="outline" disabled={isSavingRule}>Cancel</Button></DialogClose><Button type="submit" onClick={handleSaveRule} disabled={isSavingRule}>{isSavingRule ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{currentRule.ruleId ? 'Save Changes' : 'Create Rule'}</Button></DialogFooter>
             </DialogContent>
         </Dialog>
 
@@ -1098,35 +1218,10 @@ export default function AdminDashboardPage() {
   );
 }
 
-// Mock MultiSelect component placeholder - Replace with actual implementation
-const MockMultiSelect = ({ options, selected, onChange, placeholder }: { options: string[], selected: string[], onChange: (selected: string[]) => void, placeholder?: string }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const toggleOption = (option: string) => {
-        const newSelected = selected.includes(option)
-            ? selected.filter(item => item !== option)
-            : [...selected, option];
-        onChange(newSelected);
-    };
+// // Removed MockMultiSelect - assuming actual MultiSelect component is used
+// const MockMultiSelect = ({ options, selected, onChange, placeholder }: { options: {value: string, label: string}[], selected: string[], onChange: (selected: string[]) => void, placeholder?: string }) => {
+//     ...
+// };
 
-    return (
-        <div className="relative">
-            <Button variant="outline" onClick={() => setIsOpen(!isOpen)} className="w-full justify-start font-normal">
-                {selected.length > 0 ? selected.join(', ') : <span className="text-muted-foreground">{placeholder || 'Select...'}</span>}
-            </Button>
-            {isOpen && (
-                <div className="absolute z-10 w-full mt-1 border bg-popover rounded-md shadow-lg p-2">
-                    {options.map(option => (
-                        <div key={option} className="flex items-center space-x-2 p-1 hover:bg-accent rounded">
-                            <Checkbox
-                                id={`ms-${option}`}
-                                checked={selected.includes(option)}
-                                onCheckedChange={() => toggleOption(option)}
-                            />
-                            <label htmlFor={`ms-${option}`} className="text-sm">{option}</label>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
+// Import ScrollArea if needed inside the Dialog
+import { ScrollArea } from '@/components/ui/scroll-area';

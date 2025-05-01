@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell } from "lucide-react"; // Added Bath, ConciergeBell
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell } from "lucide-react"; // Correctly import Bath, Added Bath, ConciergeBell
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,7 +28,7 @@ const getServiceIcon = (service: ParkingLotService | undefined) => {
       case 'Car Wash': return <SprayCan className="h-8 w-8 text-primary mb-2" />;
       case 'Mobile Money Agent': return <BadgeCent className="h-8 w-8 text-primary mb-2" />;
       case 'Wifi': return <Wifi className="h-8 w-8 text-primary mb-2" />;
-      case 'Restroom': return <Bath className="h-8 w-8 text-primary mb-2" />;
+      case 'Restroom': return <Bath className="h-8 w-8 text-primary mb-2" />; // Correctly use Bath
       case 'Valet': return <ConciergeBell className="h-8 w-8 text-primary mb-2" />;
       default: return <Sparkles className="h-8 w-8 text-primary mb-2" />; // Default icon
     }
@@ -40,7 +40,7 @@ const mockServices = [
     { id: 2, name: "Premium Car Wash", location: "Mall Parking Deck", description: "Hand wash and detailing services.", icon: SprayCan, serviceType: 'Car Wash' as ParkingLotService },
     { id: 3, name: "Mobile Money Booth", location: "Airport Lot B", description: "Airtel & MTN Mobile Money available.", icon: BadgeCent, serviceType: 'Mobile Money Agent' as ParkingLotService },
     { id: 4, name: "Free Wi-Fi Zone", location: "Downtown Garage", description: "Complimentary Wi-Fi near the entrance.", icon: Wifi, serviceType: 'Wifi' as ParkingLotService },
-    { id: 5, name: "Restrooms Available", location: "All Locations", description: "Clean and accessible restrooms.", icon: Bath, serviceType: 'Restroom' as ParkingLotService },
+    { id: 5, name: "Restrooms Available", location: "All Locations", description: "Clean and accessible restrooms.", icon: Bath, serviceType: 'Restroom' as ParkingLotService }, // Correctly use Bath icon variable
     { id: 6, name: "Valet Parking", location: "Mall Entrance", description: "Have your car parked for you.", icon: ConciergeBell, serviceType: 'Valet' as ParkingLotService },
 ];
 
