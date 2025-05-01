@@ -1,4 +1,4 @@
-'use client';
+"use client"
 
 import React, {useState, useEffect, useCallback, useContext} from 'react';
 import {
@@ -48,6 +48,8 @@ import {
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip'; // Import Tooltip
 import {Input} from "@/components/ui/input";
 import {AppStateContext} from '@/context/AppStateProvider';
+import { Input as ShadInput } from "@/components/ui/input"; // Import PricingRule type
+
 
 interface UserProfileProps {
   isOpen: boolean;
@@ -368,14 +370,14 @@ export default function UserProfile({
                       <div className="flex justify-between items-center">
                         {editMode ? (
                           <>
-                            <Input
+                            <ShadInput
                               type="text"
                               value={newName}
                               onChange={(e) => setNewName(e.target.value)}
                               placeholder="Your Name"
                               className="w-full"
                             />
-                            <Input
+                            <ShadInput
                               type="text"
                               value={newAvatarUrl}
                               onChange={(e) => setNewAvatarUrl(e.target.value)}
