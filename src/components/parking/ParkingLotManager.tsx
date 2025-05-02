@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
-import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences } from '@/services/user-service'; // Import gamification service and bookmark/preference functions/type
+import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service'; // Import gamification service and bookmark/preference functions/type
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
@@ -64,6 +64,13 @@ export default function ParkingLotManager() {
    const [isClient, setIsClient] = useState(false); // State to track client-side mount
    const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle'); // Track voice assistant state for UI
    const isVisible = useVisibilityChange(); // Track tab visibility
+   const voiceAssistant = useVoiceAssistant({
+        onCommand: (transcript) => handleVoiceCommand(transcript),
+        onStateChange: (newState) => {
+            console.log("Voice Assistant State (Manager):", newState);
+            setVoiceAssistantState(newState);
+        }
+   });
 
    useEffect(() => {
        // Ensure this only runs on the client
@@ -217,15 +224,6 @@ export default function ParkingLotManager() {
        }
       // eslint-disable-next-line react-hooks/exhaustive-deps
      }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline]); // Add isOnline, userBookmarks dependency
-
-    // Moved voice assistant hook call *before* callbacks that use it
-    const voiceAssistant = useVoiceAssistant({
-       onCommand: (transcript) => handleVoiceCommand(transcript), // Pass callback ref
-       onStateChange: (newState) => {
-           console.log("Voice Assistant State (Manager):", newState);
-           setVoiceAssistantState(newState); // Update local state for UI
-       }
-   });
 
    // --- Voice Assistant Integration ---
     // Move handleVoiceCommandResult here
@@ -613,7 +611,7 @@ export default function ParkingLotManager() {
 
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
-  const handleAuthSuccess = (newUserId: string, name?: string, avatar?: string, role?: string) => {
+  const handleAuthSuccess = (newUserId: string, name?: string, avatar?: string, role?: UserRole | null) => { // Added UserRole type
     login(newUserId, name || `User ${newUserId.substring(0,5)}`, avatar, role || 'User');
     setIsAuthModalOpen(false);
     toast({title: "Authentication Successful"});
@@ -692,7 +690,8 @@ export default function ParkingLotManager() {
                action: <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>,
            });
        } else {
-           simulatePinCar(spotId, locationId); // Pinning works offline (uses cached location name if available)
+           // Automatically pin location after successful reservation
+           simulatePinCar(spotId, locationId);
            if (userId && isOnline) {
                 // awardBadge(userId, 'badge_first_booking'); // Example gamification call - only if online
            }
@@ -748,12 +747,11 @@ export default function ParkingLotManager() {
 
   const getVoiceButtonIcon = () => {
         // Return placeholder or static icon before client-side hydration
-        if (!isClient) {
-             // Render a simple, static placeholder icon during SSR
+        if (!isClient || !voiceAssistant) { // Added check for voiceAssistant initialization
              return <MicOff key="ssr-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         // Rest of the logic runs only on the client
-        if (!voiceAssistant || !voiceAssistant.isSupported || !isOnline) { // Disable if offline
+        if (!voiceAssistant.isSupported || !isOnline) { // Disable if offline
              return <MicOff key="unsupported-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         switch (voiceAssistantState) {
@@ -785,8 +783,7 @@ export default function ParkingLotManager() {
 
     const getVoiceButtonTooltip = () => {
          // Default tooltip for SSR or before client mount
-        if (!isClient) return "Loading voice assistant...";
-         if (!voiceAssistant) return "Voice assistant unavailable";
+        if (!isClient || !voiceAssistant) return "Loading voice assistant..."; // Added check for voiceAssistant
          if (!isOnline) return "Voice commands unavailable offline";
          if (!voiceAssistant.isSupported) return "Voice commands not supported by your browser";
          switch (voiceAssistantState) {
@@ -826,12 +823,12 @@ export default function ParkingLotManager() {
                      title={getVoiceButtonTooltip()} // Tooltip for desktop
                      className={cn(
                          "transition-opacity", // Added for smoother loading
-                         !isClient && "opacity-50 cursor-not-allowed", // Style for SSR/before mount
-                         isClient && (!voiceAssistant || !voiceAssistant.isSupported || !isOnline) && "opacity-50 cursor-not-allowed", // Style for unsupported or offline
-                         isClient && voiceAssistantState === 'activated' && "border-primary",
-                         isClient && voiceAssistantState === 'listening' && "border-blue-600",
-                         isClient && voiceAssistantState === 'error' && "border-destructive",
-                         isClient && (voiceAssistantState === 'processing' || voiceAssistantState === 'speaking') && "opacity-50 cursor-not-allowed"
+                         (!isClient || !voiceAssistant) && "opacity-50 cursor-not-allowed", // Style for SSR/before mount/init
+                         isClient && voiceAssistant && (!voiceAssistant.isSupported || !isOnline) && "opacity-50 cursor-not-allowed", // Style for unsupported or offline
+                         isClient && voiceAssistant && voiceAssistantState === 'activated' && "border-primary",
+                         isClient && voiceAssistant && voiceAssistantState === 'listening' && "border-blue-600",
+                         isClient && voiceAssistant && voiceAssistantState === 'error' && "border-destructive",
+                         isClient && voiceAssistant && (voiceAssistantState === 'processing' || voiceAssistantState === 'speaking') && "opacity-50 cursor-not-allowed"
                      )}
                  >
                      {getVoiceButtonIcon()}
@@ -1111,5 +1108,3 @@ interface ParkingHistoryEntry {
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
 }
-
-    

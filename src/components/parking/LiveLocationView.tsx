@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, Image as ImageIcon, RefreshCcw, Smartphone } from 'lucide-react'; // Added RefreshCcw, Smartphone
+import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, RefreshCcw, Smartphone } from 'lucide-react'; // Removed ImageIcon
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
@@ -19,8 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select
 
-// Define possible view sources
-type ViewSourceType = 'userCamera' | 'ipCamera' | 'stillImage' | 'placeholder' | 'loading' | 'error';
+// Define possible view sources - Removed 'stillImage'
+type ViewSourceType = 'userCamera' | 'ipCamera' | 'placeholder' | 'loading' | 'error';
 
 interface LiveLocationViewProps {
   isOpen: boolean;
@@ -30,7 +30,7 @@ interface LiveLocationViewProps {
   // Simulate available sources for the spot (in real app, this comes from backend)
   availableSources?: {
       ipCameraUrl?: string;
-      stillImageUrl?: string;
+      // stillImageUrl is no longer used
   };
 }
 
@@ -52,7 +52,7 @@ export default function LiveLocationView({
 
   // --- Simulation Data ---
   const simulatedIpCameraUrl = availableSources.ipCameraUrl || (spotId && spotId.includes('A') ? `https://picsum.photos/seed/${spotId}-ipcam/640/480?blur=1` : undefined);
-  const simulatedStillImageUrl = availableSources.stillImageUrl || `https://picsum.photos/seed/${spotId}-still/640/480`;
+  // const simulatedStillImageUrl = availableSources.stillImageUrl || `https://picsum.photos/seed/${spotId}-still/640/480`; // Removed
 
   // --- Camera Enumeration ---
   useEffect(() => {
@@ -142,7 +142,9 @@ export default function LiveLocationView({
                   } else {
                        console.warn("Video element ref not ready when stream was obtained. Cleaning up.");
                        cleanupStream(stream); // Clean up the newly created stream if ref is gone
-                       throw new Error("Video element disappeared during setup.");
+                       // throw new Error("Video element disappeared during setup."); // Commented out to avoid immediate error popup
+                       setCurrentSource('error'); // Set to error state instead of throwing
+                       setErrorMessage("Video element disappeared during setup.");
                   }
               } catch (error: any) {
                   console.error('Error accessing user camera:', error);
@@ -173,8 +175,6 @@ export default function LiveLocationView({
                       description: userFriendlyError,
                       duration: 5000,
                   });
-                  // Attempt fallback ONLY if this was the initial load attempt
-                  // if (currentSource === 'loading') { tryStillImage(); } // Avoid fallback loop on manual switch
               }
               break;
 
@@ -185,22 +185,16 @@ export default function LiveLocationView({
                   setCurrentSource('ipCamera');
                   console.log("IP Camera Active (Simulated)");
               } else {
-                  setErrorMessage("IP Camera not available for this spot.");
-                  setCurrentSource('error');
+                  // If IP camera fails, try user camera as fallback
+                  console.log("IP Camera not available, trying user camera...");
+                  loadSource('userCamera', selectedDeviceId); // Use selected device or default
+                  // setErrorMessage("IP Camera not available for this spot.");
+                  // setCurrentSource('error'); // Don't set error immediately, try fallback
               }
               break;
 
-          case 'stillImage':
-              if (simulatedStillImageUrl) {
-                  // Simulate loading delay
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                  setCurrentSource('stillImage');
-                  console.log("Still Image Active");
-              } else {
-                  setErrorMessage("No still image available.");
-                  setCurrentSource('error');
-              }
-              break;
+          // case 'stillImage': // Removed this case
+          //     break;
 
           default:
               setCurrentSource('placeholder');
@@ -208,17 +202,17 @@ export default function LiveLocationView({
               break;
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStream, cleanupStream, simulatedIpCameraUrl, simulatedStillImageUrl, toast]); // Removed currentSource from dependencies to prevent loops
+  }, [activeStream, cleanupStream, simulatedIpCameraUrl, toast]); // Removed selectedDeviceId from direct deps, use it in loadSource call
 
 
   // Effect for initial loading when dialog opens or spot changes
   useEffect(() => {
     if (isOpen && spotId) {
-      // Try sources in order on initial load: IP Camera -> User Camera (Back) -> Still Image
+      // Try sources in order on initial load: IP Camera -> User Camera (Back)
       if (simulatedIpCameraUrl) {
         loadSource('ipCamera');
       } else {
-        loadSource('userCamera'); // Defaults to back camera
+        loadSource('userCamera', selectedDeviceId); // Defaults to back camera or selected device
       }
     } else if (!isOpen) {
       // Cleanup when dialog closes
@@ -227,6 +221,7 @@ export default function LiveLocationView({
       setErrorMessage(null);
       setActiveStream(null);
       setUserStreamActive(false);
+      setSelectedDeviceId(undefined); // Reset selected device
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, spotId]); // Only run on open/close or spot change
@@ -279,27 +274,14 @@ export default function LiveLocationView({
                            layout="fill"
                            objectFit="cover"
                            data-ai-hint="parking lot surveillance camera" // AI Hint
+                           unoptimized // Use if picsum causes issues sometimes
                         />
                          <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Live IP Cam (Simulated)</Badge>
                        </>
                    )}
                </div>
 
-              {/* Still Image View */}
-              <div className={cn("relative w-full h-full", currentSource === 'stillImage' ? 'block' : 'hidden')}>
-                    {simulatedStillImageUrl && (
-                        <>
-                        <Image
-                            src={simulatedStillImageUrl}
-                            alt={`Still image for spot ${spotId}`}
-                            layout="fill"
-                            objectFit="cover"
-                            data-ai-hint="parking spot still image" // AI Hint
-                        />
-                        <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Recent Image</Badge>
-                        </>
-                    )}
-               </div>
+              {/* Still Image View Removed */}
 
                {/* Placeholder/Error View */}
                 <div className={cn("relative w-full h-full flex flex-col items-center justify-center text-center bg-muted", (currentSource === 'placeholder' || currentSource === 'error') ? 'flex' : 'hidden')}>
@@ -310,6 +292,7 @@ export default function LiveLocationView({
                         objectFit="cover"
                         className="opacity-30"
                         data-ai-hint="empty parking spot placeholder" // AI Hint
+                        unoptimized // Use if picsum causes issues sometimes
                     />
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
                         <Video className="h-10 w-10 text-muted-foreground mb-2" />
@@ -404,16 +387,7 @@ export default function LiveLocationView({
                     <Smartphone className="mr-2 h-4 w-4" /> My Camera
                 </Button>
             ) : null }
-            {simulatedStillImageUrl && (
-                <Button
-                    variant={currentSource === 'stillImage' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => handleSourceSwitch('stillImage')}
-                    disabled={currentSource === 'loading'}
-                >
-                    <ImageIcon className="mr-2 h-4 w-4" /> Still Image
-                </Button>
-            )}
+            {/* Removed Still Image Button */}
         </div>
 
         <DialogFooter className="mt-4">
