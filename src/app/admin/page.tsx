@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,14 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { ParkingLot, ParkingLotService } from '@/services/parking-lot';
 import { getAvailableParkingLots, updateParkingLotServices, updateLotSubscriptionStatus, startLotTrial } from '@/services/parking-lot'; // Added subscription functions
 import { useToast } from '@/hooks/use-toast';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import type { Advertisement } from '@/services/advertisement';
 import { getAdvertisements, createAdvertisement, updateAdvertisement, deleteAdvertisement } from '@/services/advertisement';
-import type { PricingRule } from '@/services/pricing-service';
-import { getAllPricingRules, savePricingRule, deletePricingRule, convertToCSV, getParkingRecords } from '@/services/pricing-service'; // Import pricing services + CSV util + records service
+import type { PricingRule, UserPass } from '@/services/pricing-service'; // Import UserPass
+import { getAllPricingRules, savePricingRule, deletePricingRule, convertToCSV, getParkingRecords, getActiveUserPasses, getAvailablePassDefinitions, purchasePass } from '@/services/pricing-service'; // Import pricing services + CSV util + records service + pass functions
 import Image from "next/image";
 import { AppStateContext } from '@/context/AppStateProvider';
 import { Input as ShadInput } from "@/components/ui/input";
@@ -280,6 +280,7 @@ export default function AdminDashboardPage() {
            const csvContent = convertToCSV(data);
            if (!csvContent) {
                toast({ title: "No Data", description: "There is no data to download.", variant: "default"});
+               setIsDownloading(false); // Stop loading if no data
                return;
            }
            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1113,8 +1114,17 @@ export default function AdminDashboardPage() {
                             {/* Chat Support Integration Placeholder */}
                             {isAdmin && (
                                 <div className="flex items-center justify-between p-4 border rounded-md">
-                                    <div> <p className="font-medium">Chat Support Integration</p> <p className="text-sm text-muted-foreground">Connect live chat service (e.g., Intercom, Tawk.to).</p> </div>
-                                    <Button size="sm" variant="outline" disabled>Configure (Coming Soon)</Button>
+                                    <div>
+                                       <p className="font-medium flex items-center gap-2"> <MessageSquare className="h-4 w-4" /> Chat Support Integration </p>
+                                       <p className="text-sm text-muted-foreground">Connect live chat service (e.g., Tawk.to).</p>
+                                       <p className="text-xs text-muted-foreground">
+                                            Current Status: <Badge variant={process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID && process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID ? 'default' : 'secondary'} size="sm" className={process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID && process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID ? 'bg-green-600' : ''}>
+                                                {process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID && process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID ? 'Enabled' : 'Disabled'}
+                                            </Badge>
+                                        </p>
+                                     </div>
+                                     {/* Link to environment variable setup or external dashboard */}
+                                     <Button size="sm" variant="outline" disabled>Configure (Set Env Vars)</Button>
                                 </div>
                             )}
                             {/* External App Integration Placeholder */}

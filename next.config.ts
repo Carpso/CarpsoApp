@@ -18,6 +18,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+   // Expose environment variables prefixed with NEXT_PUBLIC_ to the browser
+   // No need to list them here explicitly if using the prefix.
+   // The prefix handles making them available client-side automatically.
 };
 
 export default nextConfig;
