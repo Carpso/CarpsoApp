@@ -29,8 +29,8 @@ interface PinnedLocationData {
     spotId: string;
     locationId: string;
     locationName: string;
-    latitude: number;
-    longitude: number;
+    latitude: number; // Ensure latitude is stored
+    longitude: number; // Ensure longitude is stored
     timestamp: number;
 }
 
@@ -245,8 +245,11 @@ export default function ParkingLotManager() {
 
         // Speak the response first (check if online/supported)
         // Ensure voiceAssistant and speak exist before calling
-        if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(responseText);
-        else console.warn("Voice assistant speak function not available, offline, or not on client.");
+        if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+             voiceAssistant.speak(responseText);
+        } else {
+             console.warn("Voice assistant speak function not available, offline, or not on client.");
+        }
 
         // --- Execute action based on intent ---
         switch (intent) {
@@ -276,12 +279,18 @@ export default function ParkingLotManager() {
                          console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                          // TODO: Offline reservation queueing could be added here
                     } else {
-                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
-                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                            voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                        } else {
+                            console.warn("Voice assistant speak function not available, offline, or not on client.");
+                        }
                     }
                 } else {
-                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
-                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                       voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                    } else {
+                        console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    }
                 }
                 break;
 
@@ -294,23 +303,35 @@ export default function ParkingLotManager() {
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                          // Availability check relies on fetched data (cached or live)
                     } else {
-                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                             voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          } else {
+                                console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          }
                     }
                 } else if (entities.locationId) {
                      const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
                      if (location) {
                          setSelectedLocationId(location.id);
                          const available = location.capacity - (location.currentOccupancy ?? 0);
-                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                             voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                         } else {
+                             console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         }
                      } else {
-                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                              voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                          } else {
+                              console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          }
                      }
                  } else {
-                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot or location would you like me to check?");
-                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                         voiceAssistant.speak("Which spot or location would you like me to check?");
+                    } else {
+                        console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    }
                  }
                 break;
 
@@ -355,8 +376,11 @@ export default function ParkingLotManager() {
                              window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`, '_blank');
                           }
                       } else {
-                           if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
-                            else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                           if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                                voiceAssistant.speak(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
+                           } else {
+                               console.warn("Voice assistant speak function not available, offline, or not on client.");
+                           }
                       }
                  } else if (pinnedSpot) {
                      // const location = locations.find(l => l.id === pinnedSpot.locationId); // Already have lat/lon
@@ -366,8 +390,11 @@ export default function ParkingLotManager() {
                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${pinnedSpot.latitude},${pinnedSpot.longitude}`, '_blank');
                       }
                  } else {
-                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
-                       else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                           voiceAssistant.speak("Where would you like directions to?");
+                      } else {
+                          console.warn("Voice assistant speak function not available, offline, or not on client.");
+                      }
                  }
                 break;
 
@@ -387,23 +414,35 @@ export default function ParkingLotManager() {
                          setIsReportModalOpen(true);
                           // TODO: Add offline queuing for reports
                      } else if (!isAuthenticated) {
-                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to report an issue.");
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                                voiceAssistant.speak("Please sign in to report an issue.");
+                          } else {
+                                console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          }
                           setIsAuthModalOpen(true);
                      } else {
-                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
-                           else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                                voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          } else {
+                                console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          }
                      }
                 } else {
-                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot are you reporting an issue for?");
-                     else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                         voiceAssistant.speak("Which spot are you reporting an issue for?");
+                    } else {
+                        console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    }
                 }
                 break;
 
             case 'add_bookmark':
                  if (!isAuthenticated || !userId) {
-                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to save locations.");
-                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                         voiceAssistant.speak("Please sign in to save locations.");
+                    } else {
+                         console.warn("Voice assistant speak function not available, offline, or not on client.");
+                    }
                     setIsAuthModalOpen(true);
                     break;
                  }
@@ -428,19 +467,28 @@ export default function ParkingLotManager() {
                      try {
                          await addBookmark(userId, { label: entities.bookmarkLabel, address: addr, latitude: lat, longitude: lon });
                          await fetchUserBookmarks(); // Refresh bookmarks list
-                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, saved "${entities.bookmarkLabel}".`);
-                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                             voiceAssistant.speak(`Okay, saved "${entities.bookmarkLabel}".`);
+                         } else {
+                            console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         }
                          toast({ title: "Bookmark Added", description: `Saved "${entities.bookmarkLabel}".` });
                      } catch (error: any) {
                          console.error("Error adding bookmark via voice:", error);
-                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't save the bookmark. ${error.message}`);
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                              voiceAssistant.speak(`Sorry, I couldn't save the bookmark. ${error.message}`);
+                          } else {
+                               console.warn("Voice assistant speak function not available, offline, or not on client.");
+                          }
                          toast({ title: "Save Failed", description: error.message, variant: "destructive" });
                      }
 
                  } else {
-                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("What label and location do you want to save?");
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
+                           voiceAssistant.speak("What label and location do you want to save?");
+                      } else {
+                           console.warn("Voice assistant speak function not available, offline, or not on client.");
+                      }
                  }
                 break;
 
@@ -919,7 +967,7 @@ export default function ParkingLotManager() {
                              </iframe>
                          ) : (
                              <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-sm">
-                                 Google Maps API Key missing. Map cannot be displayed.
+                                 Google Maps API Key missing. Map cannot be displayed. (Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env)
                              </div>
                          )}
                      </div>
