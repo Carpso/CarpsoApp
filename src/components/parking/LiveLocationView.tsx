@@ -11,15 +11,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, RefreshCcw, Smartphone } from 'lucide-react'; // Removed ImageIcon
+import { Loader2, MapPin, Video, CameraOff, AlertTriangle, Camera, RefreshCcw, Smartphone } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import { Badge } from "@/components/ui/badge";
 import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// Define possible view sources - Removed 'stillImage'
+// Define possible view sources
 type ViewSourceType = 'userCamera' | 'ipCamera' | 'placeholder' | 'loading' | 'error';
 
 interface LiveLocationViewProps {
@@ -30,7 +30,6 @@ interface LiveLocationViewProps {
   // Simulate available sources for the spot (in real app, this comes from backend)
   availableSources?: {
       ipCameraUrl?: string;
-      // stillImageUrl is no longer used
   };
 }
 
@@ -52,7 +51,6 @@ export default function LiveLocationView({
 
   // --- Simulation Data ---
   const simulatedIpCameraUrl = availableSources.ipCameraUrl || (spotId && spotId.includes('A') ? `https://picsum.photos/seed/${spotId}-ipcam/640/480?blur=1` : undefined);
-  // const simulatedStillImageUrl = availableSources.stillImageUrl || `https://picsum.photos/seed/${spotId}-still/640/480`; // Removed
 
   // --- Camera Enumeration ---
   useEffect(() => {
@@ -122,27 +120,26 @@ export default function LiveLocationView({
                   // Attach stream only if videoRef is currently available
                    if (videoRef.current) {
                       videoRef.current.srcObject = stream;
+                      // Set muted attribute explicitly before playing
+                      videoRef.current.muted = true;
                       await videoRef.current.play().catch(playError => {
                           console.error("Video play failed:", playError);
-                          // Attempt to mute and play again (common fix for autoplay issues)
-                          if (videoRef.current) {
-                              videoRef.current.muted = true;
-                              videoRef.current.play().catch(retryPlayError => {
-                                  console.error("Video retry play failed:", retryPlayError);
-                                   throw new Error("Could not play video stream."); // Throw if retry also fails
-                              });
-                          } else {
-                               throw new Error("Video element not ready after play failure.");
-                          }
+                          // Set error state instead of throwing
+                          setCurrentSource('error');
+                          setErrorMessage("Could not play video stream. Ensure autoplay is allowed.");
+                          cleanupStream(stream); // Clean up the failed stream
                       });
-                      setUserStreamActive(true);
-                      setCurrentSource('userCamera');
-                      setSelectedDeviceId(deviceId || stream.getVideoTracks()[0]?.getSettings().deviceId); // Update selected device ID based on actual stream
-                      console.log("User Camera Active");
+
+                      // Check if stream is still active and source wasn't set to error
+                       if (currentSource !== 'error') {
+                            setUserStreamActive(true);
+                            setCurrentSource('userCamera');
+                            setSelectedDeviceId(deviceId || stream.getVideoTracks()[0]?.getSettings().deviceId); // Update selected device ID based on actual stream
+                            console.log("User Camera Active");
+                        }
                   } else {
                        console.warn("Video element ref not ready when stream was obtained. Cleaning up.");
                        cleanupStream(stream); // Clean up the newly created stream if ref is gone
-                       // throw new Error("Video element disappeared during setup."); // Commented out to avoid immediate error popup
                        setCurrentSource('error'); // Set to error state instead of throwing
                        setErrorMessage("Video element disappeared during setup.");
                   }
@@ -188,13 +185,8 @@ export default function LiveLocationView({
                   // If IP camera fails, try user camera as fallback
                   console.log("IP Camera not available, trying user camera...");
                   loadSource('userCamera', selectedDeviceId); // Use selected device or default
-                  // setErrorMessage("IP Camera not available for this spot.");
-                  // setCurrentSource('error'); // Don't set error immediately, try fallback
               }
               break;
-
-          // case 'stillImage': // Removed this case
-          //     break;
 
           default:
               setCurrentSource('placeholder');
@@ -202,7 +194,7 @@ export default function LiveLocationView({
               break;
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStream, cleanupStream, simulatedIpCameraUrl, toast]); // Removed selectedDeviceId from direct deps, use it in loadSource call
+  }, [activeStream, cleanupStream, simulatedIpCameraUrl, toast]);
 
 
   // Effect for initial loading when dialog opens or spot changes
@@ -260,7 +252,7 @@ export default function LiveLocationView({
                   ref={videoRef}
                   className={cn("w-full h-full object-cover", currentSource === 'userCamera' && userStreamActive ? 'block' : 'hidden')}
                   autoPlay
-                  muted
+                  muted // Ensure muted for autoplay
                   playsInline // Important for mobile browsers
               />
 
@@ -280,8 +272,6 @@ export default function LiveLocationView({
                        </>
                    )}
                </div>
-
-              {/* Still Image View Removed */}
 
                {/* Placeholder/Error View */}
                 <div className={cn("relative w-full h-full flex flex-col items-center justify-center text-center bg-muted", (currentSource === 'placeholder' || currentSource === 'error') ? 'flex' : 'hidden')}>
@@ -387,7 +377,6 @@ export default function LiveLocationView({
                     <Smartphone className="mr-2 h-4 w-4" /> My Camera
                 </Button>
             ) : null }
-            {/* Removed Still Image Button */}
         </div>
 
         <DialogFooter className="mt-4">
@@ -397,3 +386,4 @@ export default function LiveLocationView({
     </Dialog>
   );
 }
+    
