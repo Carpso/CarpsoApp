@@ -1,7 +1,7 @@
-// src/components/parking/ParkingLotGrid.tsx
+{// src/components/parking/ParkingLotGrid.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useContext } from 'react'; // Added useContext
+import React, { useState, useEffect, useCallback, useContext, useRef } from 'react'; // Added useRef
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
 import type { ParkingLot } from '@/services/parking-lot';
 import { getParkingSpotStatus } from '@/services/parking-sensor';
@@ -17,8 +17,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader as DialogSubHeader, // Alias DialogHeader
+    DialogTitle as DialogSubTitle,
+    DialogDescription as DialogSubDescription,
+    DialogFooter as DialogSubFooter,
+} from "@/components/ui/dialog";
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw } from 'lucide-react'; // Added RefreshCcw
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw, Printer, Download as DownloadIcon, Share2 } from 'lucide-react'; // Added RefreshCcw, Printer, DownloadIcon, Share2
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
@@ -27,11 +35,21 @@ import { calculateEstimatedCost } from '@/services/pricing-service'; // Import p
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import { Alert, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
+import ParkingTicket from '@/components/common/ParkingTicket'; // Import the new Ticket component
+import html2canvas from 'html2canvas'; // For downloading ticket as image
 
 interface ParkingLotGridProps {
   location: ParkingLot;
   onSpotReserved: (spotId: string, locationId: string) => void; // Callback when a spot is reserved
   userTier?: 'Basic' | 'Premium'; // Optional user tier for pricing
+}
+
+interface ReservationDetails {
+    spotId: string;
+    locationId: string;
+    locationName: string;
+    reservationTime: string; // ISO string
+    userId: string | null;
 }
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds - Reduced background refresh frequency
@@ -55,6 +73,9 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const [lastFetchTimestamp, setLastFetchTimestamp] = useState<number | null>(null);
   const [manualRefreshTrigger, setManualRefreshTrigger] = useState(0); // For manual refresh
   const isVisible = useVisibilityChange(); // Track tab visibility
+  const [lastReservationDetails, setLastReservationDetails] = useState<ReservationDetails | null>(null); // Store last reservation details
+  const [showTicketModal, setShowTicketModal] = useState(false); // State for ticket modal
+  const ticketRef = useRef<HTMLDivElement>(null); // Ref for the ticket component for download
 
   const { toast } = useToast();
 
@@ -249,6 +270,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           return;
       }
       setIsReserving(true);
+      const reservationTime = new Date().toISOString(); // Capture reservation time
 
       try {
          // Simulate reservation API call
@@ -259,23 +281,43 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
          if (!reservationSuccess) throw new Error("Failed to confirm reservation with the server.");
 
+          const reservationDetails: ReservationDetails = {
+             spotId: selectedSpot.spotId,
+             locationId: location.id,
+             locationName: location.name,
+             reservationTime: reservationTime,
+             userId: userId,
+          };
+          setLastReservationDetails(reservationDetails); // Store details for ticket/sharing
+
          setIsDialogOpen(false); // Close dialog on successful reservation
 
+          // Show toast with buttons
          toast({
-           title: "Reservation Successful",
-           description: (
-                <div className="flex flex-col gap-2">
-                  <span>Spot {selectedSpot.spotId} reserved successfully! Estimated cost: ~${estimatedCost?.toFixed(2)}/hr.</span>
-                  <Button variant="outline" size="sm" onClick={() => {
-                      setLiveLocationSpotId(selectedSpot.spotId);
-                      setShowLiveLocation(true);
-                  }}>
-                    <Eye className="mr-2 h-4 w-4" /> View Live Location
-                  </Button>
-               </div>
-           ),
-           duration: 7000, // Keep toast longer
+             title: "Reservation Successful",
+             description: `Spot ${selectedSpot.spotId} reserved! Est. Cost: ~$${estimatedCost?.toFixed(2)}/hr`,
+             duration: 15000, // Keep toast longer to allow interaction
+             action: (
+                 <div className="flex flex-col gap-2 mt-2">
+                     <Button variant="secondary" size="sm" onClick={() => handleShowTicket(reservationDetails)}>
+                         <Printer className="mr-2 h-4 w-4" /> View Ticket / QR
+                     </Button>
+                      <Button variant="outline" size="sm" onClick={() => {
+                           setLiveLocationSpotId(selectedSpot.spotId);
+                           setShowLiveLocation(true);
+                      }}>
+                         <Eye className="mr-2 h-4 w-4" /> Live View
+                     </Button>
+                      {/* Share Button (requires Web Share API) */}
+                      {navigator.share && (
+                         <Button variant="outline" size="sm" onClick={() => handleShareTicket(reservationDetails)}>
+                            <Share2 className="mr-2 h-4 w-4" /> Share Details
+                         </Button>
+                      )}
+                 </div>
+             ),
          });
+
 
          // Optimistically update the spot status
          setSpots(prevSpots =>
@@ -357,6 +399,56 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
        setManualRefreshTrigger(prev => prev + 1); // Increment trigger to run effect
    };
 
+    // --- Ticket / Share / Download ---
+    const handleShowTicket = (details: ReservationDetails | null) => {
+        if (!details) return;
+        setLastReservationDetails(details); // Ensure modal uses correct details
+        setShowTicketModal(true);
+    };
+
+    const handleDownloadTicket = async () => {
+        if (!ticketRef.current || !lastReservationDetails) return;
+        try {
+            const canvas = await html2canvas(ticketRef.current, {
+                scale: 2, // Increase scale for better resolution
+                useCORS: true, // Important if QR code or images are from external source
+                backgroundColor: '#ffffff', // Set background color
+            });
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = `carpso-ticket-${lastReservationDetails.spotId}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast({ title: "Ticket Downloaded", description: "Check your downloads folder." });
+        } catch (error) {
+            console.error("Failed to download ticket:", error);
+            toast({ title: "Download Failed", variant: "destructive" });
+        }
+    };
+
+    const handleShareTicket = async (details: ReservationDetails | null) => {
+        if (!details || !navigator.share) {
+            toast({ title: "Sharing Not Supported", description: "Your browser doesn't support sharing.", variant: "default" });
+            return;
+        }
+        const shareData = {
+            title: `Carpso Parking Reservation - Spot ${details.spotId}`,
+            text: `Reserved parking spot ${details.spotId} at ${details.locationName}.\nTime: ${new Date(details.reservationTime).toLocaleString()}`,
+            // url: window.location.href // Or a specific URL related to the reservation
+        };
+        try {
+            await navigator.share(shareData);
+            console.log('Reservation shared successfully');
+        } catch (error) {
+            console.error('Error sharing reservation:', error);
+             // Don't show error toast for AbortError (user cancelled share)
+             if ((error as DOMException).name !== 'AbortError') {
+                toast({ title: "Sharing Failed", variant: "destructive" });
+            }
+        }
+    };
 
   const availableSpots = spots.filter(spot => !spot.isOccupied).length;
   const totalSpots = location.capacity;
@@ -430,9 +522,9 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             <AlertDialogHeader>
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
               {/* Moved description text here */}
-              <div className="text-sm text-muted-foreground pt-2">
+               <AlertDialogDescription>
                  You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
-              </div>
+               </AlertDialogDescription>
             </AlertDialogHeader>
 
             {/* Cost and Prediction Sections (Outside Description) */}
@@ -520,6 +612,41 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                stillImageUrl: location.id === 'lot_C' ? `https://picsum.photos/seed/${liveLocationSpotId}-altstill/640/480` : undefined, // Optional different still URL
            }}
         />
+
+         {/* Parking Ticket Modal */}
+         <Dialog open={showTicketModal} onOpenChange={setShowTicketModal}>
+            <DialogContent className="sm:max-w-md">
+                <DialogSubHeader>
+                    <DialogSubTitle>Parking Ticket / QR Code</DialogSubTitle>
+                     <DialogSubDescription>
+                        Spot {lastReservationDetails?.spotId} at {lastReservationDetails?.locationName}
+                    </DialogSubDescription>
+                </DialogSubHeader>
+                <div ref={ticketRef} className="py-4"> {/* Add ref here */}
+                     {lastReservationDetails && (
+                        <ParkingTicket
+                            spotId={lastReservationDetails.spotId}
+                            locationName={lastReservationDetails.locationName}
+                            reservationTime={lastReservationDetails.reservationTime}
+                            qrCodeValue={`CARPSO-${lastReservationDetails.spotId}-${lastReservationDetails.locationId}-${new Date(lastReservationDetails.reservationTime).getTime()}`}
+                        />
+                    )}
+                </div>
+                <DialogSubFooter className="flex-col sm:flex-row gap-2 sm:gap-1">
+                    <Button variant="outline" onClick={handleDownloadTicket} disabled={!lastReservationDetails}>
+                        <DownloadIcon className="mr-2 h-4 w-4" /> Download
+                    </Button>
+                     {navigator.share && (
+                        <Button variant="outline" onClick={() => handleShareTicket(lastReservationDetails)}>
+                             <Share2 className="mr-2 h-4 w-4" /> Share
+                        </Button>
+                     )}
+                    <Button variant="default" onClick={() => setShowTicketModal(false)}>
+                        Close
+                    </Button>
+                </DialogSubFooter>
+            </DialogContent>
+         </Dialog>
     </>
   );
 }
