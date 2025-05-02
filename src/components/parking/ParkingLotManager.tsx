@@ -8,7 +8,7 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search } from 'lucide-react'; // Added Search
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building } from 'lucide-react'; // Added ExternalLink, Building
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge"; // Import Badge component
@@ -219,7 +219,9 @@ export default function ParkingLotManager() {
            // Convert locations to JSON string with essential details
             let nearbyLotsJson = "[]";
             try {
-                 const locationsWithPrice = await Promise.all(locations.map(async loc => {
+                 // Filter out external lots without pricing capability before sending to AI
+                const carpsoLocations = locations.filter(loc => loc.isCarpsoManaged);
+                 const locationsWithPrice = await Promise.all(carpsoLocations.map(async loc => {
                     // Use cached pricing rules or fetch only if necessary
                     const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic');
                     return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost, latitude: loc.latitude, longitude: loc.longitude }; // Include lat/lon
@@ -311,7 +313,7 @@ export default function ParkingLotManager() {
             case 'reserve_spot':
                 if (entities.spotId) {
                     // Find the location containing this spot ID (simple example)
-                    const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
+                    const location = locations.find(loc => loc.isCarpsoManaged && entities.spotId?.startsWith(loc.id)); // Only allow reserving Carpso spots
                     if (location) {
                         setSelectedLocationId(location.id);
                         toast({ title: "Action Required", description: `Navigating to ${location.name}. Please confirm reservation for ${entities.spotId} on screen.` });
@@ -319,8 +321,12 @@ export default function ParkingLotManager() {
                          console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                          // TODO: Offline reservation queueing could be added here
                     } else {
+                         let msg = `Sorry, I couldn't identify the location for spot ${entities.spotId}.`;
+                         if (!locations.find(loc => entities.spotId?.startsWith(loc.id))) {
+                              msg += " It might be an external parking lot which doesn't support reservations through Carpso.";
+                         }
                          if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
-                            voiceAssistant.current.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                            voiceAssistant.current.speak(msg);
                         } else {
                             console.warn("Voice assistant speak function not available, offline, or not on client.");
                         }
@@ -342,6 +348,13 @@ export default function ParkingLotManager() {
                          toast({ title: "Checking Availability", description: `Checking status for ${entities.spotId} in ${location.name}. See grid below.` });
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                          // Availability check relies on fetched data (cached or live)
+                          if (!location.isCarpsoManaged) {
+                              if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
+                                  voiceAssistant.current.speak(`I can show you ${location.name}, but real-time spot availability isn't available for this external location.`);
+                              } else {
+                                   console.warn("Voice assistant speak function not available, offline, or not on client.");
+                              }
+                         }
                     } else {
                           if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
                              voiceAssistant.current.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
@@ -353,9 +366,13 @@ export default function ParkingLotManager() {
                      const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
                      if (location) {
                          setSelectedLocationId(location.id);
-                         const available = location.capacity - (location.currentOccupancy ?? 0);
+                         const available = location.isCarpsoManaged ? (location.capacity - (location.currentOccupancy ?? 0)) : undefined;
                          if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
-                             voiceAssistant.current.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                             if (available !== undefined) {
+                                voiceAssistant.current.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                             } else {
+                                 voiceAssistant.current.speak(`Okay, showing ${location.name}. Real-time availability data isn't available for this external location.`);
+                             }
                          } else {
                              console.warn("Voice assistant speak function not available, offline, or not on client.");
                          }
@@ -396,7 +413,7 @@ export default function ParkingLotManager() {
                          targetName = matchedBookmark.label;
                          console.log(`Getting directions to bookmark: ${targetName}`);
                       } else {
-                          // Check if destination is a known parking lot
+                          // Check if destination is a known parking lot (Carpso or External)
                           const location = locations.find(loc => loc.id === entities.destination || loc.name === entities.destination);
                           if (location) {
                                targetLat = location.latitude;
@@ -433,14 +450,14 @@ export default function ParkingLotManager() {
                       if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
                            voiceAssistant.current.speak("Where would you like directions to?");
                       } else {
-                          console.warn("Voice assistant speak function not available, offline, or not on client.");
+                           console.warn("Voice assistant speak function not available, offline, or not on client.");
                       }
                  }
                 break;
 
             case 'report_issue':
                 if (entities.spotId) {
-                    const location = locations.find(loc => entities.spotId?.startsWith(loc.id));
+                    const location = locations.find(loc => loc.isCarpsoManaged && entities.spotId?.startsWith(loc.id)); // Can only report issues for Carpso spots
                      if (location && isAuthenticated) {
                          const mockReservation: ParkingHistoryEntry = { // Define type explicitly
                              id: `rep_${entities.spotId}`,
@@ -461,8 +478,12 @@ export default function ParkingLotManager() {
                           }
                           setIsAuthModalOpen(true);
                      } else {
+                          let msg = `Sorry, I couldn't identify the location for spot ${entities.spotId}.`;
+                          if (!locations.find(loc => loc.isCarpsoManaged && entities.spotId?.startsWith(loc.id))) {
+                               msg += " You can only report issues for Carpso-managed locations.";
+                          }
                           if (isOnline && isClient && voiceAssistant.current && voiceAssistant.current.speak) {
-                                voiceAssistant.current.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                                voiceAssistant.current.speak(msg);
                           } else {
                                 console.warn("Voice assistant speak function not available, offline, or not on client.");
                           }
@@ -537,7 +558,7 @@ export default function ParkingLotManager() {
                 break;
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations, userId, userBookmarks, fetchUserBookmarks, isOnline, isClient, voiceAssistant]); // Added isClient, voiceAssistant
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations, userId, userBookmarks, fetchUserBookmarks, isOnline, isClient]); // Added isClient, removed voiceAssistant as direct dep
 
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
@@ -577,8 +598,8 @@ export default function ParkingLotManager() {
      setIsLoadingLocations(true);
      setError(null);
      let fetchedLocations: ParkingLot[] | null = null;
-     const cacheKey = 'cachedParkingLots';
-     const cacheTimestampKey = 'cachedParkingLotsTimestamp';
+     const cacheKey = 'cachedParkingLotsWithExternal'; // Use a different key to include external
+     const cacheTimestampKey = `${cacheKey}Timestamp`;
      const maxCacheAge = isVisible ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 mins active, 1 hour inactive
 
      // Try loading from cache first unless forceRefresh is true
@@ -601,7 +622,8 @@ export default function ParkingLotManager() {
      if ((!fetchedLocations || forceRefresh) && isOnline) {
          try {
              console.log("Fetching fresh parking lots...");
-             const freshData = await getAvailableParkingLots();
+              // Pass user context to potentially filter early on backend if needed
+             const freshData = await getAvailableParkingLots(userRole || 'User', userId);
              // Update cache if on client
              if (typeof window !== 'undefined') {
                  try {
@@ -650,7 +672,7 @@ export default function ParkingLotManager() {
      setIsLoadingLocations(false);
      setIsRefreshing(false); // Stop refresh indicator
 
-   }, [isOnline, isVisible, locations]); // Depend on isOnline, visibility and locations (to compare for changes)
+   }, [isOnline, isVisible, locations, userRole, userId]); // Depend on isOnline, visibility and locations (to compare for changes)
 
    // Manual refresh handler
    const handleManualRefresh = () => {
@@ -927,10 +949,24 @@ export default function ParkingLotManager() {
          }
     }
 
+    // Function to handle opening external maps for a location
+    const openExternalMap = (lot: ParkingLot) => {
+        if (lot.latitude && lot.longitude && typeof window !== 'undefined') {
+           window.open(`https://www.google.com/maps/search/?api=1&query=${lot.latitude},${lot.longitude}&query_place_id=${lot.id}`, '_blank');
+        } else {
+            toast({ title: "Location Error", description: "Coordinates not available for this location.", variant: "destructive" });
+        }
+    };
+
+    // Separate Carpso-managed and external lots for display
+    const carpsoManagedLots = locations.filter(loc => loc.isCarpsoManaged);
+    const externalLots = locations.filter(loc => !loc.isCarpsoManaged);
+
+
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-           <h1 className="text-3xl font-bold">Parking Availability</h1>
+           <h1 className="text-3xl font-bold">Carpso Map</h1>
            <div className="flex items-center gap-2">
                 {/* Refresh Button */}
                 <Button
@@ -1089,9 +1125,9 @@ export default function ParkingLotManager() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-accent" />
-                        Recommended Parking For You
+                        Recommended Carpso Parking
                     </CardTitle>
-                     <CardDescription>Based on your preferences and current conditions.</CardDescription>
+                     <CardDescription>Based on your preferences and current conditions. Recommendations focus on Carpso managed/partner locations.</CardDescription>
                      {!isOnline && <CardDescription className="text-destructive text-xs pt-1">(Recommendations may be outdated or unavailable)</CardDescription>}
                 </CardHeader>
                 <CardContent>
@@ -1163,7 +1199,7 @@ export default function ParkingLotManager() {
                 <MapPin className="h-5 w-5 text-primary" />
                 Select Parking Location
             </CardTitle>
-             <CardDescription>Choose a location to view available spots.</CardDescription>
+             <CardDescription>Choose a location to view availability or get directions.</CardDescription>
          </CardHeader>
         <CardContent>
           {isLoadingLocations ? (
@@ -1183,50 +1219,96 @@ export default function ParkingLotManager() {
                 <SelectValue placeholder="Select a parking location..." />
               </SelectTrigger>
               <SelectContent>
-                 {/* Optionally group favorites */}
-                {favoriteLocationObjects.length > 0 && (
-                    <>
+                 {/* Favorites Group */}
+                 {favoriteLocationObjects.length > 0 && (
+                     <>
                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Favorites</div>
-                        {favoriteLocationObjects.map((loc) => (
-                            <SelectItem key={loc.id} value={loc.id}>
-                                 <span className="flex items-center gap-2">
-                                     <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" />
-                                     {loc.name} - {loc.address}
-                                </span>
-                            </SelectItem>
-                        ))}
-                        <hr className="my-1" />
-                    </>
-                )}
-                {locations.map((loc) => (
-                  <SelectItem key={loc.id} value={loc.id}>
-                     <span className="flex items-center gap-2">
-                        {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />}
-                        {loc.name} - {loc.address}
-                     </span>
-                  </SelectItem>
-                ))}
+                         {favoriteLocationObjects.map((loc) => (
+                             <SelectItem key={loc.id} value={loc.id}>
+                                  <span className="flex items-center gap-2">
+                                      <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" />
+                                      {loc.name} - {loc.address}
+                                  </span>
+                             </SelectItem>
+                         ))}
+                         <hr className="my-1" />
+                     </>
+                 )}
+                 {/* Carpso Managed Group */}
+                 {carpsoManagedLots.length > 0 && (
+                     <>
+                         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Carpso Locations</div>
+                         {carpsoManagedLots.map((loc) => (
+                           <SelectItem key={loc.id} value={loc.id}>
+                              <span className="flex items-center gap-2">
+                                 {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />}
+                                 {loc.name} - {loc.address}
+                                 <Badge variant="outline" className="ml-auto text-xs">{loc.subscriptionStatus === 'active' ? 'Active' : loc.subscriptionStatus === 'trial' ? 'Trial' : 'Inactive'}</Badge>
+                              </span>
+                           </SelectItem>
+                         ))}
+                         <hr className="my-1" />
+                     </>
+                 )}
+                 {/* External Locations Group */}
+                  {externalLots.length > 0 && (
+                      <>
+                         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Other Locations (via Google)</div>
+                         {externalLots.map((loc) => (
+                           <SelectItem key={loc.id} value={loc.id}>
+                              <span className="flex items-center gap-2">
+                                 {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />}
+                                 {loc.name} - {loc.address}
+                                  <Badge variant="secondary" className="ml-auto text-xs">External</Badge>
+                              </span>
+                           </SelectItem>
+                         ))}
+                      </>
+                  )}
               </SelectContent>
             </Select>
           )}
         </CardContent>
       </Card>
 
-       {/* Parking Grid */}
-      {selectedLocation ? (
-        <div id="parking-grid-section">
-            <ParkingLotGrid
-              key={selectedLocation.id} // Key ensures remount on location change
-              location={selectedLocation}
-              onSpotReserved={handleSpotReserved}
-              userTier={userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'}
-            />
-        </div>
-      ) : !isLoadingLocations && !error && locations.length > 0 ? (
-         <p className="text-center text-muted-foreground">
-             {isAuthenticated ? 'Select a recommended or specific parking location above.' : 'Please select a parking location above.'}
-         </p>
-      ) : null }
+       {/* Display Area based on Selection */}
+       {selectedLocation ? (
+           selectedLocation.isCarpsoManaged ? (
+                // Render ParkingLotGrid for Carpso managed locations
+                <div id="parking-grid-section">
+                    <ParkingLotGrid
+                    key={selectedLocation.id} // Key ensures remount on location change
+                    location={selectedLocation}
+                    onSpotReserved={handleSpotReserved}
+                    userTier={userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'}
+                    />
+                </div>
+           ) : (
+               // Render info card for External locations
+               <Card id="parking-grid-section" className="mb-8 border-blue-500 bg-blue-500/5">
+                   <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Building className="h-5 w-5 text-blue-600" />
+                            {selectedLocation.name} (External)
+                         </CardTitle>
+                       <CardDescription>{selectedLocation.address}</CardDescription>
+                   </CardHeader>
+                   <CardContent>
+                       <p className="text-sm text-muted-foreground mb-4">
+                           This is an external parking location identified via Google Maps. Real-time spot availability and Carpso reservations are not available here.
+                       </p>
+                       {/* Add Google Maps link */}
+                       <Button variant="outline" onClick={() => openExternalMap(selectedLocation)}>
+                           <ExternalLink className="mr-2 h-4 w-4" /> Open in Google Maps
+                       </Button>
+                   </CardContent>
+               </Card>
+           )
+       ) : !isLoadingLocations && !error && locations.length > 0 ? (
+           <p className="text-center text-muted-foreground">
+               {isAuthenticated ? 'Select a recommended or specific parking location above.' : 'Please select a parking location above.'}
+           </p>
+       ) : null }
 
        <AuthModal
            isOpen={isAuthModalOpen}
@@ -1265,4 +1347,19 @@ interface ParkingHistoryEntry {
   endTime: string;
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
+}
+
+// Assuming VoiceAssistantResult is exported from the hook
+interface VoiceAssistantResult {
+  isListening: boolean;
+  isSpeaking: boolean;
+  isProcessing: boolean;
+  isActivated: boolean;
+  state: VoiceAssistantState;
+  startListening: () => void;
+  stopListening: () => void;
+  speak: (text: string) => void;
+  cancelSpeech: () => void;
+  isSupported: boolean;
+  error: string | null;
 }
