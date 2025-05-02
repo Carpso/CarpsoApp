@@ -61,6 +61,14 @@ export interface AttendantSearchResult {
     vehicleModel?: string;
 }
 
+/**
+ * Represents user preferences that can be saved locally.
+ */
+export interface UserPreferences {
+    favoriteLocations?: string[]; // Array of favorite ParkingLot IDs
+    // Add other preferences here, e.g., preferredMapStyle, notificationSettings
+}
+
 
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
@@ -343,6 +351,46 @@ export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
     return false;
 }
 
+// --- User Preferences (including Favorites) ---
+
+const USER_PREFS_KEY_PREFIX = 'userPreferences_';
+
+/**
+ * Saves user preferences (including favorite locations) to localStorage.
+ * @param userId The ID of the user.
+ * @param preferences The preferences object to save.
+ */
+export function saveUserPreferences(userId: string, preferences: UserPreferences): void {
+    if (typeof window === 'undefined') return;
+    try {
+        const key = USER_PREFS_KEY_PREFIX + userId;
+        localStorage.setItem(key, JSON.stringify(preferences));
+        console.log(`Saved preferences for user ${userId}`);
+    } catch (e) {
+        console.error(`Failed to save preferences for user ${userId}:`, e);
+    }
+}
+
+/**
+ * Loads user preferences (including favorite locations) from localStorage.
+ * @param userId The ID of the user.
+ * @returns The loaded preferences object or null if not found or error.
+ */
+export function loadUserPreferences(userId: string): UserPreferences | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const key = USER_PREFS_KEY_PREFIX + userId;
+        const data = localStorage.getItem(key);
+        if (data) {
+            return JSON.parse(data) as UserPreferences;
+        }
+        return null; // No preferences saved yet
+    } catch (e) {
+        console.error(`Failed to load preferences for user ${userId}:`, e);
+        return null;
+    }
+}
+
 
 // Add more functions as needed, e.g., getLeaderboard
 
@@ -435,3 +483,5 @@ export async function searchUserOrVehicleByAttendant(query: string): Promise<Att
     console.log(`Attendant search results for "${query}":`, results);
     return results;
 }
+
+    

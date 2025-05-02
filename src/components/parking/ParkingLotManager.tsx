@@ -1,14 +1,14 @@
 // src/components/parking/ParkingLotManager.tsx
 'use client';
 
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import ParkingLotGrid from './ParkingLotGrid';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // Import service type
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw } from 'lucide-react'; // Added WifiOff, RefreshCcw
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff } from 'lucide-react'; // Added WifiOff, RefreshCcw, StarOff
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge"; // Import Badge component
@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
-import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark } from '@/services/user-service'; // Import gamification service and bookmark functions/type
+import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences } from '@/services/user-service'; // Import gamification service and bookmark/preference functions/type
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
@@ -54,6 +54,7 @@ export default function ParkingLotManager() {
   const [userHistorySummary, setUserHistorySummary] = useState<string>("Prefers Downtown Garage, parks mostly weekday mornings."); // Example summary
   const [userBookmarks, setUserBookmarks] = useState<UserBookmark[]>([]); // State for user bookmarks
   const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(false);
+  const [favoriteLocations, setFavoriteLocations] = useState<string[]>([]); // State for favorite location IDs
 
   const { toast, dismiss } = useToast(); // Get dismiss function for offline toast
   const [offlineToastId, setOfflineToastId] = useState<string | null>(null); // Track the offline toast ID
@@ -67,7 +68,15 @@ export default function ParkingLotManager() {
    useEffect(() => {
        // Ensure this only runs on the client
        setIsClient(true);
-   }, []);
+        // Load favorites from localStorage on mount
+        if (userId && typeof window !== 'undefined') {
+             const prefs = loadUserPreferences(userId);
+             if (prefs && prefs.favoriteLocations) {
+                 setFavoriteLocations(prefs.favoriteLocations);
+             }
+        }
+   }, [userId]); // Depend on userId to load prefs on login
+
 
    // Show/hide persistent offline toast
     useEffect(() => {
@@ -610,6 +619,13 @@ export default function ParkingLotManager() {
     toast({title: "Authentication Successful"});
     fetchUserBookmarks(); // Fetch bookmarks after login
     fetchLocationsData(true); // Force refetch locations potentially with user context
+     // Load favorites from localStorage on login
+     if (typeof window !== 'undefined') {
+         const prefs = loadUserPreferences(newUserId);
+         if (prefs && prefs.favoriteLocations) {
+             setFavoriteLocations(prefs.favoriteLocations);
+         }
+     }
     // Recommendations will be fetched by the useEffect dependency change
   };
 
@@ -696,14 +712,39 @@ export default function ParkingLotManager() {
       toast({ title: "Pinned Location Cleared" });
   };
 
-  const handleSelectRecommendation = (lotId: string) => {
-      setSelectedLocationId(lotId);
+  const handleSelectLocation = (locationId: string) => {
+      setSelectedLocationId(locationId);
       // Ensure element exists before scrolling
        setTimeout(() => {
             const element = document.getElementById('parking-grid-section');
             element?.scrollIntoView({ behavior: 'smooth' });
        }, 100); // Small delay to allow potential re-renders
   };
+
+   // --- Favorite Location Handling ---
+   const toggleFavoriteLocation = (locationId: string) => {
+       if (!userId) {
+            toast({ title: "Sign In Required", description: "Please sign in to save favorite locations." });
+            setIsAuthModalOpen(true);
+            return;
+        }
+
+       let updatedFavorites: string[];
+       if (favoriteLocations.includes(locationId)) {
+           updatedFavorites = favoriteLocations.filter(id => id !== locationId);
+           toast({ title: "Removed from Favorites", description: locations.find(l => l.id === locationId)?.name });
+       } else {
+           updatedFavorites = [...favoriteLocations, locationId];
+           toast({ title: "Added to Favorites", description: locations.find(l => l.id === locationId)?.name });
+       }
+       setFavoriteLocations(updatedFavorites);
+       saveUserPreferences(userId, { favoriteLocations: updatedFavorites }); // Save preferences (including favorites)
+   };
+
+   const favoriteLocationObjects = favoriteLocations
+        .map(id => locations.find(loc => loc.id === id))
+        .filter((loc): loc is ParkingLot => loc !== undefined);
+    // --- End Favorite Location Handling ---
 
   const getVoiceButtonIcon = () => {
         // Return placeholder or static icon before client-side hydration
@@ -840,6 +881,53 @@ export default function ParkingLotManager() {
              </div>
         )}
 
+         {/* Favorite Locations Section */}
+        {isAuthenticated && favoriteLocationObjects.length > 0 && (
+             <Card className="mb-6 border-yellow-500 bg-yellow-500/5">
+                 <CardHeader>
+                     <CardTitle className="flex items-center gap-2 text-yellow-700">
+                         <Star className="h-5 w-5 text-yellow-600 fill-yellow-500" />
+                         Your Favorite Locations
+                     </CardTitle>
+                 </CardHeader>
+                 <CardContent>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                         {favoriteLocationObjects.map((favLoc) => (
+                             <Card key={favLoc.id} className="hover:shadow-md transition-shadow cursor-pointer relative" onClick={() => handleSelectLocation(favLoc.id)}>
+                                  {/* Favorite Toggle Button within the Card */}
+                                 <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="absolute top-1 right-1 h-7 w-7 z-10 text-yellow-500 hover:text-yellow-600"
+                                      onClick={(e) => {
+                                          e.stopPropagation(); // Prevent card click when toggling favorite
+                                          toggleFavoriteLocation(favLoc.id);
+                                      }}
+                                      aria-label={`Remove ${favLoc.name} from favorites`}
+                                      title={`Remove ${favLoc.name} from favorites`}
+                                 >
+                                     <StarOff className="h-4 w-4" />
+                                 </Button>
+                                 <CardHeader className="pb-2">
+                                      <CardTitle className="text-base pr-8">{favLoc.name}</CardTitle> {/* Add padding for button */}
+                                      <CardDescription className="text-xs pt-1 flex items-center gap-1">
+                                          <MapPin className="h-3 w-3" /> {favLoc.address}
+                                      </CardDescription>
+                                 </CardHeader>
+                                 <CardContent>
+                                     {/* Maybe show current availability summary? */}
+                                      <Badge variant={favLoc.currentOccupancy === undefined ? 'secondary' : (favLoc.capacity - favLoc.currentOccupancy) > 10 ? 'default' : (favLoc.capacity - favLoc.currentOccupancy) > 0 ? 'secondary' : 'destructive'} className="text-xs">
+                                          {favLoc.currentOccupancy === undefined ? 'Availability N/A' : `${favLoc.capacity - favLoc.currentOccupancy} Spots Free`}
+                                      </Badge>
+                                 </CardContent>
+                             </Card>
+                         ))}
+                     </div>
+                 </CardContent>
+             </Card>
+         )}
+
+
        {/* Recommendations Section (Respects offline state) */}
         {isAuthenticated && !isLoadingLocations && (
             <Card className="mb-6 border-accent bg-accent/5">
@@ -861,30 +949,49 @@ export default function ParkingLotManager() {
                         <p className="text-sm text-muted-foreground text-center py-4">Recommendations require an internet connection.</p>
                     ) : recommendations.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {recommendations.map((rec) => (
-                                <Card key={rec.lotId} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleSelectRecommendation(rec.lotId)}>
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-base flex items-center justify-between">
-                                            {rec.lotName}
-                                            {rec.availabilityScore !== undefined && (
-                                                <Badge variant={rec.availabilityScore > 0.7 ? 'default' : rec.availabilityScore > 0.4 ? 'secondary' : 'destructive'} className={cn("text-xs", rec.availabilityScore > 0.7 && "bg-green-600 text-white")}>
-                                                    {(rec.availabilityScore * 100).toFixed(0)}% Free
-                                                </Badge>
-                                            )}
-                                        </CardTitle>
-                                         <CardDescription className="text-xs flex items-center gap-1 pt-1">
-                                             <MapPin className="h-3 w-3" /> {locations.find(l => l.id === rec.lotId)?.address}
-                                             {rec.estimatedCost !== undefined && ` • ~$${rec.estimatedCost.toFixed(2)}/hr`}
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                                            <Star className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
-                                            <span>{rec.reason}</span>
-                                        </p>
-                                    </CardContent>
-                                </Card>
-                            ))}
+                            {recommendations.map((rec) => {
+                                const isFavorite = favoriteLocations.includes(rec.lotId);
+                                const lot = locations.find(l => l.id === rec.lotId);
+                                return (
+                                    <Card key={rec.lotId} className="hover:shadow-md transition-shadow cursor-pointer relative" onClick={() => handleSelectLocation(rec.lotId)}>
+                                         {/* Favorite Toggle Button */}
+                                        <Button
+                                             variant="ghost"
+                                             size="icon"
+                                             className="absolute top-1 right-1 h-7 w-7 z-10 text-yellow-500 hover:text-yellow-600"
+                                             onClick={(e) => {
+                                                 e.stopPropagation(); // Prevent card click
+                                                 toggleFavoriteLocation(rec.lotId);
+                                             }}
+                                             aria-label={isFavorite ? `Remove ${rec.lotName} from favorites` : `Add ${rec.lotName} to favorites`}
+                                             title={isFavorite ? `Remove ${rec.lotName} from favorites` : `Add ${rec.lotName} to favorites`}
+                                             disabled={!isAuthenticated} // Disable if not logged in
+                                        >
+                                             {isFavorite ? <Star className="h-4 w-4 fill-current" /> : <Star className="h-4 w-4" />}
+                                         </Button>
+                                        <CardHeader className="pb-2">
+                                            <CardTitle className="text-base flex items-center justify-between pr-8"> {/* Add padding for button */}
+                                                {rec.lotName}
+                                                {rec.availabilityScore !== undefined && (
+                                                    <Badge variant={rec.availabilityScore > 0.7 ? 'default' : rec.availabilityScore > 0.4 ? 'secondary' : 'destructive'} className={cn("text-xs", rec.availabilityScore > 0.7 && "bg-green-600 text-white")}>
+                                                        {(rec.availabilityScore * 100).toFixed(0)}% Free
+                                                    </Badge>
+                                                )}
+                                            </CardTitle>
+                                             <CardDescription className="text-xs flex items-center gap-1 pt-1">
+                                                 <MapPin className="h-3 w-3" /> {lot?.address}
+                                                 {rec.estimatedCost !== undefined && ` • ~$${rec.estimatedCost.toFixed(2)}/hr`}
+                                            </CardDescription>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                                <Sparkles className="h-3 w-3 text-accent mt-0.5 shrink-0" /> {/* Use Sparkles for recommendation reason */}
+                                                <span>{rec.reason}</span>
+                                            </p>
+                                        </CardContent>
+                                    </Card>
+                                );
+                            })}
                         </div>
                     ) : (
                         <p className="text-sm text-muted-foreground text-center py-4">No specific recommendations available right now. Select a location below.</p>
@@ -915,15 +1022,33 @@ export default function ParkingLotManager() {
            ) : (
             <Select
               value={selectedLocationId || ""}
-              onValueChange={(value) => setSelectedLocationId(value)}
+              onValueChange={(value) => handleSelectLocation(value)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a parking location..." />
               </SelectTrigger>
               <SelectContent>
+                 {/* Optionally group favorites */}
+                {favoriteLocationObjects.length > 0 && (
+                    <>
+                         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Favorites</div>
+                        {favoriteLocationObjects.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                                 <span className="flex items-center gap-2">
+                                     <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" />
+                                     {loc.name} - {loc.address}
+                                </span>
+                            </SelectItem>
+                        ))}
+                        <hr className="my-1" />
+                    </>
+                )}
                 {locations.map((loc) => (
                   <SelectItem key={loc.id} value={loc.id}>
-                    {loc.name} - {loc.address}
+                     <span className="flex items-center gap-2">
+                        {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />}
+                        {loc.name} - {loc.address}
+                     </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -986,3 +1111,5 @@ interface ParkingHistoryEntry {
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
 }
+
+    
