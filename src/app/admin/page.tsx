@@ -410,7 +410,7 @@ export default function AdminDashboardPage() {
         setIsAdModalOpen(true);
     };
     const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setCurrentAd(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value })); // Fixed closing parenthesis
+    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value }));
     const handleSaveAd = async () => {
         if (!currentAd.title || !currentAd.description) { toast({ title: "Missing Info", description: "Title and description required.", variant: "destructive" }); return; }
          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
@@ -479,7 +479,7 @@ export default function AdminDashboardPage() {
         const { name, value, type } = e.target;
         setCurrentRule(prev => ({ ...prev, [name]: type === 'number' ? (value === '' ? undefined : Number(value)) : value }));
     };
-    const handleRuleSelectChange = (name: keyof PricingRule, value: string | string[]) => setCurrentRule(prev => ({ ...prev, [name]: value });
+    const handleRuleSelectChange = (name: keyof PricingRule, value: string | string[]) => setCurrentRule(prev => ({ ...prev, [name]: value }));
     const handleRuleTimeConditionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), [name]: value } as any });
