@@ -18,13 +18,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car } from 'lucide-react'; // Added DollarSign, Clock, Car
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff } from 'lucide-react'; // Added DollarSign, Clock, Car, WifiOff
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
 import LiveLocationView from './LiveLocationView'; // Import LiveLocationView
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import { Alert, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 
 interface ParkingLotGridProps {
   location: ParkingLot;
@@ -33,7 +34,7 @@ interface ParkingLotGridProps {
 }
 
 export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'Basic' }: ParkingLotGridProps) {
-  const { userId } = useContext(AppStateContext)!; // Get userId from context
+  const { userId, isOnline } = useContext(AppStateContext)!; // Get userId and isOnline from context
   const [spots, setSpots] = useState<ParkingSpotStatus[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpotStatus | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -47,14 +48,28 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
   const [costRule, setCostRule] = useState<string | null>(null);
   const [isCostLoading, setIsCostLoading] = useState(false);
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState<number | null>(null);
 
   const { toast } = useToast();
 
+  // Fetch spot status (respecting online status)
   const fetchSpotStatuses = useCallback(async () => {
       // Only set loading true on initial load or location change
       if (spots.length === 0 || (spots.length > 0 && !spots[0]?.spotId.startsWith(location.id))) {
           setIsLoading(true);
       }
+
+      // If offline, don't attempt to fetch fresh data
+      if (!isOnline) {
+          console.log("Offline: Skipping spot status fetch for", location.name);
+           // Optionally update UI to show data might be stale
+           // If we had cached spot data, we could load it here
+           // For now, just keep existing data or show loading/error
+            if (spots.length === 0) setIsLoading(false); // Stop loading if offline and no data initially
+           return;
+      }
+
+      console.log("Fetching spot statuses for", location.name);
       try {
         // Simulate fetching spots for the specific location
         const spotPromises = Array.from({ length: location.capacity }, (_, i) =>
@@ -62,21 +77,35 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
         );
         const spotStatuses = await Promise.all(spotPromises);
         setSpots(spotStatuses);
+        setLastFetchTimestamp(Date.now()); // Record timestamp of successful fetch
       } catch (error) {
         console.error("Failed to fetch parking spot statuses:", error);
-        toast({
-          title: "Error",
-          description: `Failed to load parking data for ${location.name}. Please try again later.`,
-          variant: "destructive",
-        });
+        // Don't show error toast if offline, the main manager component handles the offline notification
+        if (isOnline) {
+            toast({
+              title: "Error",
+              description: `Failed to load parking data for ${location.name}. Please try again later.`,
+              variant: "destructive",
+            });
+        }
       } finally {
-         // Only set loading false on initial load/location change
-         if(isLoading) setIsLoading(false);
+         // Only set loading false on initial load/location change or successful fetch
+         setIsLoading(false);
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.id, location.name, location.capacity, toast]); // Dependencies include location details
+  }, [location.id, location.name, location.capacity, toast, isOnline]); // Added isOnline dependency
 
+  // Fetch prediction and cost (only if online)
   const fetchPredictionAndCost = useCallback(async (spot: ParkingSpotStatus) => {
+      if (!isOnline) {
+          setPrediction(null);
+          setEstimatedCost(null);
+          setCostRule(null);
+          setIsPredictionLoading(false);
+          setIsCostLoading(false);
+          return; // Don't fetch if offline
+      }
+
       setIsPredictionLoading(true);
       setIsCostLoading(true);
       setPrediction(null);
@@ -91,7 +120,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           setPrediction(predictionResult);
       } catch (err) {
           console.error('Prediction failed:', err);
-          toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default" });
+          // Avoid toast if offline, though this block shouldn't run if offline
+          if (isOnline) toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default" });
       } finally {
           setIsPredictionLoading(false);
       }
@@ -103,16 +133,16 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           setCostRule(costResult.appliedRule);
       } catch (err) {
            console.error('Cost calculation failed:', err);
-           toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default" });
+           if (isOnline) toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default" });
       } finally {
            setIsCostLoading(false);
       }
-  }, [location, userId, userTier, toast]); // Added dependencies
+  }, [location, userId, userTier, toast, isOnline]); // Added isOnline dependency
 
 
   useEffect(() => {
-    fetchSpotStatuses(); // Fetch initially and on location change
-    const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds
+    fetchSpotStatuses(); // Fetch initially and on location/online status change
+    const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds (will skip if offline)
     return () => clearInterval(intervalId); // Cleanup interval on unmount
   }, [fetchSpotStatuses]); // Depend on the memoized fetch function
 
@@ -121,37 +151,60 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          setSelectedSpot(spot);
          setIsDialogOpen(true);
 
-         // Initial fetch for prediction and cost
-         fetchPredictionAndCost(spot);
+         // Fetch prediction and cost only if online
+         if (isOnline) {
+             fetchPredictionAndCost(spot);
 
-         // Clear existing interval if it exists
-         if (predictionInterval) {
-             clearInterval(predictionInterval);
+             // Clear existing interval if it exists
+             if (predictionInterval) {
+                 clearInterval(predictionInterval);
+             }
+
+             // Set up interval for periodic updates (only if online)
+             const intervalId = setInterval(() => {
+                 if (isOnline) { // Double check online status inside interval
+                    fetchPredictionAndCost(spot); // Re-fetch both prediction and cost
+                 }
+             }, 15000); // Increased interval slightly
+             setPredictionInterval(intervalId); // Store the interval ID
+         } else {
+             // Handle offline case for dialog - clear prediction/cost
+             setPrediction(null);
+             setEstimatedCost(null);
+             setCostRule(null);
+             setIsPredictionLoading(false);
+             setIsCostLoading(false);
          }
 
-         // Set up interval for periodic updates (e.g., every 15 seconds)
-         const intervalId = setInterval(() => {
-             fetchPredictionAndCost(spot); // Re-fetch both prediction and cost
-         }, 15000); // Increased interval slightly
-
-         setPredictionInterval(intervalId); // Store the interval ID
-
      } else {
-         toast({
-             title: "Spot Occupied",
-             description: `Spot ${spot.spotId} is currently occupied. Click again to view live location.`, // Updated description
-             variant: "default",
-             duration: 3000,
-         });
-         // Allow viewing live location if occupied
-         setLiveLocationSpotId(spot.spotId);
-         setShowLiveLocation(true);
+          // Allow viewing live location even if offline (might show cached image or error)
+          setLiveLocationSpotId(spot.spotId);
+          setShowLiveLocation(true);
+         // Modify toast for occupied spot when offline
+         if (!isOnline) {
+              toast({
+                 title: "Spot Occupied (Offline)",
+                 description: `Cannot verify real-time status for ${spot.spotId}. Cached data shows occupied.`,
+                 variant: "default",
+                 duration: 3000,
+              });
+         } else {
+            toast({
+                title: "Spot Occupied",
+                description: `Spot ${spot.spotId} is currently occupied. Click again to view live location.`, // Updated description
+                variant: "default",
+                duration: 3000,
+            });
+         }
      }
  };
 
 
   const handleReserveConfirm = async () => {
-      if (!selectedSpot) return;
+      if (!selectedSpot || !isOnline) { // Prevent reservation if offline
+          toast({ title: "Offline", description: "Cannot reserve spots while offline.", variant: "destructive"});
+          return;
+      }
       setIsReserving(true);
 
       // Simulate reservation API call
@@ -184,6 +237,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
       );
       onSpotReserved(selectedSpot.spotId, location.id); // Notify parent
       setSelectedSpot(null); // Clear selection
+      // TODO: If offline reservation queue exists, remove this reservation from the queue
   };
 
   const handleDialogClose = (open: boolean) => {
@@ -235,6 +289,18 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
              <CardTitle>Select an Available Spot at {location.name}</CardTitle>
              <CardDescription>{location.address}</CardDescription>
              <CardDescription>Click on a green spot (<Car className="inline h-4 w-4 text-green-800" />) to reserve.</CardDescription>
+              {/* Display last updated time or offline status */}
+              <div className="text-xs text-muted-foreground pt-1">
+                 {isLoading ? (
+                     <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading...</span>
+                 ) : !isOnline ? (
+                     <span className="flex items-center gap-1 text-destructive"><WifiOff className="h-3 w-3" /> Offline - Data may be outdated.</span>
+                 ) : lastFetchTimestamp ? (
+                     <span>Last Updated: {new Date(lastFetchTimestamp).toLocaleTimeString()}</span>
+                 ) : (
+                      <span>Updating...</span>
+                 )}
+             </div>
          </CardHeader>
          <CardContent>
             {isLoading ? (
@@ -277,13 +343,25 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
             {/* Cost and Prediction Sections (Outside Description) */}
             <div className="space-y-4 pt-2">
+               {/* Offline Alert within Dialog */}
+                {!isOnline && (
+                    <Alert variant="destructive">
+                        <WifiOff className="h-4 w-4" />
+                        <AlertTitle>You are offline!</AlertTitle>
+                         <AlertDialogDescription>
+                           Cost estimates and availability predictions are unavailable. Reservations cannot be confirmed until you reconnect.
+                        </AlertDialogDescription>
+                    </Alert>
+                )}
                 {/* Estimated Cost Display */}
                  <div className="text-sm border-t pt-3">
                     <h4 className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</h4>
-                    {isCostLoading ? (
+                     {isCostLoading && isOnline ? (
                         <div className="flex items-center gap-2 text-muted-foreground">
                             <Loader2 className="h-4 w-4 animate-spin" /> Calculating cost...
                         </div>
+                     ) : !isOnline ? (
+                          <p className="text-muted-foreground text-xs flex items-center gap-1"><WifiOff className="h-3 w-3" /> Unavailable offline</p>
                     ) : estimatedCost !== null ? (
                          <div className="space-y-1">
                             <p>Rate: <span className="font-semibold">${estimatedCost.toFixed(2)} / hour</span></p>
@@ -296,10 +374,12 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                 {/* Prediction Display */}
                 <div className="text-sm border-t pt-3">
                    <h4 className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</h4>
-                   {isPredictionLoading ? (
+                    {isPredictionLoading && isOnline ? (
                        <div className="flex items-center gap-2 text-muted-foreground">
                            <Loader2 className="h-4 w-4 animate-spin" /> Loading prediction...
                        </div>
+                    ) : !isOnline ? (
+                         <p className="text-muted-foreground text-xs flex items-center gap-1"><WifiOff className="h-3 w-3" /> Unavailable offline</p>
                    ) : prediction ? (
                        <div className="space-y-1">
                            <p>Likely Available Soon: <span className="font-semibold">{(prediction.predictedAvailability * 100).toFixed(0)}%</span></p>
@@ -319,7 +399,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                      onConfirm={handleReserveConfirm}
                      onTimeout={handleReservationTimeout}
                      isConfirming={isReserving} // Pass reserving state
-                     disabled={isReserving || selectedSpot?.isOccupied} // Disable slider when reserving or spot occupied
+                      disabled={isReserving || selectedSpot?.isOccupied || !isOnline} // Disable slider when reserving, spot occupied, OR OFFLINE
                      timeoutSeconds={60} // Set timeout to 60 seconds
                  />
              </div>

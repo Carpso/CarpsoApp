@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2 } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2, WifiOff
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark } from '@/services/user-service'; // Import bookmark types and functions
@@ -69,6 +69,50 @@ interface Vehicle {
     isPrimary: boolean;
 }
 
+// --- Cache Keys ---
+const CACHE_KEYS = {
+    userDetails: (userId: string) => `cachedUserDetails_${userId}`,
+    billingInfo: (userId: string) => `cachedBillingInfo_${userId}`,
+    parkingHistory: (userId: string) => `cachedParkingHistory_${userId}`,
+    vehicles: (userId: string) => `cachedVehicles_${userId}`,
+    gamification: (userId: string) => `cachedGamification_${userId}`,
+    wallet: (userId: string) => `cachedUserWallet_${userId}`,
+    walletTxns: (userId: string) => `cachedUserWalletTxns_${userId}`,
+    bookmarks: (userId: string) => `cachedUserBookmarks_${userId}`,
+    timestampSuffix: '_timestamp',
+};
+
+// --- Helper to get cached data ---
+const getCachedData = <T>(key: string, maxAgeMs: number = 60 * 60 * 1000): T | null => {
+    if (typeof window === 'undefined') return null;
+    const timestampKey = key + CACHE_KEYS.timestampSuffix;
+    const timestamp = localStorage.getItem(timestampKey);
+    const data = localStorage.getItem(key);
+    if (data && timestamp && (Date.now() - parseInt(timestamp)) < maxAgeMs) {
+        try {
+            return JSON.parse(data) as T;
+        } catch (e) {
+            console.error("Error parsing cached data:", e);
+            localStorage.removeItem(key);
+            localStorage.removeItem(timestampKey);
+            return null;
+        }
+    }
+    return null;
+};
+
+// --- Helper to set cached data ---
+const setCachedData = <T>(key: string, data: T) => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(key, JSON.stringify(data));
+        localStorage.setItem(key + CACHE_KEYS.timestampSuffix, Date.now().toString());
+    } catch (e) {
+        console.error("Error setting cached data:", e);
+        // Handle potential storage full errors
+    }
+};
+
 // Mock Data Fetching Functions (Replace with real API calls)
 const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
     await new Promise(resolve => setTimeout(resolve, 700));
@@ -77,14 +121,18 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
     const role = existingRole || 'User';
     // Simulate fetching other details
     const prefs = { promotions: Math.random() > 0.5, updates: true };
-    return { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role, preferredPaymentMethod: 'Card', notificationPreferences: prefs };
+    const details = { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role, preferredPaymentMethod: 'Card', notificationPreferences: prefs };
+    setCachedData(CACHE_KEYS.userDetails(userId), details);
+    return details;
 };
 
 const fetchBillingInfo = async (userId: string, role: string): Promise<Omit<BillingInfo, 'accountBalance'>> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
      // Add IDs to payment methods
-    return { paymentMethods: [{ id:'pm_1', type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { id:'pm_2', type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
+    const billing = { paymentMethods: [{ id:'pm_1', type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { id:'pm_2', type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
+    setCachedData(CACHE_KEYS.billingInfo(userId), billing);
+    return billing;
 };
 
 
@@ -98,25 +146,58 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
       { id: 'hist3', spotId: 'lot_A-S12', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 7 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (7 * 24 - 0.75) * 60 * 60000).toISOString(), cost: 1.50, status: 'Completed' },
       { id: 'hist4', spotId: 'lot_C-S100', locationName: 'Mall Parking Deck', locationId: 'lot_C', startTime: new Date(now - 10 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (10 * 24 - 3) * 60 * 60000).toISOString(), cost: 7.00, status: 'Completed' },
     ];
-    return history.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+     const sortedHistory = history.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+     setCachedData(CACHE_KEYS.parkingHistory(userId), sortedHistory);
+    return sortedHistory;
 };
 
 const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     await new Promise(resolve => setTimeout(resolve, 600));
     const plateBasedOnId = `ABC ${userId.substring(userId.length - 4)}`.toUpperCase();
-    return [
+    const vehicles = [
         { id: 'veh1', make: 'Toyota', model: 'Corolla', plateNumber: plateBasedOnId, isPrimary: true },
         { id: 'veh2', make: 'Nissan', model: 'Hardbody', plateNumber: 'XYZ 7890', isPrimary: false }, // Example second car
     ];
+    setCachedData(CACHE_KEYS.vehicles(userId), vehicles);
+    return vehicles;
 };
+
+// --- Modified Gamification Fetch to Cache ---
+const fetchUserGamification = async (userId: string): Promise<UserGamification> => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const gamification = userGamificationData[userId] || { points: 0, badges: [], isCarpoolEligible: false };
+    setCachedData(CACHE_KEYS.gamification(userId), gamification);
+    return gamification;
+}
+// --- Modified Wallet Fetch to Cache ---
+const fetchUserWallet = async (userId: string): Promise<Wallet> => {
+     await new Promise(resolve => setTimeout(resolve, 200));
+     const wallet = userWallets[userId] || { balance: 0, currency: 'ZMW' };
+     setCachedData(CACHE_KEYS.wallet(userId), wallet);
+     return wallet;
+}
+const fetchUserWalletTransactions = async (userId: string, limit: number = 5): Promise<WalletTransaction[]> => {
+     await new Promise(resolve => setTimeout(resolve, 350));
+     const transactions = (userTransactions[userId] || []).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+     setCachedData(CACHE_KEYS.walletTxns(userId), transactions); // Cache recent txns
+     return transactions;
+}
+// --- Modified Bookmarks Fetch to Cache ---
+const fetchUserBookmarks = async (userId: string): Promise<UserBookmark[]> => {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const bookmarks = userBookmarks[userId] || [];
+    setCachedData(CACHE_KEYS.bookmarks(userId), bookmarks);
+    return bookmarks;
+}
+
 
 // Mock Update Functions
 const updateUserDetails = async (userId: string, updates: Partial<UserDetails>): Promise<UserDetails> => {
      await new Promise(resolve => setTimeout(resolve, 800));
      console.log("Simulating user details update:", userId, updates);
      // In a real app, update the backend data source
-     // This mock doesn't persist changes across sessions
-     return {
+     // This mock doesn't persist changes across sessions in memory, but caches
+     const updatedDetails = {
          name: updates.name || 'User',
          email: updates.email || 'user@example.com',
          phone: updates.phone || '+260 999 999 999',
@@ -126,12 +207,15 @@ const updateUserDetails = async (userId: string, updates: Partial<UserDetails>):
          preferredPaymentMethod: updates.preferredPaymentMethod,
          notificationPreferences: updates.notificationPreferences,
      };
+     setCachedData(CACHE_KEYS.userDetails(userId), updatedDetails);
+     return updatedDetails;
 };
 
 const updateUserVehicles = async (userId: string, vehicles: Vehicle[]): Promise<Vehicle[]> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     console.log("Simulating updating user vehicles:", userId, vehicles);
-    // Replace the mock data (in a real app, update backend)
+    // Replace the mock data (in a real app, update backend) and cache
+    setCachedData(CACHE_KEYS.vehicles(userId), vehicles);
     return vehicles;
 };
 
@@ -161,7 +245,7 @@ const getBookmarkIcon = (label: string): React.ElementType => {
 };
 
 export default function ProfilePage() {
-    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout } = useContext(AppStateContext)!;
+    const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout, isOnline } = useContext(AppStateContext)!;
     const router = useRouter();
     const { toast } = useToast();
 
@@ -179,6 +263,7 @@ export default function ProfilePage() {
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
     const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
+    const [lastUpdated, setLastUpdated] = useState<number | null>(null); // Track last successful fetch time
 
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
@@ -213,103 +298,167 @@ export default function ProfilePage() {
      }, [isAuthenticated, router, toast]);
 
 
-    // Combined data fetching function
-    const loadProfileData = useCallback(async () => {
-        if (userId) {
-            setIsLoading(true);
-            setIsLoadingWallet(true);
-            setIsLoadingVehicles(true);
-            setIsLoadingBookmarks(true);
-            setErrorLoading(null);
-            try {
-                const roleToUse = userRole || 'User';
-                // Fetch bookmarks along with other data
-                const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData, bookmarksData] = await Promise.all([
-                    fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
-                    fetchBillingInfo(userId, roleToUse),
-                    fetchParkingHistory(userId),
-                    fetchVehicles(userId), // Fetch vehicles
-                    getUserGamification(userId),
-                    getWalletBalance(userId),
-                    getWalletTransactions(userId, 5),
-                    getUserBookmarks(userId), // Fetch bookmarks
-                ]);
-                setUserDetails(details);
-                setBillingInfo(billing);
-                setParkingHistory(history);
-                setVehicles(vehiclesData); // Set vehicles state
-                setGamification(gamificationData);
-                setWallet(walletData);
-                setWalletTransactions(transactionsData);
-                setBookmarks(bookmarksData); // Set bookmarks state
+    // Combined data fetching function - Modified for offline cache
+    const loadProfileData = useCallback(async (forceRefresh = false) => {
+        if (!userId) return;
 
-                // Initialize edit states
-                setEditName(details.name || userName || '');
-                setEditAvatarUrl(details.avatarUrl || userAvatarUrl || '');
-                setEditPhone(details.phone || '');
-                setEditEmail(details.email || '');
-                setEditVehicles(vehiclesData); // Initialize editable vehicles
-                setEditNotificationPrefs(details.notificationPreferences || { promotions: false, updates: false });
+        setIsLoading(true);
+        setIsLoadingWallet(true);
+        setIsLoadingVehicles(true);
+        setIsLoadingBookmarks(true);
+        setErrorLoading(null);
 
-            } catch (error) {
-                console.error("Failed to load user profile data:", error);
-                setErrorLoading("Could not fetch profile data.");
-                toast({ title: "Error Loading Profile", description: "Could not fetch some profile data.", variant: "destructive" });
-            } finally {
-                setIsLoading(false);
-                setIsLoadingWallet(false);
-                setIsLoadingVehicles(false);
-                setIsLoadingBookmarks(false);
-            }
-        } else {
-             setIsLoading(false);
-             setIsLoadingWallet(false);
-             setIsLoadingVehicles(false);
-             setIsLoadingBookmarks(false);
-             if (isAuthenticated) {
-                setErrorLoading("User ID not found. Please try logging in again.");
-             }
+        const loadFromCache = (keyFunc: (userId: string) => string, setter: Function) => {
+            const cached = getCachedData<any>(keyFunc(userId));
+            if (cached) setter(cached);
+            return !!cached;
+        };
+
+        // Load initial data from cache if available
+        const hasCachedDetails = loadFromCache(CACHE_KEYS.userDetails, setUserDetails);
+        const hasCachedBilling = loadFromCache(CACHE_KEYS.billingInfo, setBillingInfo);
+        const hasCachedHistory = loadFromCache(CACHE_KEYS.parkingHistory, setParkingHistory);
+        const hasCachedVehicles = loadFromCache(CACHE_KEYS.vehicles, setVehicles);
+        const hasCachedGamification = loadFromCache(CACHE_KEYS.gamification, setGamification);
+        const hasCachedWallet = loadFromCache(CACHE_KEYS.wallet, setWallet);
+        const hasCachedTxns = loadFromCache(CACHE_KEYS.walletTxns, setWalletTransactions);
+        const hasCachedBookmarks = loadFromCache(CACHE_KEYS.bookmarks, setBookmarks);
+
+        // Immediately initialize edit states from cached/global state
+        const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName, avatarUrl: userAvatarUrl, memberSince: '', role: userRole || 'User' };
+        setEditName(initialDetails?.name || '');
+        setEditAvatarUrl(initialDetails?.avatarUrl || '');
+        setEditPhone(initialDetails?.phone || '');
+        setEditEmail(initialDetails?.email || '');
+        setEditVehicles(getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId)) || []);
+        setEditNotificationPrefs(initialDetails?.notificationPreferences || { promotions: false, updates: false });
+
+        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedWallet && hasCachedTxns && hasCachedBookmarks) {
+            console.log("Offline: Using cached profile data.");
+            setIsLoading(false);
+            setIsLoadingWallet(false);
+            setIsLoadingVehicles(false);
+            setIsLoadingBookmarks(false);
+            const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
+            setLastUpdated(ts ? parseInt(ts) : null);
+            return; // Stop if offline and all data loaded from cache
+        }
+
+        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks)) {
+            console.warn("Offline: Missing some cached profile data.");
+            setErrorLoading("Offline: Some profile data is unavailable.");
+            // Keep loading spinners for missing sections? Or show cached data + error for missing?
+            // Let's stop master loading, individual loaders will handle their state.
+            setIsLoading(false);
+            if (!hasCachedWallet) setIsLoadingWallet(false);
+            if (!hasCachedVehicles) setIsLoadingVehicles(false);
+            if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
+             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
+             setLastUpdated(ts ? parseInt(ts) : null);
+            return;
+        }
+
+        // Online: Fetch fresh data
+        console.log("Online: Fetching fresh profile data...");
+        try {
+            const roleToUse = userRole || 'User';
+            const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData, bookmarksData] = await Promise.all([
+                fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
+                fetchBillingInfo(userId, roleToUse),
+                fetchParkingHistory(userId),
+                fetchVehicles(userId),
+                fetchUserGamification(userId),
+                fetchUserWallet(userId),
+                fetchUserWalletTransactions(userId, 5),
+                fetchUserBookmarks(userId),
+            ]);
+            setUserDetails(details);
+            setBillingInfo(billing);
+            setParkingHistory(history);
+            setVehicles(vehiclesData);
+            setGamification(gamificationData);
+            setWallet(walletData);
+            setWalletTransactions(transactionsData);
+            setBookmarks(bookmarksData);
+            setLastUpdated(Date.now());
+
+            // Re-Initialize edit states with fresh data
+            setEditName(details.name || userName || '');
+            setEditAvatarUrl(details.avatarUrl || userAvatarUrl || '');
+            setEditPhone(details.phone || '');
+            setEditEmail(details.email || '');
+            setEditVehicles(vehiclesData);
+            setEditNotificationPrefs(details.notificationPreferences || { promotions: false, updates: false });
+
+        } catch (error) {
+            console.error("Failed to load user profile data:", error);
+            setErrorLoading("Could not fetch profile data. Displaying cached data if available.");
+            // Keep displaying cached data if available
+            if (!hasCachedDetails) setUserDetails(null);
+            if (!hasCachedBilling) setBillingInfo(null);
+            if (!hasCachedHistory) setParkingHistory(null);
+            if (!hasCachedVehicles) setVehicles([]);
+            if (!hasCachedGamification) setGamification(null);
+            if (!hasCachedWallet) setWallet(null);
+            if (!hasCachedTxns) setWalletTransactions([]);
+            if (!hasCachedBookmarks) setBookmarks([]);
+        } finally {
+            setIsLoading(false);
+            setIsLoadingWallet(false);
+            setIsLoadingVehicles(false);
+            setIsLoadingBookmarks(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, userRole, toast]); // userName/userAvatarUrl removed from deps
+    }, [userId, userRole, isOnline]); // userName/userAvatarUrl removed from deps, added isOnline
 
+    // Refresh wallet data (Online only)
     const refreshWalletData = useCallback(async () => {
-        if (!userId) return;
+        if (!userId || !isOnline) {
+            if (!isOnline) toast({ title: "Offline", description: "Wallet actions require an internet connection.", variant: "destructive" });
+            return;
+        }
         setIsLoadingWallet(true);
         try {
             const [walletData, transactionsData] = await Promise.all([
-                getWalletBalance(userId),
-                getWalletTransactions(userId, 5),
+                fetchUserWallet(userId),
+                fetchUserWalletTransactions(userId, 5),
             ]);
             setWallet(walletData);
             setWalletTransactions(transactionsData);
+            setLastUpdated(Date.now());
         } catch (error) {
              console.error("Failed to refresh wallet data:", error);
              toast({ title: "Wallet Update Error", description: "Could not refresh wallet balance/transactions.", variant: "destructive" });
         } finally {
              setIsLoadingWallet(false);
         }
-    }, [userId, toast]);
+    }, [userId, toast, isOnline]);
 
+    // Refresh bookmarks (Online only)
      const refreshBookmarks = useCallback(async () => {
-        if (!userId) return;
+        if (!userId || !isOnline) {
+             if (!isOnline) toast({ title: "Offline", description: "Bookmark management requires an internet connection.", variant: "destructive" });
+            return;
+        }
         setIsLoadingBookmarks(true);
         try {
-            const bookmarksData = await getUserBookmarks(userId);
+            const bookmarksData = await fetchUserBookmarks(userId);
             setBookmarks(bookmarksData);
+            setLastUpdated(Date.now());
         } catch (error) {
              console.error("Failed to refresh bookmarks:", error);
              toast({ title: "Bookmarks Update Error", description: "Could not refresh saved locations.", variant: "destructive" });
         } finally {
              setIsLoadingBookmarks(false);
         }
-    }, [userId, toast]);
+    }, [userId, toast, isOnline]);
 
 
     useEffect(() => {
         if (isAuthenticated) {
             loadProfileData();
         } else {
+            // Clear all state if not authenticated
             setIsLoading(false);
             setIsLoadingWallet(false);
             setIsLoadingVehicles(false);
@@ -321,9 +470,18 @@ export default function ProfilePage() {
             setGamification(null);
             setWallet(null);
             setWalletTransactions([]);
-            setBookmarks([]); // Clear bookmarks
+            setBookmarks([]);
+            setLastUpdated(null);
         }
     }, [isAuthenticated, loadProfileData]);
+
+    // Re-fetch data when coming back online
+    useEffect(() => {
+         if (isOnline && isAuthenticated && !isLoading) {
+            console.log("Back online, refreshing profile data...");
+            loadProfileData(true); // Force refresh
+         }
+    }, [isOnline, isAuthenticated, isLoading, loadProfileData]);
 
 
     const handleOpenReportModal = (reservation: ParkingHistoryEntry) => {
@@ -341,19 +499,25 @@ export default function ProfilePage() {
         // TODO: Implement CSV/PDF generation
     };
      const handleDownloadHistory = () => {
-         console.log("Download history (parking & wallet):", { parking: completedHistory, wallet: walletTransactions });
+         const completed = parkingHistory?.filter(h => h.status === 'Completed') || [];
+         console.log("Download history (parking & wallet):", { parking: completed, wallet: walletTransactions });
          toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
          // TODO: Implement CSV/PDF generation
      };
 
 
     const handleCarpoolToggle = async (checked: boolean) => {
-        if (!userId) return;
+        if (!userId || !isOnline) {
+            if (!isOnline) toast({ title: "Offline", description: "Cannot update settings while offline.", variant: "destructive" });
+            return;
+        }
         setIsUpdatingCarpool(true);
         try {
             const success = await updateCarpoolEligibility(userId, checked);
             if (success) {
-                setGamification(prev => prev ? ({ ...prev, isCarpoolEligible: checked }) : ({ points: 0, badges: [], isCarpoolEligible: checked }));
+                // Fetch updated gamification data to get latest points/badges
+                const updatedGamification = await fetchUserGamification(userId);
+                setGamification(updatedGamification);
                 toast({ title: "Carpool Status Updated", description: checked ? "Eligible for carpooling benefits!" : "Carpooling benefits disabled." });
             } else { throw new Error("Failed to update carpool status."); }
         } catch (error) {
@@ -364,6 +528,10 @@ export default function ProfilePage() {
 
     // --- Edit Mode Handlers ---
     const handleSaveProfile = async () => {
+        if (!isOnline) {
+             toast({ title: "Offline", description: "Cannot save profile changes while offline.", variant: "destructive" });
+             return;
+        }
         if (!editName || !userId) {
             toast({ title: "Missing Information", description: "Name cannot be empty.", variant: "destructive" });
             return;
@@ -397,6 +565,7 @@ export default function ProfilePage() {
             // Update local state
             setUserDetails(updatedDetails);
             setVehicles(updatedVehiclesResult);
+            setLastUpdated(Date.now());
 
             toast({ title: "Profile Updated" });
             setEditMode(false);
@@ -409,13 +578,16 @@ export default function ProfilePage() {
     };
 
      const handleCancelEdit = () => {
-        // Reset edit states to original values
-        setEditName(userDetails?.name || userName || '');
-        setEditAvatarUrl(userDetails?.avatarUrl || userAvatarUrl || '');
-        setEditPhone(userDetails?.phone || '');
-        setEditEmail(userDetails?.email || '');
-        setEditVehicles(vehicles); // Reset to original vehicles fetched
-        setEditNotificationPrefs(userDetails?.notificationPreferences || { promotions: false, updates: false });
+        // Reset edit states to original values (cached or fetched)
+        const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || userDetails;
+        const currentVehicles = getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId)) || vehicles;
+
+        setEditName(currentDetails?.name || userName || '');
+        setEditAvatarUrl(currentDetails?.avatarUrl || userAvatarUrl || '');
+        setEditPhone(currentDetails?.phone || '');
+        setEditEmail(currentDetails?.email || '');
+        setEditVehicles(currentVehicles); // Reset to original vehicles fetched/cached
+        setEditNotificationPrefs(currentDetails?.notificationPreferences || { promotions: false, updates: false });
         setEditMode(false);
      };
 
@@ -463,6 +635,10 @@ export default function ProfilePage() {
     };
 
     const handleSaveBookmark = async () => {
+        if (!isOnline) {
+             toast({ title: "Offline", description: "Cannot save bookmark while offline.", variant: "destructive" });
+             return;
+        }
         if (!userId || !currentBookmark || !currentBookmark.label) {
             toast({ title: "Missing Information", description: "Bookmark label cannot be empty.", variant: "destructive" });
             return;
@@ -508,6 +684,10 @@ export default function ProfilePage() {
     };
 
     const handleDeleteBookmark = async (bookmarkId: string) => {
+         if (!isOnline) {
+             toast({ title: "Offline", description: "Cannot delete bookmark while offline.", variant: "destructive" });
+             return;
+         }
          // Optional: Add confirmation dialog
          setIsDeletingBookmark(true);
          try {
@@ -561,7 +741,7 @@ export default function ProfilePage() {
     const isPremium = currentTier === 'Premium';
 
     // Render loading or empty state if not authenticated or data is loading
-    if (isLoading) {
+    if (isLoading && !userDetails) { // Show skeleton only on initial full load without cached data
         return (
             <div className="container py-8 px-4 md:px-6 lg:px-8 max-w-4xl mx-auto">
                 <ProfileSkeleton />
@@ -574,12 +754,15 @@ export default function ProfilePage() {
              <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
                  <AlertCircle className="mx-auto h-10 w-10 text-destructive mb-4" />
                  <p className="text-destructive">{errorLoading}</p>
-                 <Button onClick={loadProfileData} className="mt-4">Retry</Button>
+                 {isOnline && <Button onClick={() => loadProfileData(true)} className="mt-4">Retry</Button>}
+                  {!isOnline && <p className="text-sm text-muted-foreground mt-2">Connect to the internet and try again.</p>}
+                 {/* Display cached data below error? Or separate component? */}
+                 {userDetails && <div className="mt-6 text-left"><Card><CardContent><p>Displaying potentially outdated cached data.</p></CardContent></Card></div> /* Basic indication */}
              </div>
          );
     }
 
-    if (!isAuthenticated || !userId || !userDetails) {
+    if (!isAuthenticated || !userId) { // Keep check for authentication state consistency
         return (
             <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
                 <AlertCircle className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
@@ -598,59 +781,77 @@ export default function ProfilePage() {
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-2xl">My Profile</CardTitle>
                             {!editMode ? (
-                                <Button variant="ghost" size="icon" onClick={() => setEditMode(true)} aria-label="Edit Profile">
-                                    <Edit className="h-4 w-4" />
+                                <Button variant="ghost" size="icon" onClick={() => setEditMode(true)} aria-label="Edit Profile" disabled={!isOnline}>
+                                     {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot edit offline"/> : <Edit className="h-4 w-4" />}
                                 </Button>
                             ) : (
                                 <div className="flex gap-2">
                                      <Button variant="ghost" size="icon" onClick={handleCancelEdit} disabled={isSavingProfile} aria-label="Cancel Edit">
                                         <X className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isSavingProfile} aria-label="Save Profile">
-                                        {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
+                                    <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isSavingProfile || !isOnline} aria-label="Save Profile">
+                                         {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot save offline"/> : isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
                                     </Button>
                                 </div>
                             )}
                         </div>
                         <CardDescription>View and manage your account details, wallet, vehicles, and history.</CardDescription>
+                          {/* Offline/Last Updated Indicator */}
+                         <div className="text-xs text-muted-foreground pt-2">
+                            {!isOnline ? (
+                                <span className="flex items-center gap-1 text-destructive"><WifiOff className="h-3 w-3" /> Offline - Displaying cached data {lastUpdated ? `(updated ${new Date(lastUpdated).toLocaleTimeString()})` : ''}.</span>
+                            ) : isLoading ? (
+                                 <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Syncing...</span>
+                            ) : lastUpdated ? (
+                                <span>Last Updated: {new Date(lastUpdated).toLocaleTimeString()}</span>
+                            ) : (
+                                <span>Up to date.</span>
+                            )}
+                         </div>
                     </CardHeader>
                     <CardContent>
                         {/* User Details Section */}
-                        <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
-                            {/* Avatar */}
-                            <div className="relative flex-shrink-0">
+                         <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
+                           {isLoading && !userDetails ? <Skeleton className="h-32 w-32 rounded-full flex-shrink-0"/> : (
+                               <div className="relative flex-shrink-0">
                                  <Avatar className="h-24 w-24 md:h-32 md:w-32 border">
                                     <AvatarImage src={editMode ? editAvatarUrl : displayAvatar} alt={editMode ? editName : displayName} />
                                     <AvatarFallback className="text-4xl">{userInitial}</AvatarFallback>
                                 </Avatar>
                                  {editMode && (
-                                      <Input id="profile-avatar" type="text" value={editAvatarUrl} onChange={(e) => setEditAvatarUrl(e.target.value)} placeholder="Avatar URL..." disabled={isSavingProfile} className="mt-2 text-xs" />
+                                      <Input id="profile-avatar" type="text" value={editAvatarUrl} onChange={(e) => setEditAvatarUrl(e.target.value)} placeholder="Avatar URL..." disabled={isSavingProfile || !isOnline} className="mt-2 text-xs" />
                                  )}
-                            </div>
+                               </div>
+                            )}
                             {/* Info */}
-                            <div className="space-y-2 flex-grow">
-                                {editMode ? (
-                                    <>
-                                        <div className="space-y-1"> <Label htmlFor="profile-name">Name*</Label><Input id="profile-name" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={isSavingProfile} required /></div>
-                                        <div className="space-y-1"><Label htmlFor="profile-email">Email</Label><Input id="profile-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="you@example.com" disabled={isSavingProfile} /></div>
-                                        <div className="space-y-1"><Label htmlFor="profile-phone">Phone</Label><Input id="profile-phone" type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+260 ..." disabled={isSavingProfile} /></div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <h2 className="text-2xl font-semibold flex items-center gap-2 flex-wrap">
-                                            {displayName}
-                                             <Badge variant={isPremium ? "default" : "secondary"} className={cn("text-xs", isPremium ? "bg-yellow-500 text-black hover:bg-yellow-500/90" : "")}>
-                                                {isPremium && <Star className="h-3 w-3 mr-1" />} {currentTier} Tier
-                                            </Badge>
-                                        </h2>
-                                        {userDetails.email && <p className="text-sm text-muted-foreground">{userDetails.email}</p>}
-                                        {userDetails.phone && <p className="text-sm text-muted-foreground">{userDetails.phone}</p>}
-                                        <p className="text-xs text-muted-foreground">Role: {userDetails.role}</p>
-                                        <p className="text-xs text-muted-foreground">Member since: {new Date(userDetails.memberSince).toLocaleDateString()}</p>
-                                    </>
-                                )}
+                             <div className="space-y-2 flex-grow">
+                               {isLoading && !userDetails ? <><Skeleton className="h-8 w-3/4"/><Skeleton className="h-5 w-1/2"/><Skeleton className="h-4 w-1/3"/></> : (
+                                 <>
+                                  {editMode ? (
+                                      <>
+                                          <div className="space-y-1"> <Label htmlFor="profile-name">Name*</Label><Input id="profile-name" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={isSavingProfile || !isOnline} required /></div>
+                                          <div className="space-y-1"><Label htmlFor="profile-email">Email</Label><Input id="profile-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="you@example.com" disabled={isSavingProfile || !isOnline} /></div>
+                                          <div className="space-y-1"><Label htmlFor="profile-phone">Phone</Label><Input id="profile-phone" type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+260 ..." disabled={isSavingProfile || !isOnline} /></div>
+                                      </>
+                                  ) : (
+                                      <>
+                                          <h2 className="text-2xl font-semibold flex items-center gap-2 flex-wrap">
+                                              {displayName}
+                                               <Badge variant={isPremium ? "default" : "secondary"} className={cn("text-xs", isPremium ? "bg-yellow-500 text-black hover:bg-yellow-500/90" : "")}>
+                                                  {isPremium && <Star className="h-3 w-3 mr-1" />} {currentTier} Tier
+                                              </Badge>
+                                          </h2>
+                                          {userDetails?.email && <p className="text-sm text-muted-foreground">{userDetails.email}</p>}
+                                          {userDetails?.phone && <p className="text-sm text-muted-foreground">{userDetails.phone}</p>}
+                                          <p className="text-xs text-muted-foreground">Role: {userDetails?.role}</p>
+                                          <p className="text-xs text-muted-foreground">Member since: {userDetails?.memberSince ? new Date(userDetails.memberSince).toLocaleDateString() : 'N/A'}</p>
+                                      </>
+                                  )}
+                                </>
+                               )}
                             </div>
                         </div>
+
 
                          {/* Edit Mode - Notification Preferences */}
                           {editMode && (
@@ -666,7 +867,7 @@ export default function ProfilePage() {
                                             id="promo-notifications"
                                             checked={editNotificationPrefs.promotions}
                                             onCheckedChange={(checked) => setEditNotificationPrefs(prev => ({ ...prev, promotions: checked }))}
-                                            disabled={isSavingProfile}
+                                            disabled={isSavingProfile || !isOnline}
                                           />
                                      </div>
                                      <div className="flex items-center justify-between">
@@ -678,7 +879,7 @@ export default function ProfilePage() {
                                             id="update-notifications"
                                             checked={editNotificationPrefs.updates}
                                             onCheckedChange={(checked) => setEditNotificationPrefs(prev => ({ ...prev, updates: checked }))}
-                                            disabled={isSavingProfile}
+                                            disabled={isSavingProfile || !isOnline}
                                           />
                                      </div>
                                  </div>
@@ -692,68 +893,63 @@ export default function ProfilePage() {
                         <section className="mb-6">
                              <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><WalletIcon className="h-5 w-5 text-primary" /> Wallet</h3>
-                                <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet}>
-                                    {isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
+                                <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
+                                     {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
                                 </Button>
                              </div>
-                             <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground rounded-lg shadow-md">
-                                 <div className="flex justify-between items-start">
-                                     <div>
-                                        <p className="text-sm font-medium opacity-80">Available Balance</p>
-                                        {isLoadingWallet ? (
-                                             <Skeleton className="h-8 w-24 mt-1 bg-primary/50" />
-                                        ) : (
-                                            <p className="text-3xl font-bold">
-                                                {wallet?.currency} {wallet?.balance?.toFixed(2) ?? '0.00'}
-                                            </p>
-                                        )}
-                                     </div>
-                                     <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
-                                         <QrCode className="h-5 w-5" />
-                                         <span className="sr-only">Show QR Code</span>
-                                     </Button>
-                                 </div>
-                                 <div className="mt-4 flex gap-2">
-                                      <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={isLoadingWallet}>
-                                         <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
-                                      </Button>
-                                      <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={isLoadingWallet || (wallet?.balance ?? 0) <= 0}>
-                                         <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
-                                      </Button>
-                                      {/* Add Receive/Scan button here */}
-                                 </div>
-                             </Card>
-
-                            <div>
-                                 <p className="text-sm font-medium mb-2">Recent Transactions</p>
-                                 {isLoadingWallet ? (
-                                     <div className="space-y-2">
-                                         <Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" />
-                                     </div>
-                                 ) : walletTransactions.length > 0 ? (
-                                     <div className="space-y-2">
-                                         {walletTransactions.map(txn => (
-                                             <div key={txn.id} className="flex items-center justify-between p-2 border rounded-md text-sm bg-background hover:bg-muted/50">
-                                                 <div className="flex items-center gap-2 overflow-hidden">
-                                                     {getTransactionIcon(txn.type)}
-                                                     <div className="flex-1 truncate">
-                                                         <p className="text-xs font-medium truncate">{txn.description}</p>
-                                                         <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
-                                                     </div>
-                                                 </div>
-                                                 <span className={cn(
-                                                     "font-semibold text-xs whitespace-nowrap",
-                                                     txn.amount >= 0 ? "text-green-600" : "text-red-600"
-                                                 )}>
-                                                     {txn.amount >= 0 ? '+' : ''}{wallet?.currency} {txn.amount.toFixed(2)}
-                                                 </span>
+                              {isLoadingWallet && !wallet ? <Skeleton className="h-40 w-full"/> : (
+                                 <>
+                                     <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground rounded-lg shadow-md">
+                                         <div className="flex justify-between items-start">
+                                             <div>
+                                                <p className="text-sm font-medium opacity-80">Available Balance</p>
+                                                <p className="text-3xl font-bold">
+                                                    {wallet?.currency || 'ZMW'} {wallet?.balance?.toFixed(2) ?? '0.00'}
+                                                </p>
                                              </div>
-                                         ))}
-                                     </div>
-                                 ) : (
-                                     <p className="text-sm text-muted-foreground text-center py-3">No recent wallet transactions.</p>
-                                 )}
-                            </div>
+                                             <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
+                                                 <QrCode className="h-5 w-5" />
+                                                 <span className="sr-only">Show QR Code</span>
+                                             </Button>
+                                         </div>
+                                         <div className="mt-4 flex gap-2">
+                                              <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={!isOnline}>
+                                                 <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
+                                              </Button>
+                                              <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={!isOnline || (wallet?.balance ?? 0) <= 0}>
+                                                 <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
+                                              </Button>
+                                         </div>
+                                     </Card>
+
+                                    <div>
+                                         <p className="text-sm font-medium mb-2">Recent Transactions</p>
+                                         {walletTransactions.length > 0 ? (
+                                             <div className="space-y-2">
+                                                 {walletTransactions.map(txn => (
+                                                     <div key={txn.id} className="flex items-center justify-between p-2 border rounded-md text-sm bg-background hover:bg-muted/50">
+                                                         <div className="flex items-center gap-2 overflow-hidden">
+                                                             {getTransactionIcon(txn.type)}
+                                                             <div className="flex-1 truncate">
+                                                                 <p className="text-xs font-medium truncate">{txn.description}</p>
+                                                                 <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
+                                                             </div>
+                                                         </div>
+                                                         <span className={cn(
+                                                             "font-semibold text-xs whitespace-nowrap",
+                                                             txn.amount >= 0 ? "text-green-600" : "text-red-600"
+                                                         )}>
+                                                             {txn.amount >= 0 ? '+' : ''}{wallet?.currency || 'ZMW'} {txn.amount.toFixed(2)}
+                                                         </span>
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                         ) : (
+                                             <p className="text-sm text-muted-foreground text-center py-3">No recent wallet transactions.</p>
+                                         )}
+                                    </div>
+                                 </>
+                              )}
                         </section>
 
                         <Separator className="my-6" />
@@ -762,73 +958,78 @@ export default function ProfilePage() {
                          <section className="mb-6">
                              <div className="flex justify-between items-center mb-3">
                                  <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5" /> Billing & Plan</h3>
-                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling}>
+                                  {/* Download button might be complex offline */}
+                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling} disabled={isLoading && !billingInfo}>
                                      <Download className="mr-2 h-4 w-4" /> Summary
                                  </Button>
                              </div>
-                             <Card className="mb-4 border-l-4 border-yellow-500">
-                                <CardHeader className="pb-3">
-                                    <CardTitle className="text-base flex justify-between items-center">
-                                        Subscription: {currentTier}
-                                        <Button variant="link" size="sm" className="text-xs h-auto p-0">
-                                            {isPremium ? "Manage Plan" : "Upgrade"}
-                                        </Button>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    {isPremium && billingInfo?.guaranteedSpotsAvailable !== undefined ? (
-                                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                            <CheckCircle className="h-4 w-4 text-green-600"/> You have {billingInfo.guaranteedSpotsAvailable} guaranteed spot passes remaining.
-                                        </p>
-                                    ) : !isPremium ? (
-                                        <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
-                                    ) : null}
-                                </CardContent>
-                             </Card>
+                             {isLoading && !billingInfo ? <Skeleton className="h-48 w-full"/> : (
+                                <>
+                                     <Card className="mb-4 border-l-4 border-yellow-500">
+                                        <CardHeader className="pb-3">
+                                            <CardTitle className="text-base flex justify-between items-center">
+                                                Subscription: {currentTier}
+                                                <Button variant="link" size="sm" className="text-xs h-auto p-0" disabled={!isOnline}>
+                                                    {isPremium ? "Manage Plan" : "Upgrade"}
+                                                </Button>
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            {isPremium && billingInfo?.guaranteedSpotsAvailable !== undefined ? (
+                                                <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                                    <CheckCircle className="h-4 w-4 text-green-600"/> You have {billingInfo.guaranteedSpotsAvailable} guaranteed spot passes remaining.
+                                                </p>
+                                            ) : !isPremium ? (
+                                                <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
+                                            ) : null}
+                                        </CardContent>
+                                     </Card>
 
-                             {/* Carpso Card - Coming Soon */}
-                            <Card className="mb-4 border-dashed border-accent">
-                                <CardHeader className="pb-3">
-                                    <CardTitle className="text-base flex items-center gap-2">
-                                        <CreditCard className="h-4 w-4 text-accent"/> Carpso Card
-                                        <Badge variant="outline" className="border-accent text-accent">Coming Soon</Badge>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground">
-                                        Get a physical Carpso Card for tap-to-pay parking and exclusive partner discounts. Register your interest!
-                                    </p>
-                                     <Button size="sm" variant="outline" className="mt-3">Notify Me</Button>
-                                </CardContent>
-                            </Card>
+                                     {/* Carpso Card - Coming Soon */}
+                                    <Card className="mb-4 border-dashed border-accent">
+                                        <CardHeader className="pb-3">
+                                            <CardTitle className="text-base flex items-center gap-2">
+                                                <CreditCard className="h-4 w-4 text-accent"/> Carpso Card
+                                                <Badge variant="outline" className="border-accent text-accent">Coming Soon</Badge>
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <p className="text-sm text-muted-foreground">
+                                                Get a physical Carpso Card for tap-to-pay parking and exclusive partner discounts. Register your interest!
+                                            </p>
+                                             <Button size="sm" variant="outline" className="mt-3" disabled={!isOnline}>Notify Me</Button>
+                                        </CardContent>
+                                    </Card>
 
 
-                             <div>
-                                 <p className="text-sm font-medium mb-2">Payment Methods</p>
-                                  {/* Display only if NOT in edit mode */}
-                                  {!editMode && (
-                                      <>
-                                         <div className="space-y-2 mb-3">
-                                             {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
-                                                 billingInfo.paymentMethods.map((method) => (
-                                                     <div key={method.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
-                                                         <div className="flex items-center gap-2">
-                                                             {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-                                                             <span>{method.details}</span>
-                                                         </div>
-                                                         {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
-                                                     </div>
-                                                 ))
-                                             ) : (
-                                                 <p className="text-sm text-muted-foreground">No payment methods saved.</p>
-                                             )}
-                                         </div>
-                                         <Button variant="outline" size="sm" className="w-full">Manage Payment Methods</Button>
-                                     </>
-                                  )}
-                                   {/* TODO: Add editable payment methods section for edit mode */}
-                                    {editMode && <p className="text-sm text-muted-foreground">[Editable payment methods coming soon]</p>}
-                             </div>
+                                     <div>
+                                         <p className="text-sm font-medium mb-2">Payment Methods</p>
+                                          {/* Display only if NOT in edit mode */}
+                                          {!editMode && (
+                                              <>
+                                                 <div className="space-y-2 mb-3">
+                                                     {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
+                                                         billingInfo.paymentMethods.map((method) => (
+                                                             <div key={method.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
+                                                                 <div className="flex items-center gap-2">
+                                                                     {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
+                                                                     <span>{method.details}</span>
+                                                                 </div>
+                                                                 {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                             </div>
+                                                         ))
+                                                     ) : (
+                                                         <p className="text-sm text-muted-foreground">No payment methods saved.</p>
+                                                     )}
+                                                 </div>
+                                                 <Button variant="outline" size="sm" className="w-full" disabled={!isOnline}>Manage Payment Methods</Button>
+                                             </>
+                                          )}
+                                           {/* TODO: Add editable payment methods section for edit mode */}
+                                            {editMode && <p className="text-sm text-muted-foreground">[Editable payment methods coming soon]</p>}
+                                     </div>
+                                </>
+                             )}
                          </section>
 
                         <Separator className="my-6" />
@@ -838,12 +1039,12 @@ export default function ProfilePage() {
                            <div className="flex justify-between items-center mb-3">
                                <h3 className="text-lg font-semibold flex items-center gap-2"><CarTaxiFront className="h-5 w-5" /> My Vehicles</h3>
                                {editMode && (
-                                   <Button variant="outline" size="sm" onClick={handleAddVehicle} disabled={isSavingProfile}>
+                                   <Button variant="outline" size="sm" onClick={handleAddVehicle} disabled={isSavingProfile || !isOnline}>
                                        <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
                                    </Button>
                                )}
                            </div>
-                           {isLoadingVehicles && !editMode ? (
+                            {isLoadingVehicles && !vehicles?.length ? ( // Show skeleton if loading and no cached data
                                <Skeleton className="h-20 w-full" />
                            ) : (editMode ? editVehicles : vehicles).length > 0 ? (
                                <div className="space-y-3">
@@ -854,9 +1055,9 @@ export default function ProfilePage() {
                                                 <div className="flex-grow">
                                                      {editMode ? (
                                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                             <div className="space-y-1"> <Label htmlFor={`veh-make-${index}`} className="text-xs">Make</Label><Input id={`veh-make-${index}`} value={vehicle.make} onChange={(e) => handleEditVehicleChange(index, 'make', e.target.value)} placeholder="e.g., Toyota" disabled={isSavingProfile} className="h-8"/></div>
-                                                             <div className="space-y-1"> <Label htmlFor={`veh-model-${index}`} className="text-xs">Model</Label><Input id={`veh-model-${index}`} value={vehicle.model} onChange={(e) => handleEditVehicleChange(index, 'model', e.target.value)} placeholder="e.g., Corolla" disabled={isSavingProfile} className="h-8"/></div>
-                                                             <div className="space-y-1 col-span-1 sm:col-span-2"><Label htmlFor={`veh-plate-${index}`} className="text-xs">License Plate*</Label><Input id={`veh-plate-${index}`} value={vehicle.plateNumber} onChange={(e) => handleEditVehicleChange(index, 'plateNumber', e.target.value.toUpperCase())} placeholder="e.g., ABC 1234" required disabled={isSavingProfile} className="h-8 uppercase"/></div>
+                                                             <div className="space-y-1"> <Label htmlFor={`veh-make-${index}`} className="text-xs">Make</Label><Input id={`veh-make-${index}`} value={vehicle.make} onChange={(e) => handleEditVehicleChange(index, 'make', e.target.value)} placeholder="e.g., Toyota" disabled={isSavingProfile || !isOnline} className="h-8"/></div>
+                                                             <div className="space-y-1"> <Label htmlFor={`veh-model-${index}`} className="text-xs">Model</Label><Input id={`veh-model-${index}`} value={vehicle.model} onChange={(e) => handleEditVehicleChange(index, 'model', e.target.value)} placeholder="e.g., Corolla" disabled={isSavingProfile || !isOnline} className="h-8"/></div>
+                                                             <div className="space-y-1 col-span-1 sm:col-span-2"><Label htmlFor={`veh-plate-${index}`} className="text-xs">License Plate*</Label><Input id={`veh-plate-${index}`} value={vehicle.plateNumber} onChange={(e) => handleEditVehicleChange(index, 'plateNumber', e.target.value.toUpperCase())} placeholder="e.g., ABC 1234" required disabled={isSavingProfile || !isOnline} className="h-8 uppercase"/></div>
                                                          </div>
                                                      ) : (
                                                          <div>
@@ -868,7 +1069,7 @@ export default function ProfilePage() {
                                             </div>
                                             <div className="flex items-center gap-2 sm:ml-4 flex-shrink-0">
                                                 {editMode ? (
-                                                     <Button variant={vehicle.isPrimary ? "default" : "outline"} size="sm" onClick={() => handleSetPrimaryVehicle(vehicle.id)} disabled={isSavingProfile || vehicle.isPrimary} className="h-8">
+                                                     <Button variant={vehicle.isPrimary ? "default" : "outline"} size="sm" onClick={() => handleSetPrimaryVehicle(vehicle.id)} disabled={isSavingProfile || vehicle.isPrimary || !isOnline} className="h-8">
                                                          {vehicle.isPrimary ? <CheckCircle className="h-4 w-4 sm:mr-1"/> : null}
                                                           <span className="hidden sm:inline">{vehicle.isPrimary ? 'Primary' : 'Set Primary'}</span>
                                                      </Button>
@@ -876,7 +1077,7 @@ export default function ProfilePage() {
                                                      vehicle.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>
                                                 )}
                                                  {editMode && (
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile}>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile || !isOnline}>
                                                         <X className="h-4 w-4" />
                                                         <span className="sr-only">Remove</span>
                                                     </Button>
@@ -897,11 +1098,11 @@ export default function ProfilePage() {
                          <section className="mb-6">
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><BookMarked className="h-5 w-5" /> Saved Locations</h3>
-                                <Button variant="outline" size="sm" onClick={() => handleOpenBookmarkModal()}>
+                                <Button variant="outline" size="sm" onClick={() => handleOpenBookmarkModal()} disabled={isLoadingBookmarks || !isOnline}>
                                     <PlusCircle className="mr-2 h-4 w-4" /> Add Location
                                 </Button>
                             </div>
-                            {isLoadingBookmarks ? (
+                             {isLoadingBookmarks && !bookmarks?.length ? ( // Show skeleton if loading and no cached data
                                 <Skeleton className="h-24 w-full" />
                             ) : bookmarks.length > 0 ? (
                                 <div className="space-y-3">
@@ -917,10 +1118,10 @@ export default function ProfilePage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1 flex-shrink-0">
-                                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenBookmarkModal(bookmark)} aria-label={`Edit ${bookmark.label}`}>
+                                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenBookmarkModal(bookmark)} aria-label={`Edit ${bookmark.label}`} disabled={!isOnline}>
                                                         <Edit2 className="h-4 w-4" />
                                                      </Button>
-                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteBookmark(bookmark.id)} disabled={isDeletingBookmark} aria-label={`Delete ${bookmark.label}`}>
+                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteBookmark(bookmark.id)} disabled={isDeletingBookmark || !isOnline} aria-label={`Delete ${bookmark.label}`}>
                                                         {isDeletingBookmark ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
                                                      </Button>
                                                 </div>
@@ -940,51 +1141,55 @@ export default function ProfilePage() {
                         {/* Gamification Section */}
                         <section className="mb-6">
                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Badges</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Card className="flex items-center justify-between p-4">
-                                    <div className="flex items-center gap-3">
-                                        <SparklesIcon className="h-6 w-6 text-primary" />
-                                        <span className="font-medium">Points Balance</span>
+                             {isLoading && !gamification ? <Skeleton className="h-36 w-full"/> : (
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <Card className="flex items-center justify-between p-4">
+                                            <div className="flex items-center gap-3">
+                                                <SparklesIcon className="h-6 w-6 text-primary" />
+                                                <span className="font-medium">Points Balance</span>
+                                            </div>
+                                            <span className="text-2xl font-bold text-primary">{gamification?.points ?? 0}</span>
+                                        </Card>
+                                        <Card className="flex items-center justify-between p-4">
+                                             <div className="space-y-0.5">
+                                                <Label htmlFor="carpool-switch" className="font-medium flex items-center gap-1.5">
+                                                    <Users className="h-4 w-4" /> Carpooling Eligible
+                                                </Label>
+                                                <p className="text-xs text-muted-foreground">Enable for potential discounts.</p>
+                                            </div>
+                                            <Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool || !isOnline} />
+                                        </Card>
                                     </div>
-                                    <span className="text-2xl font-bold text-primary">{gamification?.points ?? 0}</span>
-                                </Card>
-                                <Card className="flex items-center justify-between p-4">
-                                     <div className="space-y-0.5">
-                                        <Label htmlFor="carpool-switch" className="font-medium flex items-center gap-1.5">
-                                            <Users className="h-4 w-4" /> Carpooling Eligible
-                                        </Label>
-                                        <p className="text-xs text-muted-foreground">Enable for potential discounts.</p>
+                                     <div className="mt-4">
+                                        <p className="text-sm font-medium mb-2">Earned Badges:</p>
+                                        {gamification?.badges && gamification.badges.length > 0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                                {gamification.badges.map(badge => {
+                                                    const IconComponent = getIconFromName(badge.iconName);
+                                                    return (
+                                                        <Tooltip key={badge.id}>
+                                                            <TooltipTrigger asChild>
+                                                                <Badge variant="outline" className="flex items-center gap-1.5 p-2 cursor-default text-xs">
+                                                                    <IconComponent className="h-4 w-4 text-yellow-600" />
+                                                                    {badge.name}
+                                                                </Badge>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p className="text-sm font-medium">{badge.name}</p>
+                                                                <p className="text-xs text-muted-foreground max-w-xs">{badge.description}</p>
+                                                                <p className="text-xs text-muted-foreground mt-1">Earned: {new Date(badge.earnedDate).toLocaleDateString()}</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-muted-foreground">No badges earned yet. Keep parking!</p>
+                                        )}
                                     </div>
-                                    <Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool} />
-                                </Card>
-                            </div>
-                             <div className="mt-4">
-                                <p className="text-sm font-medium mb-2">Earned Badges:</p>
-                                {gamification?.badges && gamification.badges.length > 0 ? (
-                                    <div className="flex flex-wrap gap-2">
-                                        {gamification.badges.map(badge => {
-                                            const IconComponent = getIconFromName(badge.iconName);
-                                            return (
-                                                <Tooltip key={badge.id}>
-                                                    <TooltipTrigger asChild>
-                                                        <Badge variant="outline" className="flex items-center gap-1.5 p-2 cursor-default text-xs">
-                                                            <IconComponent className="h-4 w-4 text-yellow-600" />
-                                                            {badge.name}
-                                                        </Badge>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>
-                                                        <p className="text-sm font-medium">{badge.name}</p>
-                                                        <p className="text-xs text-muted-foreground max-w-xs">{badge.description}</p>
-                                                        <p className="text-xs text-muted-foreground mt-1">Earned: {new Date(badge.earnedDate).toLocaleDateString()}</p>
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground">No badges earned yet. Keep parking!</p>
-                                )}
-                            </div>
+                                </>
+                             )}
                         </section>
 
                         <Separator className="my-6" />
@@ -992,7 +1197,7 @@ export default function ProfilePage() {
                         {/* Active Reservations Section */}
                          <section className="mb-6">
                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Car className="h-5 w-5" /> Active Reservations</h3>
-                            {activeReservations.length > 0 ? (
+                             {isLoading && !parkingHistory ? <Skeleton className="h-24 w-full"/> : activeReservations.length > 0 ? (
                                 <div className="space-y-3">
                                     {activeReservations.map((res) => (
                                         <Card key={res.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1022,12 +1227,13 @@ export default function ProfilePage() {
                          <section>
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><List className="h-5 w-5" /> Parking History</h3>
-                                <Button variant="ghost" size="sm" onClick={handleDownloadHistory}>
+                                 {/* Download might not work well offline */}
+                                <Button variant="ghost" size="sm" onClick={handleDownloadHistory} disabled={isLoading && !parkingHistory}>
                                     <Download className="mr-2 h-4 w-4" /> Download
                                 </Button>
                             </div>
                              <ScrollArea className="h-[250px] pr-3">
-                                {completedHistory.length > 0 ? (
+                                 {isLoading && !parkingHistory ? <Skeleton className="h-full w-full"/> : completedHistory.length > 0 ? (
                                     <div className="space-y-3">
                                         {completedHistory.map((entry) => (
                                             <Card key={entry.id} className="p-3 text-sm flex justify-between items-start">
@@ -1099,26 +1305,26 @@ export default function ProfilePage() {
                     <div className="grid gap-4 py-4">
                         <div className="space-y-1">
                             <Label htmlFor="bookmark-label">Label*</Label>
-                            <Input id="bookmark-label" name="label" value={currentBookmark?.label || ''} onChange={handleBookmarkFormChange} placeholder="e.g., Home, Work, Gym" disabled={isSavingBookmark} required />
+                            <Input id="bookmark-label" name="label" value={currentBookmark?.label || ''} onChange={handleBookmarkFormChange} placeholder="e.g., Home, Work, Gym" disabled={isSavingBookmark || !isOnline} required />
                         </div>
                         <div className="space-y-1">
                             <Label htmlFor="bookmark-address">Address (Optional)</Label>
-                            <Input id="bookmark-address" name="address" value={currentBookmark?.address || ''} onChange={handleBookmarkFormChange} placeholder="123 Main St, Anytown" disabled={isSavingBookmark} />
+                            <Input id="bookmark-address" name="address" value={currentBookmark?.address || ''} onChange={handleBookmarkFormChange} placeholder="123 Main St, Anytown" disabled={isSavingBookmark || !isOnline} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                              <div className="space-y-1">
                                  <Label htmlFor="bookmark-lat">Latitude (Optional)</Label>
-                                 <Input id="bookmark-lat" name="latitude" type="number" value={currentBookmark?.latitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., 34.0522" disabled={isSavingBookmark} step="any"/>
+                                 <Input id="bookmark-lat" name="latitude" type="number" value={currentBookmark?.latitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., 34.0522" disabled={isSavingBookmark || !isOnline} step="any"/>
                              </div>
                              <div className="space-y-1">
                                  <Label htmlFor="bookmark-lon">Longitude (Optional)</Label>
-                                 <Input id="bookmark-lon" name="longitude" type="number" value={currentBookmark?.longitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., -118.2437" disabled={isSavingBookmark} step="any"/>
+                                 <Input id="bookmark-lon" name="longitude" type="number" value={currentBookmark?.longitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., -118.2437" disabled={isSavingBookmark || !isOnline} step="any"/>
                              </div>
                         </div>
                     </div>
                     <DialogFooter>
                          <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingBookmark}>Cancel</Button></DialogClose>
-                         <Button type="submit" onClick={handleSaveBookmark} disabled={isSavingBookmark || !currentBookmark?.label}>
+                         <Button type="submit" onClick={handleSaveBookmark} disabled={isSavingBookmark || !currentBookmark?.label || !isOnline}>
                              {isSavingBookmark ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                              {currentBookmark?.id ? 'Save Changes' : 'Add Bookmark'}
                          </Button>

@@ -1,7 +1,7 @@
 // src/components/profile/ReportIssueModal.tsx
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react'; // Added useContext
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info } from 'lucide-react';
+import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info, WifiOff } from 'lucide-react'; // Added WifiOff
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 
 // Extend ParkingHistoryEntry if needed, or use props directly
 interface ParkingHistoryEntry {
@@ -78,6 +79,7 @@ const checkPlateWithAuthority = async (plateNumber: string): Promise<{ registere
 };
 
 export default function ReportIssueModal({ isOpen, onClose, reservation, userId }: ReportIssueModalProps) {
+  const { isOnline } = useContext(AppStateContext)!; // Get online status
   const [plateNumber, setPlateNumber] = useState('');
   const [details, setDetails] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -108,6 +110,9 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         setPlateNumber(newPlateNumber);
         setPlateCheckResult(null); // Reset check result on change
 
+         // Don't check if offline
+         if (!isOnline) return;
+
         // Basic check before hitting the 'API'
         if (newPlateNumber.length >= 4) { // Example: check only if length >= 4
             setIsCheckingPlate(true);
@@ -125,6 +130,10 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
 
 
   const handleSubmit = async () => {
+    if (!isOnline) {
+         toast({ title: "Offline", description: "Cannot submit report while offline.", variant: "destructive" });
+         return;
+    }
     if (!reservation || !plateNumber) {
       toast({ title: "Missing Information", description: "Please enter the license plate number.", variant: "destructive" });
       return;
@@ -187,6 +196,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
           <DialogDescription>
             Spot: {reservation?.spotId} at {reservation?.locationName}. <br/>
             Report if the spot you reserved is occupied by another vehicle.
+            {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
 
@@ -203,15 +213,15 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                    onChange={handlePlateNumberChange}
                    className="uppercase" // Ensure uppercase display
                    placeholder="e.g., ABX 1234"
-                   disabled={isLoading}
+                   disabled={isLoading || !isOnline}
                    maxLength={10} // Example max length
                  />
-                  {isCheckingPlate && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+                  {isCheckingPlate && isOnline && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
              </div>
            </div>
 
            {/* Plate Check Result Display */}
-            {plateCheckResult && plateCheckResult !== 'error' && (
+            {plateCheckResult && plateCheckResult !== 'error' && isOnline && (
                  <Alert variant="default" className="col-span-4 mt-[-8px] bg-green-50 border-green-200">
                     <CheckCircle className="h-4 w-4 text-green-600" />
                      <AlertDescription className="text-xs text-green-800">
@@ -219,7 +229,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                      </AlertDescription>
                  </Alert>
             )}
-            {plateCheckResult === null && plateNumber.length >= 4 && !isCheckingPlate && (
+            {plateCheckResult === null && plateNumber.length >= 4 && !isCheckingPlate && isOnline && (
                  <Alert variant="destructive" className="col-span-4 mt-[-8px]">
                     <CircleAlert className="h-4 w-4" />
                      <AlertDescription className="text-xs">
@@ -227,7 +237,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                      </AlertDescription>
                  </Alert>
             )}
-             {plateCheckResult === 'error' && (
+             {plateCheckResult === 'error' && isOnline && (
                  <Alert variant="destructive" className="col-span-4 mt-[-8px]">
                     <CircleAlert className="h-4 w-4" />
                      <AlertDescription className="text-xs">
@@ -235,6 +245,14 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                      </AlertDescription>
                  </Alert>
             )}
+             {!isOnline && (
+                  <Alert variant="warning" className="col-span-4 mt-[-8px]">
+                     <WifiOff className="h-4 w-4" />
+                      <AlertDescription className="text-xs">
+                          Offline: License plate check unavailable.
+                      </AlertDescription>
+                  </Alert>
+             )}
 
 
            {/* Details Textarea */}
@@ -248,7 +266,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                onChange={(e) => setDetails(e.target.value)}
                className="col-span-3 min-h-[60px]"
                placeholder="Optional: Add any relevant details (e.g., vehicle color, time noticed)."
-               disabled={isLoading}
+               disabled={isLoading || !isOnline}
              />
            </div>
 
@@ -264,7 +282,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                             variant="outline"
                             size="sm"
                             onClick={() => fileInputRef.current?.click()}
-                            disabled={isLoading}
+                            disabled={isLoading || !isOnline}
                             className="flex-shrink-0"
                         >
                             {photoPreview ? <ImagePlus className="mr-2 h-4 w-4" /> : <Camera className="mr-2 h-4 w-4" />}
@@ -278,7 +296,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                             ref={fileInputRef}
                             onChange={handleFileChange}
                             className="hidden" // Hide the default input
-                            disabled={isLoading}
+                            disabled={isLoading || !isOnline}
                         />
                         {photoPreview ? (
                             <div className="relative h-10 w-16 rounded border overflow-hidden">
@@ -298,7 +316,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
             <Alert variant="default" className="col-span-4 mt-2 bg-blue-50 border-blue-200">
                 <Info className="h-4 w-4 text-blue-600" />
                  <AlertDescription className="text-xs text-blue-800">
-                     Submitting this report helps us manage parking efficiency. False reports may affect your account status. The license plate will be checked against official records (e.g., RTSA in Zambia) where available.
+                     Submitting this report helps us manage parking efficiency. False reports may affect your account status. The license plate will be checked against official records (e.g., RTSA in Zambia) where available (requires internet).
                  </AlertDescription>
              </Alert>
 
@@ -308,8 +326,8 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || !plateNumber || isCheckingPlate}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          <Button onClick={handleSubmit} disabled={isLoading || !plateNumber || isCheckingPlate || !isOnline}>
+             {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Submit Report
           </Button>
         </DialogFooter>

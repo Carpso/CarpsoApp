@@ -28,10 +28,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="light">
+    <html lang="en" className="light">{/* Force light theme for now */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background font-sans`}>
-         <AppStateProvider> {/* Wrap with the provider */}
-            <div className="relative flex min-h-screen flex-col pb-16 md:pb-0"> {/* Add padding-bottom for BottomNavBar on mobile */}
+         <AppStateProvider>{/* Wrap with the provider */}
+            <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">{/* Add padding-bottom for BottomNavBar on mobile */}
                <Header />
                <main className="flex-1">{children}</main>
                {/* BottomNavBar is now conditionally rendered inside ParkingLotManager based on context */}

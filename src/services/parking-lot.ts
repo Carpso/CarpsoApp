@@ -52,26 +52,87 @@ const sampleParkingLots: ParkingLot[] = [
 /**
  * Asynchronously retrieves a list of available parking lots.
  * In a real application, this would fetch data from a backend API or database.
+ * Includes basic offline caching support using localStorage.
  *
  * @returns A promise that resolves to an array of ParkingLot objects.
  */
 export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  const cacheKey = 'cachedParkingLots';
+  const cacheTimestampKey = 'cachedParkingLotsTimestamp';
+  const maxCacheAge = 60 * 60 * 1000; // 1 hour in milliseconds
+  let isOnline = true; // Assume online by default
 
-  // TODO: Replace with actual data fetching logic
-  // For now, return the sample data with current occupancy simulation
-   const lotsWithOccupancy = sampleParkingLots.map(lot => ({
-       ...lot,
-       // Simulate current occupancy if not present
-       currentOccupancy: lot.currentOccupancy ?? Math.floor(Math.random() * lot.capacity * 0.9) // Simulate up to 90% occupancy
-   }));
+  // Check online status (client-side only)
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+    isOnline = navigator.onLine;
+  }
 
-  return lotsWithOccupancy;
+  if (isOnline) {
+    try {
+      console.log("Fetching fresh parking lots...");
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Simulate fetching fresh data and adding occupancy
+      const lotsWithOccupancy = sampleParkingLots.map(lot => ({
+        ...lot,
+        currentOccupancy: lot.currentOccupancy ?? Math.floor(Math.random() * lot.capacity * 0.9)
+      }));
+
+      // Cache the fresh data if on client
+      if (typeof window !== 'undefined') {
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify(lotsWithOccupancy));
+            localStorage.setItem(cacheTimestampKey, Date.now().toString());
+            console.log("Cached fresh parking lots.");
+        } catch (e) {
+             console.error("Failed to cache parking lots:", e); // Handle potential storage errors
+        }
+      }
+      return lotsWithOccupancy;
+
+    } catch (error) {
+      console.error("Online fetch failed, attempting to use cache:", error);
+      // Fallback to cache if online fetch fails
+      if (typeof window !== 'undefined') {
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+          console.warn("Returning cached data due to online fetch failure.");
+          return JSON.parse(cachedData);
+        }
+      }
+      // If online fetch fails AND cache is unavailable, re-throw the error
+      throw error;
+    }
+  } else {
+    // Offline: Try to load from cache
+    console.log("Offline: Attempting to load parking lots from cache...");
+    if (typeof window !== 'undefined') {
+      const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
+      const cachedData = localStorage.getItem(cacheKey);
+
+      if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
+        console.log("Using valid cached parking lots (offline).");
+        return JSON.parse(cachedData);
+      } else {
+        console.warn("Offline: Cache is old or empty.");
+        // Optionally return empty array or throw error depending on desired offline behavior
+         return []; // Return empty array if cache is invalid/missing offline
+        // throw new Error("Offline and no valid cached data available.");
+      }
+    } else {
+       console.warn("Offline: localStorage not available.");
+       // Server-side offline scenario? Might return empty or throw.
+       return [];
+       // throw new Error("Offline and cache unavailable.");
+    }
+  }
 }
+
 
 /**
  * Asynchronously retrieves details for a specific parking lot.
+ * (Note: This function currently lacks offline caching, consider adding if needed)
  *
  * @param lotId The ID of the parking lot to retrieve.
  * @returns A promise that resolves to a ParkingLot object or null if not found.
@@ -93,6 +154,7 @@ export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | 
 }
 
 // Mock function to update services for a lot (Admin/Owner)
+// (Note: This function inherently requires an online connection)
 export async function updateParkingLotServices(lotId: string, services: ParkingLotService[]): Promise<boolean> {
     console.log(`Simulating update services for lot ${lotId}:`, services);
     await new Promise(resolve => setTimeout(resolve, 800));

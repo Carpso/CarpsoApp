@@ -3,17 +3,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Compass, ShieldCheck, UserCircle } from 'lucide-react';
+import { Home, Compass, ShieldCheck, UserCircle, WifiOff } from 'lucide-react'; // Added WifiOff
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import React from 'react';
+import React, { useContext } from 'react'; // Added useContext
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 
 interface BottomNavBarProps {
-  isAuthenticated: boolean;
-  userRole: string;
-  userName?: string | null;
-  userAvatarUrl?: string | null;
+  // isAuthenticated, userRole, etc. are now taken from context
   onAuthClick: () => void; // Keep for Sign In button
 }
 
@@ -26,13 +24,8 @@ const adminItem = { href: '/admin', label: 'Admin', icon: ShieldCheck };
 const profileItem = { href: '/profile', label: 'Profile', icon: UserCircle }; // Link target
 
 
-export default function BottomNavBar({
-    isAuthenticated,
-    userRole,
-    userName,
-    userAvatarUrl,
-    onAuthClick,
-}: BottomNavBarProps) {
+export default function BottomNavBar({ onAuthClick }: BottomNavBarProps) {
+  const { isAuthenticated, userRole, userName, userAvatarUrl, isOnline } = useContext(AppStateContext)!; // Get context values
   const pathname = usePathname();
 
   const navItems = [...navItemsBase];
@@ -46,6 +39,12 @@ export default function BottomNavBar({
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
+       {/* Offline Indicator Banner */}
+       {!isOnline && (
+           <div className="bg-destructive text-destructive-foreground text-xs text-center py-1 px-2 flex items-center justify-center gap-1">
+               <WifiOff className="h-3 w-3" /> Offline Mode
+           </div>
+       )}
       <div className="container mx-auto flex h-16 max-w-md items-center justify-around px-2">
         {/* Map Navigation Items */}
         {navItems.map((item) => {

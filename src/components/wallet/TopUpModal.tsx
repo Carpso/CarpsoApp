@@ -1,7 +1,7 @@
 // src/components/wallet/TopUpModal.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react'; // Added useContext
 import {
   Dialog,
   DialogContent,
@@ -15,10 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, PlusCircle, Smartphone, CreditCard } from 'lucide-react';
+import { Loader2, PlusCircle, Smartphone, CreditCard, WifiOff } from 'lucide-react'; // Added WifiOff
 import { useToast } from '@/hooks/use-toast';
 import { topUpWallet } from '@/services/wallet-service';
 import { cn } from '@/lib/utils';
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 
 interface TopUpModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export default function TopUpModal({
     currency,
     onSuccess
 }: TopUpModalProps) {
+  const { isOnline } = useContext(AppStateContext)!; // Get online status
   const [amount, setAmount] = useState<number | ''>('');
   const [selectedMethod, setSelectedMethod] = useState<string>(PAYMENT_METHODS[0].value);
   const [customAmountSelected, setCustomAmountSelected] = useState(false);
@@ -66,6 +68,10 @@ export default function TopUpModal({
   };
 
   const handleSubmit = async () => {
+    if (!isOnline) {
+         toast({ title: "Offline", description: "Cannot top up wallet while offline.", variant: "destructive" });
+         return;
+    }
     if (amount === '' || amount <= 0) {
       toast({ title: "Invalid Amount", description: "Please enter a valid positive amount.", variant: "destructive" });
       return;
@@ -109,6 +115,7 @@ export default function TopUpModal({
           </DialogTitle>
           <DialogDescription>
              Current Balance: {currency} {currentBalance.toFixed(2)}. Add funds to your Carpso wallet.
+              {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +130,7 @@ export default function TopUpModal({
                           variant={amount === preset && !customAmountSelected ? 'default' : 'outline'}
                           size="sm"
                           onClick={() => handlePresetAmountClick(preset)}
-                          disabled={isLoading}
+                          disabled={isLoading || !isOnline}
                           className="flex-1 min-w-[60px]"
                       >
                          {preset}
@@ -136,7 +143,7 @@ export default function TopUpModal({
                     value={amount}
                     onChange={handleAmountChange}
                     placeholder={`Or enter custom amount`}
-                    disabled={isLoading}
+                    disabled={isLoading || !isOnline}
                     min="1" // Example minimum top-up
                     step="0.01"
                     className={cn("mt-2", customAmountSelected && "border-primary ring-1 ring-primary")}
@@ -146,7 +153,7 @@ export default function TopUpModal({
            {/* Payment Method Selection */}
            <div className="space-y-2">
                 <Label>Payment Method</Label>
-                <RadioGroup value={selectedMethod} onValueChange={handleMethodChange} disabled={isLoading}>
+                <RadioGroup value={selectedMethod} onValueChange={handleMethodChange} disabled={isLoading || !isOnline}>
                      {PAYMENT_METHODS.map(method => {
                          const Icon = method.icon;
                          return (
@@ -156,10 +163,10 @@ export default function TopUpModal({
                                 className={cn(
                                     "flex items-center space-x-3 p-3 border rounded-md cursor-pointer hover:bg-muted/50 transition-colors",
                                     selectedMethod === method.value && "border-primary ring-1 ring-primary bg-muted/50",
-                                    isLoading && "opacity-50 cursor-not-allowed"
+                                    (isLoading || !isOnline) && "opacity-50 cursor-not-allowed"
                                 )}
                              >
-                                <RadioGroupItem value={method.value} id={method.value} disabled={isLoading} />
+                                <RadioGroupItem value={method.value} id={method.value} disabled={isLoading || !isOnline} />
                                 <Icon className="h-5 w-5 text-muted-foreground" />
                                 <span className="font-medium">{method.label}</span>
                              </Label>
@@ -176,8 +183,8 @@ export default function TopUpModal({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || amount === '' || amount <= 0}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0}>
+             {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Proceed to Top Up {currency} {amount || 0}
           </Button>
         </DialogFooter>

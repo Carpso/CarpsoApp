@@ -1,7 +1,7 @@
 // src/components/wallet/SendMoneyModal.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react'; // Added useContext
 import {
   Dialog,
   DialogContent,
@@ -15,10 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowUpRight, User, Phone, Users } from 'lucide-react';
+import { Loader2, ArrowUpRight, User, Phone, Users, WifiOff } from 'lucide-react'; // Added WifiOff
 import { useToast } from '@/hooks/use-toast';
 import { sendMoney, getMockUsersForTransfer } from '@/services/wallet-service'; // Import service
 import { cn } from '@/lib/utils';
+import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 
 interface SendMoneyModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ export default function SendMoneyModal({
     currency,
     onSuccess
 }: SendMoneyModalProps) {
+  const { isOnline } = useContext(AppStateContext)!; // Get online status
   const [recipientType, setRecipientType] = useState<'user' | 'phone'>('user');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [recipientPhone, setRecipientPhone] = useState<string>('');
@@ -52,9 +54,9 @@ export default function SendMoneyModal({
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const { toast } = useToast();
 
-   // Fetch mock users when component mounts or modal opens
+   // Fetch mock users when component mounts or modal opens (only if online)
    useEffect(() => {
-       if (isOpen) {
+       if (isOpen && isOnline) {
            const fetchUsers = async () => {
                setIsLoadingUsers(true);
                try {
@@ -69,6 +71,9 @@ export default function SendMoneyModal({
                }
            };
            fetchUsers();
+       } else if (isOpen && !isOnline) {
+            setIsLoadingUsers(false);
+            setAvailableUsers([]); // Clear user list if offline
        } else {
            // Reset state when modal closes
            setRecipientType('user');
@@ -78,7 +83,7 @@ export default function SendMoneyModal({
            setNote('');
            setAvailableUsers([]);
        }
-   }, [isOpen, userId, toast]);
+   }, [isOpen, userId, toast, isOnline]); // Add isOnline dependency
 
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,6 +92,11 @@ export default function SendMoneyModal({
   };
 
   const handleSubmit = async () => {
+      if (!isOnline) {
+          toast({ title: "Offline", description: "Cannot send money while offline.", variant: "destructive" });
+          return;
+      }
+
       let recipientIdentifier: string | null = null;
       if (recipientType === 'user' && selectedUserId) {
           recipientIdentifier = selectedUserId;
@@ -138,6 +148,7 @@ export default function SendMoneyModal({
           </DialogTitle>
           <DialogDescription>
              Send funds from your Carpso wallet. Balance: {currency} {currentBalance.toFixed(2)}.
+             {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +159,7 @@ export default function SendMoneyModal({
                     variant={recipientType === 'user' ? 'default' : 'outline'}
                     onClick={() => setRecipientType('user')}
                     className="flex-1"
-                    disabled={isLoading}
+                    disabled={isLoading || !isOnline}
                 >
                    <Users className="mr-2 h-4 w-4" /> Select User
                 </Button>
@@ -156,7 +167,7 @@ export default function SendMoneyModal({
                     variant={recipientType === 'phone' ? 'default' : 'outline'}
                     onClick={() => setRecipientType('phone')}
                     className="flex-1"
-                    disabled={isLoading}
+                    disabled={isLoading || !isOnline}
                 >
                    <Phone className="mr-2 h-4 w-4" /> Enter Phone
                 </Button>
@@ -167,12 +178,13 @@ export default function SendMoneyModal({
             {recipientType === 'user' ? (
                 <div className="space-y-1">
                     <Label htmlFor="recipientUser">Select Recipient User</Label>
-                    <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoading || isLoadingUsers}>
+                    <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoading || isLoadingUsers || !isOnline}>
                         <SelectTrigger id="recipientUser">
-                            <SelectValue placeholder={isLoadingUsers ? "Loading users..." : "Select a user..."} />
+                            <SelectValue placeholder={!isOnline ? "Unavailable Offline" : isLoadingUsers ? "Loading users..." : "Select a user..."} />
                         </SelectTrigger>
                         <SelectContent>
-                            {availableUsers.length > 0 ? availableUsers.map(user => (
+                             {!isOnline ? <SelectItem value="none" disabled>Unavailable Offline</SelectItem> :
+                             availableUsers.length > 0 ? availableUsers.map(user => (
                                 <SelectItem key={user.id} value={user.id}>
                                     {user.name} ({user.id.substring(0, 8)}...)
                                 </SelectItem>
@@ -189,7 +201,7 @@ export default function SendMoneyModal({
                         value={recipientPhone}
                         onChange={(e) => setRecipientPhone(e.target.value)}
                         placeholder="e.g., 09XXXXXXXX"
-                        disabled={isLoading}
+                        disabled={isLoading || !isOnline}
                     />
                  </div>
             )}
@@ -204,7 +216,7 @@ export default function SendMoneyModal({
                     value={amount}
                     onChange={handleAmountChange}
                     placeholder="0.00"
-                    disabled={isLoading}
+                    disabled={isLoading || !isOnline}
                     min="0.01" // Example minimum send amount
                     step="0.01"
                     max={currentBalance}
@@ -220,7 +232,7 @@ export default function SendMoneyModal({
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Add a note for the recipient..."
-                    disabled={isLoading}
+                    disabled={isLoading || !isOnline}
                     rows={2}
                 />
            </div>
@@ -231,8 +243,8 @@ export default function SendMoneyModal({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || amount === '' || amount <= 0 || amount > currentBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'phone' && !recipientPhone)}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0 || amount > currentBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'phone' && !recipientPhone)}>
+             {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Send {currency} {amount || 0}
           </Button>
         </DialogFooter>

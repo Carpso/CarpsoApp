@@ -1,7 +1,7 @@
 // src/context/AppStateProvider.tsx
 'use client';
 
-import React, { createContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, ReactNode, useCallback, useEffect } from 'react';
 
 interface UserState {
   isAuthenticated: boolean;
@@ -12,6 +12,7 @@ interface UserState {
 }
 
 interface AppStateContextProps extends UserState {
+  isOnline: boolean; // Added online status
   login: (userId: string, name: string, avatarUrl?: string | null, role?: string | null) => void;
   logout: () => void;
   updateUserProfile: (name: string, avatarUrl?: string | null) => void;
@@ -31,6 +32,28 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
     userAvatarUrl: null,
     userRole: null,
   });
+  const [isOnline, setIsOnline] = useState(true); // Default to true, check on mount
+
+   // Effect to check initial online status and add listeners
+   useEffect(() => {
+     // Ensure this runs only on the client
+     if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+       setIsOnline(navigator.onLine);
+
+       const handleOnline = () => setIsOnline(true);
+       const handleOffline = () => setIsOnline(false);
+
+       window.addEventListener('online', handleOnline);
+       window.addEventListener('offline', handleOffline);
+
+       // Cleanup listeners on component unmount
+       return () => {
+         window.removeEventListener('online', handleOnline);
+         window.removeEventListener('offline', handleOffline);
+       };
+     }
+   }, []);
+
 
   const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: string | null) => {
     // In a real app, you'd verify credentials/token before setting state
@@ -53,6 +76,12 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
       userRole: null,
     });
     // Clear persisted login state if needed
+    // Clear cached data on logout
+    if (typeof window !== 'undefined') {
+        localStorage.removeItem('cachedParkingLots');
+        localStorage.removeItem('cachedUserWallet');
+        // Add other cache clears as needed
+    }
   }, []);
 
    const updateUserProfile = useCallback((name: string, avatarUrl?: string | null) => {
@@ -65,7 +94,7 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
    }, []);
 
   return (
-    <AppStateContext.Provider value={{ ...userState, login, logout, updateUserProfile }}>
+    <AppStateContext.Provider value={{ ...userState, isOnline, login, logout, updateUserProfile }}>
       {children}
     </AppStateContext.Provider>
   );
