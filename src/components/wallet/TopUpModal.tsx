@@ -13,13 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, PlusCircle, Smartphone, CreditCard, WifiOff, Fingerprint, Nfc } from 'lucide-react'; // Added Fingerprint, Nfc
+import { Loader2, PlusCircle, WifiOff, Fingerprint, Nfc, CreditCard, Printer } from 'lucide-react'; // Added Printer icon
 import { useToast } from '@/hooks/use-toast';
 import { topUpWallet } from '@/services/wallet-service';
 import { cn } from '@/lib/utils';
 import { AppStateContext } from '@/context/AppStateProvider';
+import Receipt from '@/components/common/Receipt'; // Import Receipt component
 
 // Import simulated Telco/Bank Logos (replace with actual SVGs/images if needed)
 const MtnLogo = () => <span className="font-bold text-yellow-500">MTN</span>;
@@ -63,6 +63,7 @@ export default function TopUpModal({
   const [customAmountSelected, setCustomAmountSelected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [posStatus, setPosStatus] = useState<string | null>(null); // Status for POS interactions
+  const [lastTransaction, setLastTransaction] = useState<any | null>(null); // Store last successful transaction for receipt
   const { toast } = useToast();
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,7 +82,57 @@ export default function TopUpModal({
       setPosStatus(null); // Reset POS status when method changes
   };
 
+  // --- Simulate Printing ---
+   const handlePrintReceipt = (transaction: any) => {
+       if (!transaction) return;
+
+       // In a real app:
+       // 1. Check if running in a native POS context. If yes, use the POS SDK to print.
+       // 2. Check if running in a native mobile context. If yes, use Bluetooth printer plugin/SDK.
+       // 3. If web-based, generate HTML receipt and use window.print().
+
+       console.log("Simulating print receipt for:", transaction);
+       // Render Receipt component to a hidden iframe or new window for printing
+       const printWindow = window.open('', '_blank', 'height=600,width=400');
+       if (printWindow) {
+            printWindow.document.write('<html><head><title>Print Receipt</title>');
+            // Add minimal styles for printing
+            printWindow.document.write('<style>body{font-family:sans-serif;margin:1rem;}h2,h3{margin-bottom:0.5rem;}p{margin:0.2rem 0;}hr{border:none;border-top:1px dashed #ccc;margin:0.5rem 0;}</style>');
+            printWindow.document.write('</head><body>');
+            // Create a temporary div to render the React component into
+            const receiptContainer = printWindow.document.createElement('div');
+            printWindow.document.body.appendChild(receiptContainer);
+
+            // Use ReactDOM.render (or createRoot for React 18+) to render the component
+            // This is a simplified example; direct DOM manipulation might be easier here
+            // For simplicity, just write the HTML content directly (less clean)
+            const receiptHtml = `
+                <h2>Top-Up Receipt</h2>
+                <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
+                <hr />
+                <p><strong>Amount:</strong> ${transaction.currency} ${transaction.amount.toFixed(2)}</p>
+                <p><strong>Method:</strong> ${transaction.paymentMethodLabel}</p>
+                <hr />
+                <p><strong>New Balance:</strong> ${transaction.currency} ${transaction.newBalance.toFixed(2)}</p>
+                <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
+                <hr />
+                <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
+            `;
+            printWindow.document.body.innerHTML = receiptHtml; // Overwrite body with generated HTML
+            printWindow.document.close(); // Necessary for some browsers
+            printWindow.focus(); // Necessary for some browsers
+            printWindow.print();
+            // printWindow.close(); // Optionally close window after print dialog
+       } else {
+           toast({ title: "Print Error", description: "Could not open print window. Check browser pop-up settings.", variant: "destructive" });
+       }
+
+       toast({ title: "Printing Receipt...", description: "Browser print dialog should open.", duration: 3000 });
+   };
+   // --- End Simulate Printing ---
+
   const handleSubmit = async () => {
+    setLastTransaction(null); // Clear previous transaction before starting
     // Simulate POS interaction for specific methods BEFORE calling the service
     if (selectedMethod.includes('card_') || selectedMethod.includes('fingerprint')) {
         // --- NATIVE POS INTEGRATION REQUIRED ---
@@ -123,11 +174,39 @@ export default function TopUpModal({
 
     try {
       // Pass the specific method value (e.g., 'card_visa_contactless')
-      const newBalance = await topUpWallet(userId, amount, selectedMethod);
+      const { newBalance, transaction } = await topUpWallet(userId, amount, selectedMethod); // Assume service returns transaction details
+
+      // Store transaction details for printing
+       const transactionForReceipt = {
+           ...transaction,
+           newBalance, // Add new balance for receipt context
+           currency,
+           paymentMethodLabel: methodLabel,
+       };
+       setLastTransaction(transactionForReceipt);
+
+
       toast({
           title: "Top Up Successful",
-          description: `${currency} ${amount.toFixed(2)} added via ${methodLabel}. New balance: ${currency} ${newBalance.toFixed(2)}`,
+          description: (
+             <div className="flex flex-col gap-2">
+                 <span>
+                    {currency} {amount.toFixed(2)} added via {methodLabel}. New balance: {currency} {newBalance.toFixed(2)}
+                 </span>
+                 {/* Add Print Button to Toast */}
+                 <Button
+                     variant="secondary"
+                     size="sm"
+                     onClick={() => handlePrintReceipt(transactionForReceipt)}
+                     className="mt-2"
+                 >
+                    <Printer className="mr-2 h-4 w-4"/> Print Receipt
+                 </Button>
+             </div>
+          ),
+          duration: 8000, // Increase duration to allow printing
       });
+
       onSuccess(); // Refresh wallet data in profile
       onClose(); // Close modal
       // Reset form state after closing
@@ -261,5 +340,3 @@ export default function TopUpModal({
     </Dialog>
   );
 }
-
-    

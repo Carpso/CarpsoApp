@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, UserPlus, User, Phone, Car, DollarSign, WifiOff } from 'lucide-react';
+import { Loader2, UserPlus, User, Phone, Car, DollarSign, WifiOff, Printer } from 'lucide-react'; // Added Printer
 import { useToast } from '@/hooks/use-toast';
 import { payForOtherUser, getMockUsersForTransfer } from '@/services/wallet-service'; // Import service
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import Receipt from '@/components/common/Receipt'; // Import Receipt component
 
 interface PayForOtherModalProps {
   isOpen: boolean;
@@ -50,6 +51,7 @@ export default function PayForOtherModal({
   const [isLoading, setIsLoading] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<MockUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<any | null>(null); // Store transaction for receipt
   const { toast } = useToast();
 
    // Fetch mock users when component mounts or modal opens (only if online)
@@ -80,8 +82,42 @@ export default function PayForOtherModal({
            setAmount('');
            setParkingRecordId('');
            setAvailableUsers([]);
+           setLastTransaction(null); // Clear transaction on close
        }
    }, [isOpen, payerId, toast, isOnline]); // Add isOnline dependency
+
+   // --- Simulate Printing ---
+    const handlePrintReceipt = (transaction: any) => {
+        if (!transaction) return;
+        console.log("Simulating print receipt for:", transaction);
+        const printWindow = window.open('', '_blank', 'height=600,width=400');
+        if (printWindow) {
+             printWindow.document.write('<html><head><title>Print Receipt</title>');
+             printWindow.document.write('<style>body{font-family:sans-serif;margin:1rem;}h2,h3{margin-bottom:0.5rem;}p{margin:0.2rem 0;}hr{border:none;border-top:1px dashed #ccc;margin:0.5rem 0;}</style>');
+             printWindow.document.write('</head><body>');
+             const receiptHtml = `
+                 <h2>Payment Receipt (For Other)</h2>
+                 <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
+                 <hr />
+                 <p><strong>Amount Paid:</strong> ${transaction.currency} ${Math.abs(transaction.amount).toFixed(2)}</p>
+                 <p><strong>For User/Plate:</strong> ${transaction.relatedUserId || transaction.targetIdentifier}</p>
+                 ${transaction.parkingRecordId ? `<p><strong>Parking Ref:</strong> ${transaction.parkingRecordId.substring(0, 10)}...</p>` : ''}
+                 <hr />
+                 <p><strong>Your New Balance:</strong> ${transaction.currency} ${transaction.newBalance.toFixed(2)}</p>
+                 <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
+                 <hr />
+                 <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
+             `;
+             printWindow.document.body.innerHTML = receiptHtml;
+             printWindow.document.close();
+             printWindow.focus();
+             printWindow.print();
+        } else {
+            toast({ title: "Print Error", description: "Could not open print window.", variant: "destructive" });
+        }
+        toast({ title: "Printing Receipt...", description: "Browser print dialog should open.", duration: 3000 });
+    };
+    // --- End Simulate Printing ---
 
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,6 +126,7 @@ export default function PayForOtherModal({
   };
 
   const handleSubmit = async () => {
+      setLastTransaction(null); // Clear previous transaction
     if (!isOnline) {
         toast({ title: "Offline", description: "Cannot complete payment while offline.", variant: "destructive" });
         return;
@@ -126,10 +163,35 @@ export default function PayForOtherModal({
 
     try {
       // Use targetIdentifier (which could be userId or plate number)
-      await payForOtherUser(payerId, targetIdentifier, recordIdToPay, amount);
+      const { newBalance, transaction } = await payForOtherUser(payerId, targetIdentifier, recordIdToPay, amount); // Assume service returns transaction
+
+       const transactionForReceipt = {
+           ...transaction,
+           newBalance,
+           currency,
+           targetIdentifier: targetIdentifier, // Pass identifier used
+       };
+       setLastTransaction(transactionForReceipt);
+
+
       toast({
           title: "Payment Successful",
-          description: `${currency} ${amount.toFixed(2)} paid for ${targetIdentifier}. Your new balance: ${currency} ${(payerBalance - amount).toFixed(2)}`,
+          description: (
+              <div className="flex flex-col gap-2">
+                 <span>
+                    {currency} {amount.toFixed(2)} paid for {targetIdentifier}. Your new balance: {currency} {newBalance.toFixed(2)}
+                 </span>
+                 <Button
+                     variant="secondary"
+                     size="sm"
+                     onClick={() => handlePrintReceipt(transactionForReceipt)}
+                     className="mt-2"
+                 >
+                    <Printer className="mr-2 h-4 w-4"/> Print Receipt
+                 </Button>
+              </div>
+          ),
+           duration: 8000,
       });
       onSuccess(); // Refresh wallet data in profile
       onClose(); // Close modal

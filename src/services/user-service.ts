@@ -47,7 +47,7 @@ export interface PointsTransaction {
 
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
-const userGamificationData: Record<string, UserGamification> = {
+let userGamificationData: Record<string, UserGamification> = {
     // Example data for a user (keys would be actual user IDs)
     'user_abc123': {
         points: 150,
@@ -175,10 +175,14 @@ export async function updateCarpoolEligibility(userId: string, isEligible: boole
  * @param senderId The ID of the user sending points.
  * @param recipientId The ID of the user receiving points.
  * @param pointsToTransfer The number of points to transfer.
- * @returns A promise resolving to an object containing the sender's and recipient's new point balances.
+ * @returns A promise resolving to an object containing the sender's and recipient's new point balances and the created transaction.
  * @throws Error if sender or recipient is not found, or if sender has insufficient points.
  */
-export async function transferPoints(senderId: string, recipientId: string, pointsToTransfer: number): Promise<{ senderNewPoints: number; recipientNewPoints: number }> {
+export async function transferPoints(
+    senderId: string,
+    recipientId: string,
+    pointsToTransfer: number
+): Promise<{ senderNewPoints: number; recipientNewPoints: number; transaction: PointsTransaction }> {
     await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
 
     if (pointsToTransfer <= 0) {
@@ -223,8 +227,10 @@ export async function transferPoints(senderId: string, recipientId: string, poin
     console.log(`Transferred ${pointsToTransfer} points from ${senderId} to ${recipientId}.`);
     console.log(`Sender new balance: ${senderData.points}. Recipient new balance: ${userGamificationData[recipientId].points}`);
 
-    return { senderNewPoints: senderData.points, recipientNewPoints: userGamificationData[recipientId].points };
+    // Return sender's transaction for receipt purposes
+    return { senderNewPoints: senderData.points, recipientNewPoints: userGamificationData[recipientId].points, transaction: senderTx };
 }
+
 
 /**
  * Fetches the points transaction history for a user.

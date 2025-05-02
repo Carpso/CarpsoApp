@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Gift, Sparkles, User, WifiOff } from 'lucide-react';
+import { Loader2, Gift, Sparkles, User, WifiOff, Printer } from 'lucide-react'; // Added Printer
 import { useToast } from '@/hooks/use-toast';
 import { transferPoints, getMockUsersForTransfer } from '@/services/user-service'; // Import transfer service and user fetcher
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import Receipt from '@/components/common/Receipt'; // Import Receipt component
 
 interface TransferPointsModalProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ export default function TransferPointsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<MockUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<any | null>(null); // Store transaction for receipt
   const { toast } = useToast();
 
    // Fetch mock users when component mounts or modal opens (only if online)
@@ -72,8 +74,41 @@ export default function TransferPointsModal({
            setSelectedUserId('');
            setAmount('');
            setAvailableUsers([]);
+           setLastTransaction(null); // Clear transaction on close
        }
    }, [isOpen, senderId, toast, isOnline]); // Add isOnline dependency
+
+   // --- Simulate Printing ---
+    const handlePrintReceipt = (transaction: any) => {
+        if (!transaction) return;
+        console.log("Simulating print receipt for:", transaction);
+        const printWindow = window.open('', '_blank', 'height=600,width=400');
+        if (printWindow) {
+             printWindow.document.write('<html><head><title>Print Receipt</title>');
+             printWindow.document.write('<style>body{font-family:sans-serif;margin:1rem;}h2,h3{margin-bottom:0.5rem;}p{margin:0.2rem 0;}hr{border:none;border-top:1px dashed #ccc;margin:0.5rem 0;}</style>');
+             printWindow.document.write('</head><body>');
+             const receiptHtml = `
+                 <h2>Points Transfer Receipt</h2>
+                 <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
+                 <hr />
+                 <p><strong>Points Sent:</strong> ${transaction.points}</p>
+                 <p><strong>To:</strong> ${transaction.recipientId}</p>
+                 <hr />
+                 <p><strong>Your New Points Balance:</strong> ${transaction.senderNewPoints}</p>
+                 <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
+                 <hr />
+                 <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
+             `;
+             printWindow.document.body.innerHTML = receiptHtml;
+             printWindow.document.close();
+             printWindow.focus();
+             printWindow.print();
+        } else {
+            toast({ title: "Print Error", description: "Could not open print window.", variant: "destructive" });
+        }
+        toast({ title: "Printing Receipt...", description: "Browser print dialog should open.", duration: 3000 });
+    };
+    // --- End Simulate Printing ---
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -87,6 +122,7 @@ export default function TransferPointsModal({
   };
 
   const handleSubmit = async () => {
+      setLastTransaction(null); // Clear previous transaction
     if (!isOnline) {
          toast({ title: "Offline", description: "Cannot transfer points while offline.", variant: "destructive" });
          return;
@@ -107,10 +143,33 @@ export default function TransferPointsModal({
     setIsLoading(true);
 
     try {
-      await transferPoints(senderId, selectedUserId, amount);
+      // Assuming transferPoints now returns the transaction details
+      const { senderNewPoints, recipientNewPoints, transaction } = await transferPoints(senderId, selectedUserId, amount);
+
+       const transactionForReceipt = {
+           ...transaction, // Contains id, timestamp, senderId, recipientId, points, type
+           senderNewPoints,
+       };
+       setLastTransaction(transactionForReceipt);
+
       toast({
           title: "Points Transferred Successfully",
-          description: `${amount} points sent to ${availableUsers.find(u => u.id === selectedUserId)?.name || selectedUserId}.`,
+          description: (
+             <div className="flex flex-col gap-2">
+                 <span>
+                    {amount} points sent to {availableUsers.find(u => u.id === selectedUserId)?.name || selectedUserId}.
+                 </span>
+                 <Button
+                     variant="secondary"
+                     size="sm"
+                     onClick={() => handlePrintReceipt(transactionForReceipt)}
+                     className="mt-2"
+                 >
+                    <Printer className="mr-2 h-4 w-4"/> Print Receipt
+                 </Button>
+             </div>
+          ),
+           duration: 8000,
       });
       onSuccess(); // Refresh points data in profile
       onClose(); // Close modal

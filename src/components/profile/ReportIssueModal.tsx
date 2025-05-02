@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info, WifiOff } from 'lucide-react'; // Added WifiOff
+import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info, WifiOff, Printer } from 'lucide-react'; // Added Printer
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import Receipt from '@/components/common/Receipt'; // Import Receipt component
 
 // Extend ParkingHistoryEntry if needed, or use props directly
 interface ParkingHistoryEntry {
@@ -47,20 +48,23 @@ const submitParkingIssueReport = async (data: {
     reportedPlateNumber: string;
     details: string;
     photoDataUri?: string;
-}): Promise<{ success: boolean; message: string; caseId?: string }> => {
+    timestamp: string; // Add timestamp for receipt
+}): Promise<{ success: boolean; message: string; caseId?: string; timestamp: string }> => {
     console.log("Submitting issue report:", data);
     await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
 
     // Simulate success/failure and potential external API interaction
     const isPlateValid = data.reportedPlateNumber.length > 3; // Basic validation
     const apiCheckSuccess = Math.random() > 0.2; // Simulate RTSA/authority check
+    const caseId = "REP" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
     if (isPlateValid && apiCheckSuccess) {
-        return { success: true, message: "Report submitted successfully. Case ID: REP" + Math.random().toString(36).substring(2, 8).toUpperCase(), caseId: "REP" + Math.random().toString(36).substring(2, 8).toUpperCase() };
+        return { success: true, message: `Report submitted successfully. Case ID: ${caseId}`, caseId: caseId, timestamp: data.timestamp };
     } else if (!isPlateValid) {
-        return { success: false, message: "Invalid license plate number provided." };
+        return { success: false, message: "Invalid license plate number provided.", timestamp: data.timestamp };
     } else {
-        return { success: false, message: "Could not verify license plate with authority. Report submitted with limited details." };
+        // Still submit, but with limited details acknowledgement
+        return { success: true, message: `Could not verify plate with authority. Report submitted with limited details. Case ID: ${caseId}`, caseId: caseId, timestamp: data.timestamp };
     }
 };
 
@@ -128,6 +132,42 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         }
    };
 
+   // --- Simulate Printing Report Confirmation ---
+    const handlePrintReportConfirmation = (reportData: any) => {
+        if (!reportData) return;
+
+        console.log("Simulating print report confirmation:", reportData);
+        const printWindow = window.open('', '_blank', 'height=600,width=400');
+        if (printWindow) {
+            printWindow.document.write('<html><head><title>Issue Report Confirmation</title>');
+            printWindow.document.write('<style>body{font-family:sans-serif;margin:1rem;}h2,h3{margin-bottom:0.5rem;}p{margin:0.2rem 0;}hr{border:none;border-top:1px dashed #ccc;margin:0.5rem 0;}</style>');
+            printWindow.document.write('</head><body>');
+            const receiptHtml = `
+                <h2>Issue Report Confirmation</h2>
+                <p><strong>Date:</strong> ${new Date(reportData.timestamp).toLocaleString()}</p>
+                <p><strong>Case ID:</strong> ${reportData.caseId || 'N/A'}</p>
+                <hr />
+                <p><strong>Reported Spot:</strong> ${reportData.spotId}</p>
+                <p><strong>Location:</strong> ${reportData.locationName}</p>
+                <p><strong>Reported Plate:</strong> ${reportData.reportedPlateNumber}</p>
+                ${plateCheckResult && plateCheckResult !== 'error' && isOnline ? `<p><strong>Vehicle (Simulated):</strong> ${plateCheckResult.vehicleMake} - Owner: ${plateCheckResult.registeredOwner}</p>` : ''}
+                ${details ? `<p><strong>Details:</strong> ${details}</p>` : ''}
+                ${photoPreview ? '<p><i>Photo submitted.</i></p>' : ''}
+                <hr />
+                 <p style="text-align:center; font-size: 0.8em;">Keep this confirmation for your records.</p>
+                 <p style="text-align:center; font-size: 0.8em;">Thank you for helping improve Carpso!</p>
+            `;
+            printWindow.document.body.innerHTML = receiptHtml;
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+        } else {
+            toast({ title: "Print Error", description: "Could not open print window.", variant: "destructive" });
+        }
+        toast({ title: "Printing Confirmation...", description: "Browser print dialog should open.", duration: 3000 });
+    };
+    // --- End Simulate Printing ---
+
 
   const handleSubmit = async () => {
     if (!isOnline) {
@@ -153,6 +193,8 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         }
     }
 
+    const reportTimestamp = new Date().toISOString();
+
     try {
       const result = await submitParkingIssueReport({
         reservationId: reservation.id,
@@ -162,10 +204,38 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         reportedPlateNumber: plateNumber,
         details: details,
         photoDataUri: photoDataUri,
+        timestamp: reportTimestamp, // Pass timestamp
       });
 
       if (result.success) {
-        toast({ title: "Report Submitted", description: result.message });
+         const reportDataForReceipt = {
+             timestamp: result.timestamp,
+             caseId: result.caseId,
+             spotId: reservation.spotId,
+             locationName: reservation.locationName,
+             reportedPlateNumber: plateNumber,
+             details: details,
+             photoSubmitted: !!photoPreview,
+             plateCheckResult: plateCheckResult, // Include check result for printing context
+         };
+
+        toast({
+            title: "Report Submitted",
+            description: (
+                <div className="flex flex-col gap-2">
+                     <span>{result.message}</span>
+                     <Button
+                         variant="secondary"
+                         size="sm"
+                         onClick={() => handlePrintReportConfirmation(reportDataForReceipt)}
+                         className="mt-2"
+                     >
+                        <Printer className="mr-2 h-4 w-4"/> Print Confirmation
+                     </Button>
+                </div>
+            ),
+            duration: 8000,
+        });
         onClose(); // Close modal on success
         // Reset form state after a delay
          setTimeout(() => {
@@ -244,7 +314,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                          Error checking license plate with authority. Report can still be submitted.
                      </AlertDescription>
                  </Alert>
-            )}
+             )}
              {!isOnline && (
                   <Alert variant="warning" className="col-span-4 mt-[-8px]">
                      <WifiOff className="h-4 w-4" />
