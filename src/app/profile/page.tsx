@@ -14,10 +14,10 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket } from 'lucide-react'; // Added Printer, UsersRound, Copy, Ticket
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins, Link as LinkIcon } from 'lucide-react'; // Added LinkIcon
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
-import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode, awardPoints, redeemPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions, redeemPoints
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
 import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency, getPaymentMethods, updatePaymentMethods, PaymentMethod } from '@/services/wallet-service'; // Import wallet service, added currency functions, payment methods
@@ -32,6 +32,9 @@ import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as Dia
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
 import { convertToCSV, getParkingRecords, ParkingRecord } from '@/services/pricing-service'; // Import parking records functions
 import PaymentMethodModal from '@/components/profile/PaymentMethodModal'; // Import PaymentMethodModal
+
+// Define Point to Kwacha Conversion Rate
+const POINTS_TO_KWACHA_RATE = 0.10; // Example: 1 point = K 0.10
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
@@ -64,6 +67,14 @@ export interface Vehicle { // Export Vehicle interface
     isPrimary: boolean;
 }
 
+// Interface for Linked Loyalty Program (Placeholder)
+interface LinkedLoyaltyProgram {
+    id: string;
+    programName: string;
+    membershipId: string;
+    linkedDate: string;
+}
+
 
 // --- Cache Keys ---
 const CACHE_KEYS = {
@@ -79,6 +90,7 @@ const CACHE_KEYS = {
     bookmarks: (userId: string) => `cachedUserBookmarks_${userId}`,
     referralHistory: (userId: string) => `cachedReferralHistory_${userId}`, // Added referral history cache
     exchangeRates: 'cachedExchangeRates', // Cache key for exchange rates
+    linkedLoyalty: (userId: string) => `cachedLinkedLoyalty_${userId}`, // Cache for loyalty programs
     timestampSuffix: '_timestamp',
 };
 
@@ -112,6 +124,30 @@ const setCachedData = <T>(key: string, data: T) => {
         // Handle potential storage full errors
     }
 };
+
+// --- Daily Login Check ---
+const checkAndAwardDailyLoginPoints = async (userId: string): Promise<number | null> => {
+    if (typeof window === 'undefined') return null;
+    const lastLoginKey = `lastLoginTimestamp_${userId}`;
+    const lastLoginTimestamp = localStorage.getItem(lastLoginKey);
+    const today = new Date().toDateString(); // Get date part only
+
+    if (!lastLoginTimestamp || new Date(parseInt(lastLoginTimestamp)).toDateString() !== today) {
+        // First login today or first login ever
+        try {
+            const pointsAwarded = 5; // Example: 5 points for daily login
+            const newTotal = await awardPoints(userId, pointsAwarded, 'Daily Login Bonus'); // Pass description
+            localStorage.setItem(lastLoginKey, Date.now().toString());
+            console.log(`Awarded ${pointsAwarded} daily login points to user ${userId}.`);
+            return newTotal; // Return new total points
+        } catch (error) {
+            console.error("Failed to award daily login points:", error);
+            return null;
+        }
+    }
+    return null; // Already logged in today
+};
+
 
 // Mock Data Fetching Functions (Replace with real API calls)
 const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
@@ -221,6 +257,18 @@ const fetchExchangeRates = async (): Promise<Record<string, number>> => {
     return rates;
 }
 
+// --- Fetch Linked Loyalty Programs (Placeholder) ---
+const fetchLinkedLoyaltyPrograms = async (userId: string): Promise<LinkedLoyaltyProgram[]> => {
+    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate API call
+    // Replace with actual API call to fetch linked programs
+    const mockPrograms = [
+        { id: 'loy_1', programName: 'GroceryMart Rewards', membershipId: 'GM123456', linkedDate: '2024-07-01T00:00:00Z' },
+        { id: 'loy_2', programName: 'AirMiles Zambia', membershipId: 'AM987654', linkedDate: '2024-06-15T00:00:00Z' },
+    ];
+    setCachedData(CACHE_KEYS.linkedLoyalty(userId), mockPrograms);
+    return mockPrograms;
+}
+
 
 // Mock Update Functions
 const updateUserDetails = async (userId: string, updates: Partial<UserDetails>): Promise<UserDetails> => {
@@ -257,6 +305,39 @@ const updateUserPaymentMethods = async (userId: string, methods: PaymentMethod[]
     setCachedData(CACHE_KEYS.paymentMethods(userId), updatedMethods); // Update cache
     return updatedMethods;
 };
+
+// --- Link Loyalty Program (Placeholder) ---
+const linkLoyaltyProgram = async (userId: string, programName: string, membershipId: string): Promise<LinkedLoyaltyProgram | null> => {
+    await new Promise(resolve => setTimeout(resolve, 600)); // Simulate API call
+    // In a real app, validate credentials with the loyalty provider API
+    const success = Math.random() > 0.2; // Simulate success
+    if (success) {
+        const newLink: LinkedLoyaltyProgram = {
+            id: `loy_${Date.now()}`,
+            programName,
+            membershipId,
+            linkedDate: new Date().toISOString(),
+        };
+        // Update mock/cached data (replace with real update logic)
+        const currentPrograms = getCachedData<LinkedLoyaltyProgram[]>(CACHE_KEYS.linkedLoyalty(userId)) || [];
+        setCachedData(CACHE_KEYS.linkedLoyalty(userId), [...currentPrograms, newLink]);
+        return newLink;
+    }
+    return null;
+}
+
+// --- Unlink Loyalty Program (Placeholder) ---
+const unlinkLoyaltyProgram = async (userId: string, linkId: string): Promise<boolean> => {
+    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate API call
+    const success = Math.random() > 0.1; // Simulate success
+    if (success) {
+        // Update mock/cached data
+        const currentPrograms = getCachedData<LinkedLoyaltyProgram[]>(CACHE_KEYS.linkedLoyalty(userId)) || [];
+        setCachedData(CACHE_KEYS.linkedLoyalty(userId), currentPrograms.filter(p => p.id !== linkId));
+        return true;
+    }
+    return false;
+}
 
 
 // Helper to get Lucide icon component based on name string
@@ -314,6 +395,8 @@ export default function ProfilePage() {
     const [referralHistory, setReferralHistory] = useState<Referral[]>([]); // State for referral history
     const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null); // State for exchange rates
     const [displayCurrency, setDisplayCurrency] = useState<string>('ZMW'); // State for selected display currency
+    const [linkedLoyalty, setLinkedLoyalty] = useState<LinkedLoyaltyProgram[]>([]); // State for loyalty programs
+    const [isLoadingLoyalty, setIsLoadingLoyalty] = useState(true); // Loading state for loyalty programs
 
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
@@ -346,6 +429,11 @@ export default function ProfilePage() {
     const [isPayForOtherModalOpen, setIsPayForOtherModalOpen] = useState(false); // Added state
     const [isTransferPointsModalOpen, setIsTransferPointsModalOpen] = useState(false); // Added state
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false); // State for payment method modal
+    const [isRedeemPointsModalOpen, setIsRedeemPointsModalOpen] = useState(false); // State for redeeming points
+    const [pointsToRedeem, setPointsToRedeem] = useState<number | ''>(''); // State for points redemption amount
+    const [isLinkLoyaltyModalOpen, setIsLinkLoyaltyModalOpen] = useState(false); // State for linking loyalty
+    const [newLoyaltyProgram, setNewLoyaltyProgram] = useState(''); // State for loyalty link form
+    const [newLoyaltyId, setNewLoyaltyId] = useState(''); // State for loyalty link form
 
     // Promo Code State
     const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -380,6 +468,7 @@ export default function ProfilePage() {
         setIsLoadingBookmarks(true);
         setIsLoadingReferrals(true); // Set referrals loading
         setIsLoadingRates(true); // Set rates loading
+        setIsLoadingLoyalty(true); // Set loyalty loading
         setErrorLoading(null);
 
         const loadFromCache = <T>(keyFunc: (userId: string) => string, setter: (data: T) => void): boolean => {
@@ -403,6 +492,7 @@ export default function ProfilePage() {
         const hasCachedBookmarks = loadFromCache(CACHE_KEYS.bookmarks, setBookmarks);
         const hasCachedRates = !!getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates); // Check if rates are cached
         if (hasCachedRates) setExchangeRates(getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates));
+        const hasCachedLoyalty = loadFromCache(CACHE_KEYS.linkedLoyalty, setLinkedLoyalty); // Load loyalty cache
 
         // Immediately initialize edit states from cached/global state
         const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName || '', avatarUrl: userAvatarUrl || '', memberSince: '', role: userRole || 'User', phone: '', email: '', notificationPreferences: { promotions: false, updates: false }, preferredPaymentMethod: undefined };
@@ -415,7 +505,7 @@ export default function ProfilePage() {
         setEditPreferredPaymentMethod(initialDetails?.preferredPaymentMethod); // Initialize preferred payment method
 
         // Determine if full refresh is needed
-        const needsFullRefresh = forceRefresh || !hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedPaymentMethods || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedReferrals || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates;
+        const needsFullRefresh = forceRefresh || !hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedPaymentMethods || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedReferrals || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates || !hasCachedLoyalty;
 
 
         if (!isOnline && !needsFullRefresh) {
@@ -428,6 +518,7 @@ export default function ProfilePage() {
             setIsLoadingBookmarks(false);
             setIsLoadingReferrals(false); // Update referrals loading
             setIsLoadingRates(false);
+            setIsLoadingLoyalty(false); // Update loyalty loading
             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
             setLastUpdated(ts ? parseInt(ts) : null);
             return; // Stop if offline and all data loaded from cache
@@ -446,6 +537,7 @@ export default function ProfilePage() {
             if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
             if (!hasCachedReferrals) setIsLoadingReferrals(false); // Update referrals loading
             if (!hasCachedRates) setIsLoadingRates(false);
+            if (!hasCachedLoyalty) setIsLoadingLoyalty(false); // Update loyalty loading
              const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
              setLastUpdated(ts ? parseInt(ts) : null);
             return;
@@ -455,32 +547,51 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
-            const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, referralsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
+            // --- Daily Login Check ---
+            const dailyLoginResult = await checkAndAwardDailyLoginPoints(userId);
+            if (dailyLoginResult !== null) {
+                 // If points were awarded, show a subtle toast
+                 toast({
+                     title: "Daily Login Bonus!",
+                     description: `+5 points added. Keep it up!`,
+                     duration: 3000,
+                 });
+                 // We need to refetch gamification data or update it locally
+                 // Let's trigger a specific refresh for gamification after the main load
+                 // Or update the state directly if the function returns the new total
+                 // setGamification(prev => ({ ...(prev!), points: dailyLoginResult }));
+            }
+             // --- End Daily Login Check ---
+
+
+            const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, referralsData, walletData, transactionsData, bookmarksData, ratesData, loyaltyData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
                 fetchVehicles(userId),
                 fetchPaymentMethods(userId), // Fetch payment methods
-                fetchUserGamification(userId),
+                fetchUserGamification(userId), // Fetch potentially updated gamification data
                 fetchPointsTransactions(userId, 5), // Fetch points transactions
                 fetchReferralHistory(userId), // Fetch referral history
                 fetchUserWallet(userId),
                 fetchUserWalletTransactions(userId, 5),
                 fetchUserBookmarks(userId),
                 fetchExchangeRates(), // Fetch exchange rates
+                fetchLinkedLoyaltyPrograms(userId), // Fetch linked loyalty programs
             ]);
             setUserDetails(details);
             setBillingInfo(billing);
             setParkingHistory(history);
             setVehicles(vehiclesData);
             setPaymentMethods(paymentMethodsData); // Set payment methods
-            setGamification(gamificationData);
+            setGamification(gamificationData); // Set the potentially updated gamification data
             setPointsTransactions(pointsTxnsData); // Set points transactions
             setReferralHistory(referralsData); // Set referral history
             setWallet(walletData);
             setWalletTransactions(transactionsData);
             setBookmarks(bookmarksData);
             setExchangeRates(ratesData); // Set exchange rates
+            setLinkedLoyalty(loyaltyData); // Set linked loyalty programs
             setLastUpdated(Date.now());
 
             // Re-Initialize edit states with fresh data
@@ -508,6 +619,7 @@ export default function ProfilePage() {
             if (!hasCachedTxns) setWalletTransactions([]);
             if (!hasCachedBookmarks) setBookmarks([]);
             if (!hasCachedRates) setExchangeRates(null); // Reset rates on error
+            if (!hasCachedLoyalty) setLinkedLoyalty([]); // Reset loyalty on error
         } finally {
             setIsLoading(false);
             setIsLoadingWallet(false);
@@ -517,6 +629,7 @@ export default function ProfilePage() {
             setIsLoadingBookmarks(false);
             setIsLoadingReferrals(false); // Update referrals loading
             setIsLoadingRates(false); // Update rates loading
+            setIsLoadingLoyalty(false); // Update loyalty loading
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId, userRole, isOnline]); // userName/userAvatarUrl removed from deps, added isOnline
@@ -632,6 +745,26 @@ export default function ProfilePage() {
         }
     }, [userId, toast, isOnline]);
 
+    // Refresh Loyalty Programs (Online only) - Added refresh function
+    const refreshLoyaltyPrograms = useCallback(async () => {
+        if (!userId || !isOnline) {
+            if (!isOnline) toast({ title: "Offline", description: "Cannot refresh linked programs offline.", variant: "destructive" });
+            return;
+        }
+        setIsLoadingLoyalty(true);
+        try {
+            const loyaltyData = await fetchLinkedLoyaltyPrograms(userId);
+            setLinkedLoyalty(loyaltyData);
+            setLastUpdated(Date.now());
+            toast({ title: "Linked Programs Refreshed" });
+        } catch (error) {
+            console.error("Failed to refresh linked loyalty programs:", error);
+            toast({ title: "Loyalty Update Error", description: "Could not refresh linked programs.", variant: "destructive" });
+        } finally {
+            setIsLoadingLoyalty(false);
+        }
+    }, [userId, toast, isOnline]);
+
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -646,6 +779,7 @@ export default function ProfilePage() {
             setIsLoadingBookmarks(false);
             setIsLoadingReferrals(false); // Clear referrals loading
             setIsLoadingRates(false); // Clear rates loading
+            setIsLoadingLoyalty(false); // Clear loyalty loading
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
@@ -658,6 +792,7 @@ export default function ProfilePage() {
             setWalletTransactions([]);
             setBookmarks([]);
             setExchangeRates(null); // Clear rates
+            setLinkedLoyalty([]); // Clear loyalty
             setLastUpdated(null);
         }
     }, [isAuthenticated, loadProfileData]);
@@ -700,7 +835,7 @@ export default function ProfilePage() {
      const handleDownloadHistory = () => {
          const parkingData = parkingHistory?.map(h => ({
              recordId: h.recordId,
-             locationName: h.locationName,
+             locationName: h.lotName, // Use lotName from record
              spotId: h.spotId,
              startTime: h.startTime,
              endTime: h.endTime || 'N/A',
@@ -725,6 +860,7 @@ export default function ProfilePage() {
              transactionId: t.id,
              type: t.type,
              points: t.points,
+             description: t.description, // Include description from awardPoints
              senderId: t.senderId,
              recipientId: t.recipientId,
              timestamp: t.timestamp,
@@ -736,11 +872,18 @@ export default function ProfilePage() {
               signupTimestamp: r.signupTimestamp,
               bonusAwarded: r.bonusAwarded,
          }));
+          const loyaltyData = linkedLoyalty.map(l => ({ // Include loyalty programs in download
+              programId: l.id,
+              programName: l.programName,
+              membershipId: l.membershipId,
+              linkedDate: l.linkedDate,
+          }));
 
          downloadCSV(parkingData, `carpso-parking-history-${userId}.csv`);
          downloadCSV(walletData, `carpso-wallet-history-${userId}.csv`);
          downloadCSV(pointsData, `carpso-points-history-${userId}.csv`);
          downloadCSV(referralsData, `carpso-referral-history-${userId}.csv`); // Add referral download
+         downloadCSV(loyaltyData, `carpso-linked-loyalty-${userId}.csv`); // Add loyalty download
      };
 
       const downloadCSV = (data: any[], filename: string) => {
@@ -1018,9 +1161,15 @@ export default function ProfilePage() {
      const handleOpenChat = () => {
          if (typeof window !== 'undefined' && (window as any).Tawk_API && (window as any).Tawk_API.maximize) {
             (window as any).Tawk_API.maximize();
-         } else {
+         } else if (typeof window !== 'undefined' && (window as any).Tawk_API) {
+              // Fallback if maximize isn't available? Maybe toggle or show?
+              (window as any).Tawk_API.showWidget?.();
+              (window as any).Tawk_API.openChat?.();
+              toast({ title: "Opening Chat...", description: "Attempting to open the chat widget.", variant: "default" });
+         }
+         else {
              // Fallback or error message if Tawk API isn't available
-             toast({ title: "Chat Unavailable", description: "Live chat support is currently unavailable.", variant: "default" });
+             toast({ title: "Chat Unavailable", description: "Live chat support is currently unavailable. Please try again later or use WhatsApp.", variant: "default" });
          }
      };
      // --- End Tawk.to Chat Integration ---
@@ -1068,6 +1217,97 @@ export default function ProfilePage() {
       };
       // --- End Promo Code Apply ---
 
+      // --- Points Redemption ---
+      const handleRedeemPoints = async () => {
+           if (!userId || !isOnline) {
+               if (!isOnline) toast({ title: "Offline", description: "Cannot redeem points while offline.", variant: "destructive" });
+               return;
+           }
+            if (pointsToRedeem === '' || pointsToRedeem <= 0) {
+                toast({ title: "Invalid Amount", description: "Please enter a valid number of points to redeem.", variant: "destructive" });
+                return;
+            }
+            if (pointsToRedeem > (gamification?.points || 0)) {
+                 toast({ title: "Insufficient Points", description: `You only have ${gamification?.points || 0} points.`, variant: "destructive" });
+                 return;
+            }
+
+            setIsSavingProfile(true); // Reuse saving state as loading indicator
+            try {
+                 const redemptionResult = await redeemPoints(userId, pointsToRedeem);
+                 if (redemptionResult) {
+                     const { redeemedAmount, newPointsBalance, newWalletBalance, transaction } = redemptionResult;
+                     toast({
+                         title: "Points Redeemed!",
+                         description: `${pointsToRedeem} points redeemed for K ${redeemedAmount.toFixed(2)} wallet credit.`,
+                     });
+                     // Refresh both gamification and wallet data
+                     await refreshGamificationData();
+                     await refreshWalletData();
+                     setIsRedeemPointsModalOpen(false); // Close modal on success
+                     setPointsToRedeem(''); // Reset input
+                 } else {
+                     throw new Error("Points redemption failed.");
+                 }
+            } catch (error: any) {
+                 console.error("Error redeeming points:", error);
+                 toast({ title: "Redemption Failed", description: error.message, variant: "destructive" });
+            } finally {
+                 setIsSavingProfile(false);
+            }
+      };
+     // --- End Points Redemption ---
+
+     // --- Loyalty Program Linking ---
+     const handleLinkLoyalty = async () => {
+         if (!userId || !newLoyaltyProgram || !newLoyaltyId || !isOnline) {
+             if (!isOnline) toast({ title: "Offline", description: "Cannot link programs offline.", variant: "destructive" });
+             else toast({ title: "Missing Info", description: "Please enter program name and ID.", variant: "destructive" });
+             return;
+         }
+         setIsSavingProfile(true); // Reuse saving indicator
+         try {
+             const linkedProgram = await linkLoyaltyProgram(userId, newLoyaltyProgram, newLoyaltyId);
+             if (linkedProgram) {
+                 await refreshLoyaltyPrograms();
+                 toast({ title: "Program Linked", description: `${newLoyaltyProgram} linked successfully.` });
+                 setIsLinkLoyaltyModalOpen(false);
+                 setNewLoyaltyProgram('');
+                 setNewLoyaltyId('');
+             } else {
+                  toast({ title: "Linking Failed", description: "Could not verify or link the loyalty program.", variant: "destructive" });
+             }
+         } catch (error: any) {
+              console.error("Error linking loyalty program:", error);
+              toast({ title: "Error", description: "Failed to link loyalty program.", variant: "destructive" });
+         } finally {
+              setIsSavingProfile(false);
+         }
+     };
+
+     const handleUnlinkLoyalty = async (linkId: string) => {
+         if (!userId || !isOnline) {
+             if (!isOnline) toast({ title: "Offline", description: "Cannot unlink programs offline.", variant: "destructive" });
+             return;
+         }
+         setIsSavingProfile(true); // Reuse saving indicator
+         try {
+             const success = await unlinkLoyaltyProgram(userId, linkId);
+             if (success) {
+                 await refreshLoyaltyPrograms();
+                 toast({ title: "Program Unlinked" });
+             } else {
+                 toast({ title: "Unlink Failed", variant: "destructive" });
+             }
+         } catch (error) {
+              console.error("Error unlinking loyalty program:", error);
+              toast({ title: "Error", variant: "destructive" });
+         } finally {
+              setIsSavingProfile(false);
+         }
+     };
+     // --- End Loyalty Program Linking ---
+
 
     const handleLogout = () => {
         logout();
@@ -1082,6 +1322,7 @@ export default function ProfilePage() {
             case 'receive': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
             case 'payment': return <DollarSign className="h-4 w-4 text-red-600" />;
             case 'payment_other': return <Users className="h-4 w-4 text-purple-600" />; // Icon for paying for others
+            case 'points_redemption': return <Coins className="h-4 w-4 text-yellow-500" />; // Icon for points redemption
             default: return <WalletIcon className="h-4 w-4 text-muted-foreground" />;
         }
     };
@@ -1090,6 +1331,8 @@ export default function ProfilePage() {
         switch(type) {
             case 'sent': return <ArrowUpRight className="h-4 w-4 text-orange-600" />;
             case 'received': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
+            case 'earned': return <PlusCircle className="h-4 w-4 text-green-600" />; // Added 'earned' type
+            case 'redeemed': return <DollarSign className="h-4 w-4 text-red-600" />; // Added 'redeemed' type
             default: return <Sparkles className="h-4 w-4 text-yellow-500" />;
         }
     };
@@ -1120,6 +1363,8 @@ export default function ProfilePage() {
     const isPremium = currentTier === 'Premium';
      const preferredMethod = paymentMethods.find(pm => pm.id === userDetails?.preferredPaymentMethod); // Find preferred method details
     const receivePaymentQrValue = userId ? `carpso_pay:${userId}` : 'carpso_pay:unknown_user'; // QR Code value
+    const currentPointsValue = gamification?.points ?? 0;
+    const pointsKwachaValue = (currentPointsValue * POINTS_TO_KWACHA_RATE).toFixed(2); // Calculate Kwacha equivalent
 
     // Render loading or empty state if not authenticated or data is loading
     if (isLoading && !userDetails) { // Show skeleton only on initial full load without cached data
@@ -1198,7 +1443,7 @@ export default function ProfilePage() {
                             )}
                          </div>
                           {/* Display error if loading failed but some cached data exists */}
-                         {errorLoading && (isLoadingPaymentMethods || isLoadingVehicles || isLoadingGamification || isLoadingWallet || isLoadingReferrals) && (
+                         {errorLoading && (isLoadingPaymentMethods || isLoadingVehicles || isLoadingGamification || isLoadingWallet || isLoadingReferrals || isLoadingLoyalty) && (
                               <Alert variant="warning" className="mt-2">
                                   <AlertTriangle className="h-4 w-4" />
                                   <AlertTitle>Loading Issue</AlertTitle>
@@ -1339,7 +1584,7 @@ export default function ProfilePage() {
                                         </SelectContent>
                                      </Select>
                                     <Button variant="outline" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
-                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" /> } Refresh
+                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
                                     </Button>
                                 </div>
                              </div>
@@ -1630,12 +1875,18 @@ export default function ProfilePage() {
                                 <>
                                     {/* Points and Carpool */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <Card className="flex items-center justify-between p-4">
-                                            <div className="flex items-center gap-3">
-                                                <SparklesIcon className="h-6 w-6 text-primary" />
-                                                <span className="font-medium">Points Balance</span>
+                                        <Card className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <Coins className="h-5 w-5 text-primary" />
+                                                    <span className="font-medium">Points Balance</span>
+                                                </div>
+                                                 <Button variant="link" size="sm" className="text-xs h-auto p-0" onClick={() => setIsRedeemPointsModalOpen(true)} disabled={!isOnline || currentPointsValue <= 0}>
+                                                     Redeem
+                                                 </Button>
                                             </div>
-                                            <span className="text-2xl font-bold text-primary">{gamification?.points ?? 0}</span>
+                                             <p className="text-2xl font-bold text-primary">{currentPointsValue}</p>
+                                             <p className="text-xs text-muted-foreground">(≈ K {pointsKwachaValue})</p>
                                         </Card>
                                         <Card className="flex items-center justify-between p-4">
                                              <div className="space-y-0.5">
@@ -1711,16 +1962,22 @@ export default function ProfilePage() {
                                                              {getPointsTransactionIcon(txn.type)}
                                                              <div className="flex-1 truncate">
                                                                   <p className="text-xs font-medium truncate">
-                                                                     {txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` : txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` : 'System Update'}
+                                                                      {txn.description || (
+                                                                          txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` :
+                                                                          txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` :
+                                                                          txn.type === 'earned' ? 'Points Earned' :
+                                                                          txn.type === 'redeemed' ? 'Points Redeemed' :
+                                                                          'System Update'
+                                                                      )}
                                                                  </p>
                                                                  <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
                                                              </div>
                                                          </div>
                                                          <span className={cn(
                                                              "font-semibold text-xs whitespace-nowrap",
-                                                             txn.type === 'received' ? "text-green-600" : txn.type === 'sent' ? "text-red-600" : "text-primary"
+                                                             (txn.type === 'received' || txn.type === 'earned') ? "text-green-600" : (txn.type === 'sent' || txn.type === 'redeemed') ? "text-red-600" : "text-primary"
                                                          )}>
-                                                             {txn.type === 'received' ? '+' : txn.type === 'sent' ? '-' : ''}{txn.points} points
+                                                             {(txn.type === 'received' || txn.type === 'earned') ? '+' : (txn.type === 'sent' || txn.type === 'redeemed') ? '-' : ''}{txn.points} points
                                                          </span>
                                                      </div>
                                                  ))}
@@ -1781,6 +2038,48 @@ export default function ProfilePage() {
                                       </div>
                                 </>
                              )}
+                        </section>
+
+                        <Separator className="my-6" />
+
+                         {/* Linked Loyalty Programs Section */}
+                        <section className="mb-6">
+                            <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon className="h-5 w-5" /> Linked Loyalty Programs</h3>
+                                <Button variant="outline" size="sm" onClick={() => setIsLinkLoyaltyModalOpen(true)} disabled={isLoadingLoyalty || !isOnline}>
+                                    <PlusCircle className="mr-2 h-4 w-4" /> Link Program
+                                </Button>
+                            </div>
+                            {isLoadingLoyalty ? (
+                                <Skeleton className="h-24 w-full" />
+                            ) : linkedLoyalty.length > 0 ? (
+                                <div className="space-y-3">
+                                    {linkedLoyalty.map(program => (
+                                        <Card key={program.id} className="p-3 flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <Award className="h-5 w-5 text-muted-foreground" /> {/* Placeholder Icon */}
+                                                <div>
+                                                    <p className="font-medium text-sm">{program.programName}</p>
+                                                    <p className="text-xs text-muted-foreground">ID: {program.membershipId}</p>
+                                                    <p className="text-xs text-muted-foreground">Linked: {new Date(program.linkedDate).toLocaleDateString()}</p>
+                                                </div>
+                                            </div>
+                                             <Button
+                                                 variant="ghost"
+                                                 size="icon"
+                                                 className="h-8 w-8 text-destructive flex-shrink-0"
+                                                 onClick={() => handleUnlinkLoyalty(program.id)}
+                                                 disabled={isSavingProfile || !isOnline}
+                                                 aria-label={`Unlink ${program.programName}`}
+                                             >
+                                                 {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
+                                             </Button>
+                                        </Card>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground text-center py-4">No loyalty programs linked yet.</p>
+                            )}
                         </section>
 
                         <Separator className="my-6" />
@@ -1861,23 +2160,47 @@ export default function ProfilePage() {
                          <section className="mb-6">
                              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
-                                     <MessageSquare className="mr-3 h-5 w-5" />
-                                     <div>
-                                        <p className="font-medium">Live Chat</p>
-                                        <p className="text-xs text-muted-foreground">Get help from our support team.</p>
-                                     </div>
-                                  </Button>
-                                  {/* Link to FAQ or Help Center */}
-                                  <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
-                                      <a href="/help" target="_blank" rel="noopener noreferrer">
-                                         <Info className="mr-3 h-5 w-5" />
-                                         <div>
-                                             <p className="font-medium">Help Center</p>
-                                             <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
-                                         </div>
-                                      </a>
-                                  </Button>
+                                  {/* Live Chat Button */}
+                                   <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
+                                       <MessageSquare className="mr-3 h-5 w-5 text-blue-600" />
+                                       <div>
+                                           <p className="font-medium">Live Chat</p>
+                                           <p className="text-xs text-muted-foreground">Get help via Tawk.to.</p>
+                                       </div>
+                                   </Button>
+                                   {/* WhatsApp Button */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href={WHATSAPP_CHAT_LINK_1} target="_blank" rel="noopener noreferrer">
+                                          <MessageSquare className="mr-3 h-5 w-5 text-green-600" /> {/* Can reuse icon or use specific WhatsApp icon */}
+                                          <div>
+                                             <p className="font-medium">WhatsApp Chat</p>
+                                             <p className="text-xs text-muted-foreground">Via WhatsApp (+260 95...).</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
+                                   {/* Phone Call Link (Second Number) - Example */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href={`tel:${WHATSAPP_NUMBER_2}`}>
+                                          <Smartphone className="mr-3 h-5 w-5" />
+                                          <div>
+                                             <p className="font-medium">Call Support</p>
+                                             <p className="text-xs text-muted-foreground">(+260 96...).</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
+                                   {/* Link to FAQ or Help Center */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href="/help" target="_blank" rel="noopener noreferrer">
+                                          <Info className="mr-3 h-5 w-5" />
+                                          <div>
+                                              <p className="font-medium">Help Center</p>
+                                              <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
                              </div>
                          </section>
 
@@ -1948,6 +2271,79 @@ export default function ProfilePage() {
                   preferredMethodId={editPreferredPaymentMethod} // Pass the editable preferred ID
                   onSave={handleSavePaymentMethods}
               />
+
+             {/* Redeem Points Modal */}
+              <Dialog open={isRedeemPointsModalOpen} onOpenChange={setIsRedeemPointsModalOpen}>
+                 <DialogContent className="sm:max-w-md">
+                     <DialogHeaderSub>
+                         <DialogTitleSub>Redeem Points</DialogTitleSub>
+                         <DialogDescriptionSub>
+                             Convert your points into wallet credit (K {POINTS_TO_KWACHA_RATE.toFixed(2)} per point).
+                             Available Points: {currentPointsValue}.
+                         </DialogDescriptionSub>
+                     </DialogHeaderSub>
+                     <div className="grid gap-4 py-4">
+                         <div className="space-y-1">
+                             <Label htmlFor="redeem-points">Points to Redeem</Label>
+                             <Input
+                                 id="redeem-points"
+                                 type="number"
+                                 value={pointsToRedeem}
+                                 onChange={(e) => setPointsToRedeem(e.target.value === '' ? '' : Number(e.target.value))}
+                                 placeholder="0"
+                                 min="1"
+                                 max={currentPointsValue}
+                                 disabled={isSavingProfile || !isOnline}
+                             />
+                             {pointsToRedeem !== '' && pointsToRedeem > 0 && (
+                                 <p className="text-sm text-muted-foreground mt-1">
+                                     ≈ K {(pointsToRedeem * POINTS_TO_KWACHA_RATE).toFixed(2)} Wallet Credit
+                                 </p>
+                             )}
+                             {pointsToRedeem !== '' && pointsToRedeem > currentPointsValue && (
+                                  <p className="text-xs text-destructive mt-1">Amount exceeds available points.</p>
+                             )}
+                         </div>
+                     </div>
+                     <DialogFooter>
+                          <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingProfile}>Cancel</Button></DialogClose>
+                          <Button
+                             onClick={handleRedeemPoints}
+                             disabled={isSavingProfile || !isOnline || pointsToRedeem === '' || pointsToRedeem <= 0 || pointsToRedeem > currentPointsValue}
+                         >
+                             {isSavingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                             Redeem {pointsToRedeem || 0} Points
+                         </Button>
+                     </DialogFooter>
+                 </DialogContent>
+              </Dialog>
+
+              {/* Link Loyalty Program Modal */}
+              <Dialog open={isLinkLoyaltyModalOpen} onOpenChange={setIsLinkLoyaltyModalOpen}>
+                  <DialogContent className="sm:max-w-md">
+                      <DialogHeaderSub>
+                          <DialogTitleSub>Link Loyalty Program</DialogTitleSub>
+                          <DialogDescriptionSub>Connect external loyalty programs to potentially earn or redeem points.</DialogDescriptionSub>
+                      </DialogHeaderSub>
+                      <div className="grid gap-4 py-4">
+                          <div className="space-y-1">
+                              <Label htmlFor="loyalty-program">Program Name*</Label>
+                              <Input id="loyalty-program" value={newLoyaltyProgram} onChange={(e) => setNewLoyaltyProgram(e.target.value)} placeholder="e.g., GroceryMart Rewards" disabled={isSavingProfile || !isOnline} />
+                          </div>
+                          <div className="space-y-1">
+                              <Label htmlFor="loyalty-id">Membership ID*</Label>
+                              <Input id="loyalty-id" value={newLoyaltyId} onChange={(e) => setNewLoyaltyId(e.target.value)} placeholder="Enter your membership number" disabled={isSavingProfile || !isOnline} />
+                          </div>
+                           <p className="text-xs text-muted-foreground">Note: Linking programs is simulated and does not connect to real external services.</p>
+                      </div>
+                      <DialogFooter>
+                           <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingProfile}>Cancel</Button></DialogClose>
+                           <Button onClick={handleLinkLoyalty} disabled={isSavingProfile || !isOnline || !newLoyaltyProgram || !newLoyaltyId}>
+                               {isSavingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Link Program
+                           </Button>
+                      </DialogFooter>
+                  </DialogContent>
+              </Dialog>
 
 
              {/* Add/Edit Bookmark Modal */}
@@ -2054,6 +2450,13 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-5 w-1/3 mt-4" /> {/* Referral History Title */}
              <Skeleton className="h-24 w-full rounded-md" /> {/* Referral History Table */}
         </div>
+        <Separator />
+        {/* Loyalty Programs Skeleton */}
+         <div className="space-y-4">
+             <Skeleton className="h-6 w-1/3 mb-3" />
+             <Skeleton className="h-20 w-full rounded-md" />
+             <Skeleton className="h-9 w-full mt-1 rounded-md" /> {/* Link Button */}
+         </div>
          <Separator />
          {/* Active Reservation Skeleton */}
          <div className="space-y-3">
@@ -2078,4 +2481,3 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
-    
