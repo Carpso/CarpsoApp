@@ -19,6 +19,8 @@ export interface UserGamification {
   badges: UserBadge[];
   isCarpoolEligible: boolean; // Flag for carpooling discounts/features
   parkingExtensionsUsed?: number; // Number of times parking has been extended in the current session/period (optional)
+  referralCode?: string; // Unique referral code for the user
+  referralsCompleted?: number; // Number of successful referrals
 }
 
 /**
@@ -70,6 +72,17 @@ export interface UserPreferences {
     // Add other preferences here, e.g., preferredMapStyle, notificationSettings
 }
 
+/**
+ * Represents a referral record.
+ */
+export interface Referral {
+    referringUserId: string;
+    referredUserId: string;
+    referredUserName?: string; // Optional name for display
+    signupTimestamp: string;
+    bonusAwarded: boolean; // Flag if bonus was given to referrer
+}
+
 
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
@@ -83,17 +96,21 @@ let userGamificationData: Record<string, UserGamification> = {
         ],
         isCarpoolEligible: false,
         parkingExtensionsUsed: 1, // Example: used one extension
+        referralCode: 'ALICE123',
+        referralsCompleted: 1,
     },
      'user_def456': { // Example Premium user
         points: 50,
         badges: [],
         isCarpoolEligible: true,
         parkingExtensionsUsed: 0, // Premium users might have a higher limit or unlimited (logic handled elsewhere)
+        referralCode: 'BOB456',
+        referralsCompleted: 0,
     },
      // Add a sample attendant user's gamification data if needed
-     'attendant_001': { points: 10, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 },
+     'attendant_001': { points: 10, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0, referralCode: 'ATTEND001', referralsCompleted: 0 },
      // Add a user explicitly marked as Premium role (for testing role checks)
-      'user_premium_test': { points: 1000, badges: [], isCarpoolEligible: true, parkingExtensionsUsed: 0 },
+      'user_premium_test': { points: 1000, badges: [], isCarpoolEligible: true, parkingExtensionsUsed: 0, referralCode: 'PREMIUM789', referralsCompleted: 5 },
 };
 
 // Mock store for bookmarks
@@ -109,9 +126,16 @@ let userBookmarks: Record<string, UserBookmark[]> = {
 
 // Mock store for points transactions (optional, could be part of gamification history)
 let pointsTransactions: Record<string, PointsTransaction[]> = {
-     'user_abc123': [],
+     'user_abc123': [
+         { id: 'pts_txn_ref1', timestamp: new Date(Date.now() - 5*86400000).toISOString(), senderId: 'system', recipientId: 'user_abc123', points: 50, type: 'received' } // Example referral bonus
+     ],
      'user_def456': [],
 };
+
+// Mock store for referral records
+let referrals: Referral[] = [
+    { referringUserId: 'user_abc123', referredUserId: 'user_new_1', referredUserName: 'New User 1', signupTimestamp: new Date(Date.now() - 5*86400000).toISOString(), bonusAwarded: true },
+];
 
 
 // Available badges definition (could be stored elsewhere)
@@ -120,25 +144,43 @@ const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
      { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Flag' }, // Changed icon to Flag
      { id: 'badge_frequent_parker', name: 'Frequent Parker', description: 'Completed 5 reservations.', iconName: 'Award' },
      { id: 'badge_carpool_champ', name: 'Carpool Champ', description: 'Enabled carpooling benefits.', iconName: 'Users' },
+     { id: 'badge_referrer', name: 'Referrer', description: 'Successfully referred a new user.', iconName: 'Gift' }, // Added referral badge
 ];
 
 
 // --- Mock Service Functions ---
 
 /**
- * Fetches the gamification status (points, badges, carpool status) for a user.
+ * Fetches the gamification status (points, badges, carpool status, referral code) for a user.
  * @param userId The ID of the user.
  * @returns A promise resolving to the user's gamification data.
  */
 export async function getUserGamification(userId: string): Promise<UserGamification> {
     await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
     // Return existing data or default if user not found
-    const data = userGamificationData[userId] || { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
+    let data = userGamificationData[userId];
+    if (!data) {
+         // Create default gamification data if none exists, including a referral code
+         const referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+         data = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0, referralCode: referralCode, referralsCompleted: 0 };
+         userGamificationData[userId] = data;
+         console.log(`Initialized gamification data for ${userId} with referral code ${referralCode}`);
+    } else {
+        // Ensure referralCode and referralsCompleted exist for older mock data
+        if (!data.referralCode) {
+             data.referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+             console.log(`Generated missing referral code for ${userId}: ${data.referralCode}`);
+        }
+        if (data.referralsCompleted === undefined) {
+            data.referralsCompleted = referrals.filter(r => r.referringUserId === userId && r.bonusAwarded).length; // Calculate from referral history if missing
+        }
+    }
+
     // Ensure parkingExtensionsUsed is initialized
     if (data.parkingExtensionsUsed === undefined) {
         data.parkingExtensionsUsed = 0;
     }
-    return data;
+    return { ...data }; // Return a copy
 }
 
 /**
@@ -149,12 +191,11 @@ export async function getUserGamification(userId: string): Promise<UserGamificat
  */
 export async function incrementParkingExtensions(userId: string): Promise<number> {
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
-    if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
-    }
-    userGamificationData[userId].parkingExtensionsUsed = (userGamificationData[userId].parkingExtensionsUsed || 0) + 1;
-    console.log(`Incremented parking extensions for user ${userId}. Total used: ${userGamificationData[userId].parkingExtensionsUsed}`);
-    return userGamificationData[userId].parkingExtensionsUsed!;
+    const data = await getUserGamification(userId); // Ensure data exists
+    data.parkingExtensionsUsed = (data.parkingExtensionsUsed || 0) + 1;
+    userGamificationData[userId] = data; // Update mock store
+    console.log(`Incremented parking extensions for user ${userId}. Total used: ${data.parkingExtensionsUsed}`);
+    return data.parkingExtensionsUsed!;
 }
 
 /**
@@ -179,12 +220,11 @@ export async function resetParkingExtensions(userId: string): Promise<boolean> {
  */
 export async function awardPoints(userId: string, pointsToAdd: number): Promise<number> {
     await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
-    if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
-    }
-    userGamificationData[userId].points += pointsToAdd;
-    console.log(`Awarded ${pointsToAdd} points to user ${userId}. New total: ${userGamificationData[userId].points}`);
-    return userGamificationData[userId].points;
+    const data = await getUserGamification(userId); // Ensure data exists
+    data.points += pointsToAdd;
+    userGamificationData[userId] = data; // Update mock store
+    console.log(`Awarded ${pointsToAdd} points to user ${userId}. New total: ${data.points}`);
+    return data.points;
 }
 
 /**
@@ -195,11 +235,9 @@ export async function awardPoints(userId: string, pointsToAdd: number): Promise<
  */
 export async function awardBadge(userId: string, badgeId: string): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
-    if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
-    }
+    const data = await getUserGamification(userId); // Ensure data exists
 
-    const alreadyHasBadge = userGamificationData[userId].badges.some(b => b.id === badgeId);
+    const alreadyHasBadge = data.badges.some(b => b.id === badgeId);
     if (alreadyHasBadge) {
         return false; // Already earned
     }
@@ -214,7 +252,8 @@ export async function awardBadge(userId: string, badgeId: string): Promise<boole
         ...badgeDefinition,
         earnedDate: new Date().toISOString(),
     };
-    userGamificationData[userId].badges.push(newBadge);
+    data.badges.push(newBadge);
+    userGamificationData[userId] = data; // Update mock store
     console.log(`Awarded badge "${badgeDefinition.name}" to user ${userId}.`);
     return true;
 }
@@ -227,10 +266,9 @@ export async function awardBadge(userId: string, badgeId: string): Promise<boole
  */
 export async function updateCarpoolEligibility(userId: string, isEligible: boolean): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
-    if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
-    }
-    userGamificationData[userId].isCarpoolEligible = isEligible;
+    const data = await getUserGamification(userId); // Ensure data exists
+    data.isCarpoolEligible = isEligible;
+    userGamificationData[userId] = data; // Update mock store
     console.log(`Set carpool eligibility for user ${userId} to ${isEligible}.`);
 
     // Potentially award carpool badge
@@ -262,16 +300,18 @@ export async function transferPoints(
         throw new Error("Cannot transfer points to yourself.");
     }
 
-    const senderData = userGamificationData[senderId];
-    const recipientData = userGamificationData[recipientId];
+    const senderData = await getUserGamification(senderId); // Ensure sender data exists
+    let recipientData = userGamificationData[recipientId]; // Check if recipient exists
 
-    if (!senderData) {
-        throw new Error("Sender not found.");
-    }
     if (!recipientData) {
-         // Optionally create recipient if they don't exist in gamification yet
-         userGamificationData[recipientId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
-         // throw new Error("Recipient not found.");
+        // Optionally create recipient if they don't exist in gamification yet
+         const recipientUser = mockUserData.find(u => u.userId === recipientId);
+         if (recipientUser) {
+              recipientData = await getUserGamification(recipientId); // This will initialize recipient data
+              console.log(`Initialized recipient ${recipientId} gamification data for transfer.`);
+         } else {
+            throw new Error("Recipient user not found.");
+         }
     }
 
     if (senderData.points < pointsToTransfer) {
@@ -280,7 +320,9 @@ export async function transferPoints(
 
     // Perform the transfer
     senderData.points -= pointsToTransfer;
-    userGamificationData[recipientId].points += pointsToTransfer;
+    recipientData.points += pointsToTransfer;
+    userGamificationData[senderId] = senderData; // Update mock store
+    userGamificationData[recipientId] = recipientData; // Update mock store
 
     // Record the transaction (optional)
     const timestamp = new Date().toISOString();
@@ -295,10 +337,10 @@ export async function transferPoints(
 
 
     console.log(`Transferred ${pointsToTransfer} points from ${senderId} to ${recipientId}.`);
-    console.log(`Sender new balance: ${senderData.points}. Recipient new balance: ${userGamificationData[recipientId].points}`);
+    console.log(`Sender new balance: ${senderData.points}. Recipient new balance: ${recipientData.points}`);
 
     // Return sender's transaction for receipt purposes
-    return { senderNewPoints: senderData.points, recipientNewPoints: userGamificationData[recipientId].points, transaction: senderTx };
+    return { senderNewPoints: senderData.points, recipientNewPoints: recipientData.points, transaction: senderTx };
 }
 
 
@@ -443,8 +485,8 @@ export async function getMockUsersForTransfer(): Promise<{ id: string, name: str
      // Get all users from the gamification data as an example
      return Object.keys(userGamificationData).map(id => ({
          id,
-         name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
-     }));
+         name: mockUserData.find(u => u.userId === id)?.userName || `User ${id.substring(0, 5)} (mock)`, // Use actual name if available
+     })).filter(u => u.name); // Ensure user has a name
 }
 
 // Mock data for users and vehicles (replace with actual data source)
@@ -528,3 +570,125 @@ export async function searchUserOrVehicleByAttendant(query: string): Promise<Att
     console.log(`Attendant search results for "${query}":`, results);
     return results;
 }
+
+// --- Referral and Promo Code Functions ---
+
+/**
+ * Fetches the referral history for a user.
+ * @param userId The ID of the user whose referrals to fetch.
+ * @returns A promise resolving to an array of referral records.
+ */
+export async function getReferralHistory(userId: string): Promise<Referral[]> {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return referrals.filter(r => r.referringUserId === userId);
+}
+
+/**
+ * Simulates applying a referral code during signup.
+ * In a real app, this would happen server-side during user creation.
+ * @param referredUserId The ID of the new user signing up.
+ * @param referralCode The referral code entered.
+ * @param referredUserName The name of the new user (optional).
+ * @returns A promise resolving to true if the code was valid and applied, false otherwise.
+ */
+export async function applyReferralCode(referredUserId: string, referralCode: string, referredUserName?: string): Promise<boolean> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Find the user whose referral code this is
+    const referringUserEntry = Object.entries(userGamificationData).find(([_, data]) => data.referralCode === referralCode.toUpperCase());
+
+    if (!referringUserEntry) {
+        console.warn(`Referral code ${referralCode} not found.`);
+        return false; // Code not valid
+    }
+
+    const referringUserId = referringUserEntry[0];
+
+    if (referringUserId === referredUserId) {
+        console.warn(`User ${referredUserId} cannot refer themselves.`);
+        return false; // Cannot refer self
+    }
+
+    // Check if this user was already referred
+    if (referrals.some(r => r.referredUserId === referredUserId)) {
+        console.warn(`User ${referredUserId} was already referred.`);
+        return false; // Already referred
+    }
+
+    // Record the successful referral
+    const newReferral: Referral = {
+        referringUserId,
+        referredUserId,
+        referredUserName,
+        signupTimestamp: new Date().toISOString(),
+        bonusAwarded: false, // Bonus awarded after first action (e.g., parking)
+    };
+    referrals.push(newReferral);
+    console.log(`Recorded referral: ${referringUserId} referred ${referredUserId}`);
+
+    // Optional: Give the new user an initial bonus for using a code
+    await awardPoints(referredUserId, 25); // Example: 25 points for signing up with code
+
+    return true;
+}
+
+/**
+ * Simulates awarding a bonus to the referrer after the referred user takes an action (e.g., first parking).
+ * @param referredUserId The ID of the user who completed the action.
+ */
+export async function processReferralBonus(referredUserId: string): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const referral = referrals.find(r => r.referredUserId === referredUserId && !r.bonusAwarded);
+    if (referral) {
+        const referringUserId = referral.referringUserId;
+        const bonusPoints = 50; // Example bonus amount
+
+        // Award points to referrer
+        await awardPoints(referringUserId, bonusPoints);
+        // Award badge to referrer
+        await awardBadge(referringUserId, 'badge_referrer');
+
+        // Update referral record
+        referral.bonusAwarded = true;
+
+        // Update referrer's completed count
+        if (userGamificationData[referringUserId]) {
+             userGamificationData[referringUserId].referralsCompleted = (userGamificationData[referringUserId].referralsCompleted || 0) + 1;
+        }
+
+        console.log(`Awarded ${bonusPoints} points and badge to ${referringUserId} for referring ${referredUserId}.`);
+    }
+}
+
+/**
+ * Simulates applying a promo code.
+ * In a real app, this would check validity, usage limits, applicability, etc.
+ * @param promoCode The promo code entered.
+ * @param userId The ID of the user applying the code.
+ * @param context Optional context (e.g., 'parking_fee', 'pass_purchase', 'top_up')
+ * @returns A promise resolving to an object indicating success and the discount/bonus details, or failure.
+ */
+export async function applyPromoCode(promoCode: string, userId: string, context?: string): Promise<{ success: boolean; message: string; discountAmount?: number; pointsAwarded?: number }> {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const codeUpper = promoCode.toUpperCase();
+
+    // Mock promo codes
+    if (codeUpper === 'WELCOME10') {
+        // Award points directly (example)
+        const points = 10;
+        await awardPoints(userId, points);
+        return { success: true, message: `Promo code applied! ${points} bonus points added to your account.`, pointsAwarded: points };
+    } else if (codeUpper === 'PARKFREE5') {
+        // Apply discount to next parking (example, needs integration with cost calculation)
+        const discount = 5.00; // Example: K 5.00 discount
+        return { success: true, message: `Promo code applied! K ${discount.toFixed(2)} discount will be applied to your next parking session.`, discountAmount: discount };
+    } else if (codeUpper === 'SUMMER24' && context === 'pass_purchase') {
+        // Specific discount for pass purchase (needs integration)
+        const discount = 10.00;
+        return { success: true, message: `Promo code applied! K ${discount.toFixed(2)} discount applied to pass purchase.`, discountAmount: discount };
+    }
+
+    return { success: false, message: "Invalid or expired promo code." };
+}
+
