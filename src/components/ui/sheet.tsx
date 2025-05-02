@@ -133,8 +133,8 @@ export {
   SheetTrigger,
   SheetClose,
   SheetContent,
-  SheetHeader,
+  SheetHeader, // Export SheetHeader
   SheetFooter,
-  SheetTitle,
+  SheetTitle, // Export SheetTitle
   SheetDescription,
 }

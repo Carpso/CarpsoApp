@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { Car, ShieldCheck, Menu, UserCircle, Compass, Home } from 'lucide-react'; // Added Home icon
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'; // Added SheetClose
+import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet'; // Added SheetClose, SheetHeader, SheetTitle
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import { useContext } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
@@ -29,12 +29,16 @@ export default function Header() {
               <span className="sr-only">Toggle Menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px]">
-            <Link href="/" className="flex items-center space-x-2 mb-6 px-4 pt-4">
+          <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
+             {/* Added SheetHeader and visually hidden SheetTitle */}
+             <SheetHeader className="p-4 pb-2">
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
+             </SheetHeader>
+            <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
                 <Car className="h-6 w-6 text-primary" />
                 <span className="font-bold">Carpso</span>
             </Link>
-            <nav className="flex flex-col space-y-1 px-2">
+            <nav className="flex flex-col space-y-1 px-2 flex-grow">
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
                        <Link href="/" className="flex items-center gap-1">
@@ -74,7 +78,7 @@ export default function Header() {
             </nav>
             {/* Logout button at the bottom of mobile menu */}
             {isAuthenticated && (
-                 <div className="mt-auto p-4">
+                 <div className="mt-auto p-4 border-t">
                     <SheetClose asChild>
                         <Button variant="outline" className="w-full" onClick={logout}>Log Out</Button>
                     </SheetClose>
