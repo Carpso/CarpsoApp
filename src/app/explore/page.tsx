@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Star } from "lucide-react"; // Added Star
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Star, MessageSquare } from "lucide-react"; // Added Star, MessageSquare
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,6 +14,11 @@ import { getAvailableParkingLots } from '@/services/parking-lot'; // Import func
 import Link from 'next/link'; // Import Link
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import { cn } from '@/lib/utils';
+import { Input } from "@/components/ui/input"; // Import Input
+import { Button } from "@/components/ui/button"; // Import Button
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
+import { useToast } from '@/hooks/use-toast'; // Import useToast
+
 
 // Mock Data - Replace with actual data fetching for events/auctions if needed
 const mockEvents = [
@@ -26,10 +31,10 @@ const mockAuctions = [
 ];
 
 // Define Featured Services (replace with dynamic fetching if needed)
-const featuredServices: { id: string; name: ParkingLotService; description: string; image: string; hint: string }[] = [
-    { id: 'feat_ev', name: 'EV Charging', description: 'Charge your electric vehicle conveniently while parked.', image: 'https://picsum.photos/seed/featEV/300/150', hint: 'ev charging electric car station' },
-    { id: 'feat_wash', name: 'Car Wash', description: 'Get your car sparkling clean with our professional washing services.', image: 'https://picsum.photos/seed/featWash/300/150', hint: 'car wash cleaning service' },
-    { id: 'feat_valet', name: 'Valet', description: 'Enjoy the convenience of valet parking at select locations.', image: 'https://picsum.photos/seed/featValet/300/150', hint: 'valet parking service attendant' },
+const featuredServices: { id: string; name: ParkingLotService; description: string; image: string; hint: string; locations: string[] }[] = [
+    { id: 'feat_ev', name: 'EV Charging', description: 'Charge your electric vehicle conveniently while parked.', image: 'https://picsum.photos/seed/featEV/300/150', hint: 'ev charging electric car station', locations: ['lot_A', 'lot_B'] },
+    { id: 'feat_wash', name: 'Car Wash', description: 'Get your car sparkling clean with our professional washing services.', image: 'https://picsum.photos/seed/featWash/300/150', hint: 'car wash cleaning service', locations: ['lot_C'] },
+    { id: 'feat_valet', name: 'Valet', description: 'Enjoy the convenience of valet parking at select locations.', image: 'https://picsum.photos/seed/featValet/300/150', hint: 'valet parking service attendant', locations: ['lot_D', 'lot_E'] },
 ];
 
 
@@ -38,9 +43,9 @@ const getServiceIcon = (service: ParkingLotService | undefined, className = "h-4
     switch (service) {
       case 'EV Charging': return <Fuel className={className} />;
       case 'Car Wash': return <SprayCan className={className} />;
-      case 'Mobile Money Agent': return <BadgeCent className={className} />;
+       case 'Mobile Money Agent': return <BadgeCent className={className} />;
       case 'Wifi': return <Wifi className={className} />;
-      case 'Restroom': return <Bath className={className} />; // Correctly use Bath
+      case 'Restroom': return <Bath className={className} />;
       case 'Valet': return <ConciergeBell className={className} />;
       default: return <Sparkles className={className} />; // Default icon
     }
@@ -55,6 +60,10 @@ export default function ExplorePage() {
     const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]); // State for parking lots
     const [isLoadingLots, setIsLoadingLots] = useState(true); // Loading state for lots
     const [errorLoadingLots, setErrorLoadingLots] = useState<string | null>(null);
+    const [recommendedLotName, setRecommendedLotName] = useState(''); // State for recommended name
+    const [recommendedLotAddress, setRecommendedLotAddress] = useState(''); // State for recommended address
+    const { toast } = useToast();
+
 
     // Fetch Advertisements
     useEffect(() => {
@@ -118,6 +127,16 @@ export default function ExplorePage() {
         })),
         ...mockEvents.map(event => ({ ...event, isAd: false, image: event.image || `https://picsum.photos/seed/event${event.id}/400/200`, hint: event.hint || 'parking event discount' })), // Add defaults for mock events
     ];
+
+    const handleRecommendSubmit = () => {
+        if (!recommendedLotName || !recommendedLotAddress) {
+            toast({ title: "Missing Information", description: "Please provide the name and address of the recommended parking lot.", variant: "destructive" });
+            return;
+        }
+        toast({ title: "Recommendation Submitted", description: `Thank you for recommending ${recommendedLotName}. We'll evaluate its addition to Carpso.`, duration: 5000 });
+        setRecommendedLotName('');
+        setRecommendedLotAddress('');
+    };
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
@@ -197,30 +216,39 @@ export default function ExplorePage() {
             <Star className="h-6 w-6 text-accent" /> Featured Services
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {featuredServices.map(service => (
-                 <Card key={service.id} className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
-                      <div className="relative w-full h-40">
-                          <Image
-                              src={service.image}
-                              alt={service.name}
-                              fill
-                              className="object-cover"
-                              data-ai-hint={service.hint} // Add AI Hint
-                          />
-                           {/* Optional: Add icon overlay */}
-                          <div className="absolute top-2 right-2 bg-background/80 p-1.5 rounded-full">
-                              {getServiceIcon(service.name, "h-5 w-5 text-primary")}
+             {featuredServices.map(service => {
+                 const hasService = parkingLots.some(lot => lot.services?.includes(service.name));
+                 return (
+                     <Card key={service.id} className={cn("overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col", !hasService && "opacity-50 cursor-not-allowed")}>
+                          <div className="relative w-full h-40">
+                              <Image
+                                  src={service.image}
+                                  alt={service.name}
+                                  fill
+                                  className="object-cover"
+                                  data-ai-hint={service.hint} // Add AI Hint
+                                  style={{ filter: !hasService ? 'grayscale(100%)' : 'none' }}
+                              />
+                               {/* Optional: Add icon overlay */}
+                              <div className="absolute top-2 right-2 bg-background/80 p-1.5 rounded-full">
+                                  {getServiceIcon(service.name, "h-5 w-5 text-primary")}
+                              </div>
                           </div>
-                      </div>
-                     <CardHeader>
-                         <CardTitle>{service.name}</CardTitle>
-                     </CardHeader>
-                     <CardContent>
-                         <p className="text-sm text-muted-foreground line-clamp-2">{service.description}</p>
-                         {/* TODO: Link to locations offering this service? */}
-                     </CardContent>
-                 </Card>
-            ))}
+                         <CardHeader>
+                             <CardTitle className={cn(hasService ? "" : "text-muted-foreground")}>{service.name}</CardTitle>
+                         </CardHeader>
+                         <CardContent>
+                             <p className="text-sm text-muted-foreground line-clamp-2">{service.description}</p>
+                              {hasService ? (
+                                  <p className="text-xs text-muted-foreground mt-2">Available at: {service.locations.map(locId => parkingLots.find(l => l.id === locId)?.name).filter(Boolean).join(', ') || 'No locations offer this service'}</p>
+                              ) : (
+                                  <p className="text-xs text-muted-foreground mt-2">Not offered at any Carpso locations.</p>
+                              )}
+                             {/* TODO: Link to locations offering this service? */}
+                         </CardContent>
+                     </Card>
+                 );
+            })}
             {featuredServices.length === 0 && <p className="text-muted-foreground md:col-span-2 lg:col-span-3 text-center py-6">No featured services to display.</p>}
         </div>
       </section>
@@ -327,7 +355,39 @@ export default function ExplorePage() {
              <p className="text-muted-foreground text-center py-6">No parking locations found.</p>
         )}
       </section>
-
+       {/* Recommend Location Form */}
+        <section className="mb-10">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-xl">Recommend a Parking Location</CardTitle>
+                    <CardDescription>Help us expand Carpso by recommending a new parking lot!</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="recommend-name">Parking Lot Name</Label>
+                        <Input
+                            type="text"
+                            id="recommend-name"
+                            placeholder="e.g., Central Parking Garage"
+                            value={recommendedLotName}
+                            onChange={(e) => setRecommendedLotName(e.target.value)}
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="recommend-address">Address</Label>
+                        <Textarea
+                            id="recommend-address"
+                            placeholder="e.g., 123 Main St, Lusaka"
+                            value={recommendedLotAddress}
+                            onChange={(e) => setRecommendedLotAddress(e.target.value)}
+                        />
+                    </div>
+                     <Button onClick={handleRecommendSubmit}>
+                         <MessageSquare className="mr-2 h-4 w-4" /> Submit Recommendation
+                     </Button>
+                </CardContent>
+            </Card>
+        </section>
     </div>
   );
 }
