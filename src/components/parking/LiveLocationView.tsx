@@ -119,15 +119,30 @@ export default function LiveLocationView({
                   const stream = await navigator.mediaDevices.getUserMedia(constraints);
                   setActiveStream(stream); // Store the new stream
 
-                  if (videoRef.current) {
+                  // Attach stream only if videoRef is currently available
+                   if (videoRef.current) {
                       videoRef.current.srcObject = stream;
-                      await videoRef.current.play(); // Ensure video plays
+                      await videoRef.current.play().catch(playError => {
+                          console.error("Video play failed:", playError);
+                          // Attempt to mute and play again (common fix for autoplay issues)
+                          if (videoRef.current) {
+                              videoRef.current.muted = true;
+                              videoRef.current.play().catch(retryPlayError => {
+                                  console.error("Video retry play failed:", retryPlayError);
+                                   throw new Error("Could not play video stream."); // Throw if retry also fails
+                              });
+                          } else {
+                               throw new Error("Video element not ready after play failure.");
+                          }
+                      });
                       setUserStreamActive(true);
                       setCurrentSource('userCamera');
                       setSelectedDeviceId(deviceId || stream.getVideoTracks()[0]?.getSettings().deviceId); // Update selected device ID based on actual stream
                       console.log("User Camera Active");
                   } else {
-                      throw new Error("Video element not ready.");
+                       console.warn("Video element ref not ready when stream was obtained. Cleaning up.");
+                       cleanupStream(stream); // Clean up the newly created stream if ref is gone
+                       throw new Error("Video element disappeared during setup.");
                   }
               } catch (error: any) {
                   console.error('Error accessing user camera:', error);
@@ -263,6 +278,7 @@ export default function LiveLocationView({
                            alt={`Simulated IP Camera view for spot ${spotId}`}
                            layout="fill"
                            objectFit="cover"
+                           data-ai-hint="parking lot surveillance camera" // AI Hint
                         />
                          <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Live IP Cam (Simulated)</Badge>
                        </>
@@ -278,6 +294,7 @@ export default function LiveLocationView({
                             alt={`Still image for spot ${spotId}`}
                             layout="fill"
                             objectFit="cover"
+                            data-ai-hint="parking spot still image" // AI Hint
                         />
                         <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs z-10">Recent Image</Badge>
                         </>
@@ -292,6 +309,7 @@ export default function LiveLocationView({
                         layout="fill"
                         objectFit="cover"
                         className="opacity-30"
+                        data-ai-hint="empty parking spot placeholder" // AI Hint
                     />
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 z-10">
                         <Video className="h-10 w-10 text-muted-foreground mb-2" />
@@ -405,5 +423,3 @@ export default function LiveLocationView({
     </Dialog>
   );
 }
-
-    

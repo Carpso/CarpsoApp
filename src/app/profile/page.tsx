@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -871,7 +871,11 @@ export default function ProfilePage() {
                            {isLoading && !userDetails ? <Skeleton className="h-32 w-32 rounded-full flex-shrink-0"/> : (
                                <div className="relative flex-shrink-0">
                                  <Avatar className="h-24 w-24 md:h-32 md:w-32 border">
-                                    <AvatarImage src={editMode ? editAvatarUrl : displayAvatar} alt={editMode ? editName : displayName} />
+                                    <AvatarImage
+                                        src={editMode ? editAvatarUrl : displayAvatar}
+                                        alt={editMode ? editName : displayName}
+                                        data-ai-hint="user profile picture" // AI Hint
+                                     />
                                     <AvatarFallback className="text-4xl">{userInitial}</AvatarFallback>
                                 </Avatar>
                                  {editMode && (
@@ -1529,5 +1533,3 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
-
-    

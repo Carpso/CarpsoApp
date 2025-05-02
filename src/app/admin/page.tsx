@@ -137,6 +137,11 @@ export default function AdminDashboardPage() {
   const [reportData, setReportData] = useState<any[]>([]); // State for report data
   const [isDownloading, setIsDownloading] = useState(false); // State for download process
 
+  const [recordsSearchUserId, setRecordsSearchUserId] = useState('');
+  const [recordsStartDate, setRecordsStartDate] = useState<Date | undefined>(undefined);
+  const [recordsEndDate, setRecordsEndDate] = useState<Date | undefined>(undefined);
+
+
   const isParkingLotOwner = userRole === 'ParkingLotOwner';
   const isAdmin = userRole === 'Admin';
 
@@ -333,11 +338,18 @@ export default function AdminDashboardPage() {
     // New handler for Parking Records
     const handleDownloadRecords = async () => {
         setIsDownloading(true);
-         const scope = selectedLotId === 'all' ? undefined : selectedLotId;
+         const scopeLotId = selectedLotId === 'all' ? undefined : selectedLotId;
          const scopeName = selectedLot ? selectedLot.name : 'all-locations';
          try {
-            // Fetch records based on current scope (userId filter could be added for owners)
-            const records = await getParkingRecords({ lotId: scope });
+            // Fetch records based on current filters
+             const filters = {
+                lotId: scopeLotId,
+                userId: recordsSearchUserId || undefined, // Use state value
+                startDate: recordsStartDate?.toISOString(),
+                endDate: recordsEndDate?.toISOString(),
+            };
+            console.log("Fetching records with filters:", filters);
+            const records = await getParkingRecords(filters);
             downloadCSV(records, `carpso-parking-records-${scopeName}.csv`);
          } catch (error) {
              console.error("Failed to fetch records for download:", error);
@@ -866,9 +878,18 @@ export default function AdminDashboardPage() {
                                       const ownerLots = ownerUser?.associatedLots || [];
                                       const canEdit = isAdmin || (isParkingLotOwner && (ownerLots.includes('*') || (ad.targetLocationId && ownerLots.includes(ad.targetLocationId)) || (!ad.targetLocationId && ownerLots.includes('*'))));
                                       const canDelete = canEdit;
+                                      const adHint = ad.associatedService ? `parking ${ad.associatedService.toLowerCase()}` : 'parking business advertisement'; // Hint for AI
                                      return (
                                         <TableRow key={ad.id}>
-                                            <TableCell><Image src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`} alt={ad.title} width={80} height={40} className="rounded object-cover aspect-[2/1]" /></TableCell>
+                                            <TableCell>
+                                                <Image
+                                                    src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/100/50`}
+                                                    alt={ad.title}
+                                                    width={80} height={40}
+                                                    className="rounded object-cover aspect-[2/1]"
+                                                    data-ai-hint={adHint} // Add AI Hint
+                                                />
+                                            </TableCell>
                                             <TableCell className="font-medium">{ad.title}</TableCell>
                                             {selectedLotId === 'all' && <TableCell>{targetLotName}</TableCell>}
                                             <TableCell className="text-xs">{ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'N/A'} - {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}</TableCell>
@@ -957,10 +978,27 @@ export default function AdminDashboardPage() {
                     <CardTitle>Parking Records {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : isAdmin ? ' - All Locations' : ''}</CardTitle>
                     <CardDescription>View historical parking records and transaction details.</CardDescription>
                     <div className="flex flex-wrap items-center gap-2 pt-4">
-                        {/* Add Filters: User Search, Date Range */}
-                         <Input placeholder="Search by User ID or Name..." className="max-w-xs" />
-                         {/* <DatePicker placeholder="Start Date" /> <DatePicker placeholder="End Date" /> */}
-                         <Button>Filter Records</Button>
+                         <Input
+                            placeholder="Search by User ID or Name..."
+                            value={recordsSearchUserId}
+                            onChange={(e) => setRecordsSearchUserId(e.target.value)}
+                            className="max-w-xs"
+                         />
+                         <DatePicker
+                             date={recordsStartDate}
+                             setDate={setRecordsStartDate}
+                             placeholder="Start Date"
+                             className="w-[180px]"
+                         />
+                         <DatePicker
+                             date={recordsEndDate}
+                             setDate={setRecordsEndDate}
+                             placeholder="End Date"
+                             className="w-[180px]"
+                         />
+                         <Button onClick={() => handleDownloadRecords()} disabled={isDownloading}>
+                             {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Filter & Download
+                         </Button>
                         <div className="ml-auto flex gap-2">
                             <Button variant="outline" onClick={handleDownloadRecords} disabled={isDownloading}>
                                 {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />} Download Records
@@ -1002,7 +1040,7 @@ export default function AdminDashboardPage() {
                                  <Card className="mb-6">
                                     <CardHeader><CardTitle className="text-lg flex items-center gap-2"><UsersRound className="h-5 w-5 text-purple-600"/> User Signups (Last 7 Days)</CardTitle></CardHeader>
                                     <CardContent className="h-[250px] w-full">
-                                         <ResponsiveContainer width="100%" height="100%">
+                                        <ChartContainer config={chartConfigBase} className="h-full w-full">
                                             <BarChart data={displayedAnalytics.userSignups}>
                                                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
@@ -1010,7 +1048,7 @@ export default function AdminDashboardPage() {
                                                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                                  <Bar dataKey="signups" fill="var(--color-signups)" radius={4} />
                                             </BarChart>
-                                        </ResponsiveContainer>
+                                        </ChartContainer>
                                     </CardContent>
                                  </Card> )}
                             {/* Daily Revenue Chart */}
@@ -1102,7 +1140,7 @@ export default function AdminDashboardPage() {
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-title" className="text-right">Title*</Label><Input id="ad-title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-start gap-4"><Label htmlFor="ad-description" className="text-right pt-2">Desc*</Label><Textarea id="ad-description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-imageUrl" className="text-right">Image URL</Label><Input id="ad-imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} /></div>
-                    {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e) => { e.currentTarget.style.display = 'none'; }}/></div></div>)}
+                    {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e) => { e.currentTarget.style.display = 'none'; }} data-ai-hint="advertisement preview"/></div></div>)}
                    <div className="grid grid-cols-4 items-center gap-4"> <Label htmlFor="ad-targetLocationId" className="text-right">Location*</Label>
                         <Select name="targetLocationId" value={currentAd.targetLocationId || 'all'} onValueChange={(value) => handleAdSelectChange('targetLocationId', value)} disabled={isSavingAd || (!isAdmin && isParkingLotOwner && getDisplayLots().length <=1 && !currentAd.id)}>
                            <SelectTrigger id="ad-targetLocationId" className="col-span-3"><SelectValue placeholder="Select target location" /></SelectTrigger>
@@ -1202,4 +1240,3 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
-

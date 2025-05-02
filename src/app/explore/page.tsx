@@ -13,12 +13,12 @@ import type { ParkingLotService } from '@/services/parking-lot'; // Import servi
 
 // Mock Data - Replace with actual data fetching
 const mockEvents = [
-    { id: 1, title: "Weekend Parking Discount", location: "Downtown Garage", date: "This Weekend", description: "Get 20% off parking rates all weekend!", image: "https://picsum.photos/seed/event1/300/150" },
-    { id: 2, title: "Monthly Pass Holder Event", location: "Airport Lot B", date: "Aug 15th", description: "Exclusive entry raffle for pass holders.", image: "https://picsum.photos/seed/event2/300/150" },
+    { id: 1, title: "Weekend Parking Discount", location: "Downtown Garage", date: "This Weekend", description: "Get 20% off parking rates all weekend!", image: "https://picsum.photos/seed/event1/300/150", hint: "parking discount city" },
+    { id: 2, title: "Monthly Pass Holder Event", location: "Airport Lot B", date: "Aug 15th", description: "Exclusive entry raffle for pass holders.", image: "https://picsum.photos/seed/event2/300/150", hint: "airport parking event" },
 ];
 
 const mockAuctions = [
-    { id: 1, title: "Abandoned Vehicle Auction", location: "Mall Parking Deck - Level 3", date: "Next Tuesday, 10 AM", description: "Several vehicles up for auction. Viewing starts at 9 AM.", image: "https://picsum.photos/seed/auction1/300/150" },
+    { id: 1, title: "Abandoned Vehicle Auction", location: "Mall Parking Deck - Level 3", description: "Several vehicles up for auction. Viewing starts at 9 AM.", image: "https://picsum.photos/seed/auction1/300/150", hint: "car auction parking garage" },
 ];
 
 // Helper to get service icon
@@ -83,6 +83,7 @@ export default function ExplorePage() {
              date: ad.endDate ? `Until ${new Date(ad.endDate).toLocaleDateString()}` : 'Ongoing',
              description: ad.description,
              image: ad.imageUrl || `https://picsum.photos/seed/${ad.id}/300/150`, // Use provided or placeholder image
+             hint: ad.associatedService ? ad.associatedService.toLowerCase().replace(' ', '-') : 'parking promotion', // Hint based on service or generic
              isAd: true, // Flag to potentially style differently
              associatedService: ad.associatedService, // Pass service type
         })),
@@ -116,7 +117,14 @@ export default function ExplorePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {allPromotions.map(item => (
                     <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
-                        <Image src={item.image} alt={item.title} width={300} height={150} className="w-full h-40 object-cover"/>
+                        <Image
+                            src={item.image}
+                            alt={item.title}
+                            width={300}
+                            height={150}
+                            className="w-full h-40 object-cover"
+                            data-ai-hint={item.hint} // Add AI Hint
+                         />
                         <CardHeader className="pb-2">
                             <div className="flex justify-between items-start">
                                 <CardTitle className="text-lg">{item.title}</CardTitle>
@@ -156,7 +164,14 @@ export default function ExplorePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
              {mockAuctions.map(auction => (
                 <Card key={auction.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                    <Image src={auction.image} alt={auction.title} width={300} height={150} className="w-full h-40 object-cover"/>
+                    <Image
+                        src={auction.image}
+                        alt={auction.title}
+                        width={300}
+                        height={150}
+                        className="w-full h-40 object-cover"
+                        data-ai-hint={auction.hint} // Add AI Hint
+                    />
                     <CardHeader>
                         <CardTitle>{auction.title}</CardTitle>
                          <CardDescription className="flex items-center gap-1 text-xs">

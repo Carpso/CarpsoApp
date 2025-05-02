@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import Receipt from '@/components/common/Receipt'; // Import Receipt component
+import { checkPlateWithAuthority } from '@/services/authority-check'; // Import authority check
 
 // Extend ParkingHistoryEntry if needed, or use props directly
 interface ParkingHistoryEntry {
@@ -68,19 +69,6 @@ const submitParkingIssueReport = async (data: {
     }
 };
 
-// Mock function to simulate RTSA/authority check
-const checkPlateWithAuthority = async (plateNumber: string): Promise<{ registeredOwner?: string, vehicleMake?: string } | null> => {
-    console.log(`Simulating check with authority (e.g., RTSA) for plate: ${plateNumber}`);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    if (plateNumber.startsWith("FAKE")) {
-        return null; // Simulate not found
-    }
-    // Simulate successful lookup
-    return {
-        registeredOwner: "John Doe (Simulated)",
-        vehicleMake: "Toyota Corolla (Simulated)",
-    };
-};
 
 export default function ReportIssueModal({ isOpen, onClose, reservation, userId }: ReportIssueModalProps) {
   const { isOnline } = useContext(AppStateContext)!; // Get online status
@@ -150,9 +138,9 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                 <p><strong>Reported Spot:</strong> ${reportData.spotId}</p>
                 <p><strong>Location:</strong> ${reportData.locationName}</p>
                 <p><strong>Reported Plate:</strong> ${reportData.reportedPlateNumber}</p>
-                ${plateCheckResult && plateCheckResult !== 'error' && isOnline ? `<p><strong>Vehicle (Simulated):</strong> ${plateCheckResult.vehicleMake} - Owner: ${plateCheckResult.registeredOwner}</p>` : ''}
-                ${details ? `<p><strong>Details:</strong> ${details}</p>` : ''}
-                ${photoPreview ? '<p><i>Photo submitted.</i></p>' : ''}
+                ${reportData.plateCheckResult && reportData.plateCheckResult !== 'error' && isOnline ? `<p><strong>Vehicle (Simulated):</strong> ${reportData.plateCheckResult.vehicleMake} - Owner: ${reportData.plateCheckResult.registeredOwner}</p>` : ''}
+                ${reportData.details ? `<p><strong>Details:</strong> ${reportData.details}</p>` : ''}
+                ${reportData.photoSubmitted ? '<p><i>Photo submitted.</i></p>' : ''}
                 <hr />
                  <p style="text-align:center; font-size: 0.8em;">Keep this confirmation for your records.</p>
                  <p style="text-align:center; font-size: 0.8em;">Thank you for helping improve Carpso!</p>

@@ -1,4 +1,4 @@
-{// src/components/parking/ParkingLotGrid.tsx
+// src/components/parking/ParkingLotGrid.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, useContext, useRef } from 'react'; // Added useRef
@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button'; // Import Button
 import LiveLocationView from './LiveLocationView'; // Import LiveLocationView
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
-import { Alert, AlertTitle } from '@/components/ui/alert'; // Import Alert components
+import { Alert, AlertTitle, AlertDescription as AlertDialogDescriptionSub } from '@/components/ui/alert'; // Import Alert components, renamed AlertDescription
 import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
 import ParkingTicket from '@/components/common/ParkingTicket'; // Import the new Ticket component
 import html2canvas from 'html2canvas'; // For downloading ticket as image
@@ -528,15 +528,15 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             </AlertDialogHeader>
 
             {/* Cost and Prediction Sections (Outside Description) */}
-            <div className="space-y-4 pt-2">
+             <div className="space-y-4 pt-2">
                {/* Offline Alert within Dialog */}
                 {!isOnline && (
                     <Alert variant="destructive">
                         <WifiOff className="h-4 w-4" />
                         <AlertTitle>You are offline!</AlertTitle>
-                         <AlertDialogDescription>
+                         <AlertDialogDescriptionSub> {/* Use alias */}
                            Cost estimates and availability predictions are unavailable. Reservations cannot be confirmed until you reconnect.
-                        </AlertDialogDescription>
+                        </AlertDialogDescriptionSub>
                     </Alert>
                 )}
                 {/* Estimated Cost Display */}
