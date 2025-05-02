@@ -14,11 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Nfc, Loader2, Smartphone, Car, Users, LogIn, MessageSquare, ExternalLink, CheckCircle, CircleAlert, Fingerprint, Briefcase } from 'lucide-react'; // Added Briefcase
+import { Phone, Mail, Nfc, Loader2, Smartphone, Car, Users, LogIn, MessageSquare, ExternalLink, CheckCircle, CircleAlert, Fingerprint, Briefcase, Key } from 'lucide-react'; // Added Briefcase, Key
 import { useToast } from '@/hooks/use-toast';
 import { checkPlateWithAuthority } from '@/services/authority-check'; // Import the authority check service
 import { Switch } from '@/components/ui/switch'; // Import Switch
 import type { UserRole } from '@/services/user-service'; // Import UserRole type
+import { verifyAdminCode } from '@/services/auth-service'; // Import admin code verification
 
 // Simulate social icons (replace with actual SVGs/components if needed)
 const GoogleIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1h-9.13v2.8h5.37c-.47 1.74-2 3.05-4.27 3.05-2.57 0-4.66-2.09-4.66-4.66s2.09-4.66 4.66-4.66c1.45 0 2.7.52 3.64 1.37l2.1-2.1c-1.32-1.23-3.08-1.98-5.14-1.98C6.49 4.6 3.18 7.9 3.18 12s3.31 7.4 7.17 7.4c4.03 0 6.74-2.82 6.74-6.86 0-.46-.05-.86-.14-1.24Z"/></svg>;
@@ -38,13 +39,16 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState(''); // Added for sign up
-  const [mobileMoneyNumber, setMobileMoneyNumber] = useState('');
+  // Removed mobileMoneyNumber from state as it's not used for signup anymore
   const [licensePlate, setLicensePlate] = useState(''); // Primary license plate for sign up/sign in
-  // const [ownerPhone, setOwnerPhone] = useState(''); // Removed for simplified signup
   const [hasMultipleCars, setHasMultipleCars] = useState(false); // State for multiple cars toggle
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
   const [plateCheckResult, setPlateCheckResult] = useState<{ registeredOwner?: string, vehicleMake?: string } | null | 'error'>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole>('User'); // Default role for sign up
+  const [adminAuthCode, setAdminAuthCode] = useState(''); // State for admin authorization code
+  const [isAdminCodeVerified, setIsAdminCodeVerified] = useState<boolean | null>(null); // Track admin code verification
+  const [isVerifyingAdminCode, setIsVerifyingAdminCode] = useState(false); // Loading state for admin code check
 
   // OTP States
   const [otpSent, setOtpSent] = useState(false);
@@ -56,56 +60,61 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   // --- MOCK AUTH FUNCTIONS (Replace with real backend calls) ---
 
   // Mock Sign In: Returns basic user info
-  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => { // Use UserRole type
-    console.log(`Simulating sign in with ${method}:`, { email, phone, mobileMoneyNumber, licensePlate, otpPhone });
-    setIsLoading(true); // Moved isLoading here to cover authority check
+  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
+    console.log(`Simulating sign in with ${method}:`, { email, phone, /*mobileMoneyNumber,*/ licensePlate, otpPhone });
+    setIsLoading(true);
     let userFound = false;
-    let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined; // Use UserRole type
+    let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined;
 
     // --- Simulate specific sign-in methods ---
     if (method === 'google' || method === 'facebook' || method === 'apple') {
-        // Simulate social login success
         await new Promise(resolve => setTimeout(resolve, 1000));
         const socialProvider = method.charAt(0).toUpperCase() + method.slice(1);
         const userId = `user_${method}_${Math.random().toString(36).substring(7)}`;
         simulatedUser = {
             id: userId,
-            name: `${socialProvider} User`, // Example name
+            name: `${socialProvider} User`,
             avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-            role: 'User'
+            role: 'User' // Social logins default to User role
         };
         userFound = true;
     } else if (method === 'otp') {
-        // Simulate OTP verification
         await new Promise(resolve => setTimeout(resolve, 800));
-        if (otpCode === '123456') { // Simulate correct OTP
+        if (otpCode === '123456') {
             const userId = `user_phone_${otpPhone.replace(/\D/g, '')}`;
+            // Mock role lookup based on phone number (replace with actual lookup)
+            let role: UserRole = 'User';
+            if (otpPhone.endsWith('007')) role = 'ParkingAttendant';
+            else if (otpPhone.endsWith('999')) role = 'Admin'; // Example Admin phone
+             else if (otpPhone.endsWith('888')) role = 'ParkingLotOwner'; // Example Owner phone
+
             simulatedUser = {
                 id: userId,
                 name: `User ${otpPhone.slice(-4)}`,
                 avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-                role: 'User'
+                role: role // Assign looked-up role
             };
             userFound = true;
         } else {
              toast({ title: "Invalid OTP", description: "The code you entered is incorrect.", variant: "destructive" });
         }
     } else if (method === 'licensePlate' && licensePlate) {
+        setIsCheckingPlate(true); // Use loading state for the entire process including authority check
         try {
             const plateDetails = await checkPlateWithAuthority(licensePlate);
             if (plateDetails) {
                 const userId = `user_plate_${licensePlate.replace(/\s+/g, '')}`;
-                // Find existing user based on plate/owner (mock)
-                let existingUser = null; // TODO: Replace with actual lookup
-                if (plateDetails.registeredOwner?.includes('Admin')) existingUser = { role: 'Admin' };
-                else if (plateDetails.registeredOwner?.includes('Owner')) existingUser = { role: 'ParkingLotOwner' };
-                else if (plateDetails.registeredOwner?.includes('Attendant')) existingUser = { role: 'ParkingAttendant' };
+                // Mock finding user based on plate/owner
+                let foundRole: UserRole = 'User'; // Default
+                if (plateDetails.registeredOwner?.includes('AdminCorp')) foundRole = 'Admin';
+                else if (plateDetails.registeredOwner?.includes('OwnerCo')) foundRole = 'ParkingLotOwner';
+                else if (plateDetails.registeredOwner?.includes('AttendantInc')) foundRole = 'ParkingAttendant';
 
                 simulatedUser = {
                     id: userId,
                     name: plateDetails.registeredOwner || `Driver ${licensePlate}`,
                     avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-                    role: existingUser?.role || 'User' // Use found role or default
+                    role: foundRole
                 };
                 userFound = true;
             } else {
@@ -114,47 +123,84 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         } catch (error) {
             console.error("Error during license plate check:", error);
             toast({ title: "Sign In Error", description: "Could not verify license plate. Please try another method.", variant: "destructive" });
+        } finally {
+            setIsCheckingPlate(false); // Stop check indicator
         }
-    } else if (method !== 'licensePlate' && method !== 'google' && method !== 'facebook' && method !== 'apple' && method !== 'otp') {
-        // Simulate other email/password/phone/rfid methods
+    } else if (method === 'email') { // Email/Password
         await new Promise(resolve => setTimeout(resolve, 1500));
         userFound = Math.random() > 0.3;
         if (userFound) {
-            const userId = `user_${Math.random().toString(36).substring(7)}`;
-             // Simulate role based on email/phone for mock purposes
-            let role: UserRole = 'User';
-            if (email.includes('admin')) role = 'Admin';
-            else if (email.includes('owner')) role = 'ParkingLotOwner';
-            else if (phone.endsWith('007')) role = 'ParkingAttendant'; // Example attendant phone
+            const userId = `user_email_${email.split('@')[0]}`;
+            let role: UserRole = 'User'; // Default
+            if (email.includes('admin@')) role = 'Admin';
+            else if (email.includes('owner@')) role = 'ParkingLotOwner';
+            else if (email.includes('attend@')) role = 'ParkingAttendant';
 
             simulatedUser = {
                 id: userId,
-                name: email.split('@')[0] || phone || mobileMoneyNumber || `User ${userId.substring(0, 4)}`,
+                name: name || email.split('@')[0],
                 avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-                role: role // Use determined role
+                role: role
             };
         }
+    } else if (method === 'rfid' || method === 'mobileMoney') {
+         // Simulate RFID or Mobile Money (less common for primary auth, more for payment linking)
+         await new Promise(resolve => setTimeout(resolve, 1200));
+         // For now, simulate failure for these as primary sign-in methods
+         userFound = false;
+         toast({ title: "Sign In Method Unavailable", description: "RFID and Mobile Money sign-in are not primary methods. Please link them in your profile.", variant: "default" });
     }
+
 
     setIsLoading(false);
 
     if (userFound && simulatedUser) {
         return { success: true, user: simulatedUser };
     } else {
-        if (method !== 'licensePlate' && method !== 'otp' && method !== 'google' && method !== 'facebook' && method !== 'apple') {
+        if (!['licensePlate', 'otp', 'google', 'facebook', 'apple', 'rfid', 'mobileMoney'].includes(method)) { // Avoid double toast
             toast({ title: "Sign In Failed", description: "Invalid credentials or user not found.", variant: "destructive" });
         }
         return { success: false };
     }
   };
 
-   // Mock Sign Up: Returns basic user info (Simplified Input - Email only for now)
-   const mockSignUp = async (method: 'email'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => { // Use UserRole type
-      console.log(`Simulating sign up with ${method}:`, { name, email, licensePlate, hasMultipleCars }); // Removed ownerPhone from log
+   // Mock Sign Up: Simplified Input - Email only for now, handles Admin role with code
+   const mockSignUp = async (method: 'email'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
+      console.log(`Simulating sign up with ${method}:`, { name, email, licensePlate, hasMultipleCars, selectedRole });
       setIsLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      let finalRole = selectedRole;
+
+      // Verify admin code if Admin role selected
+      if (selectedRole === 'Admin') {
+          setIsVerifyingAdminCode(true);
+          try {
+             const isValid = await verifyAdminCode(adminAuthCode); // Call verification function
+             setIsAdminCodeVerified(isValid);
+             if (!isValid) {
+                 toast({ title: "Invalid Admin Code", description: "The authorization code is incorrect.", variant: "destructive" });
+                 setIsLoading(false);
+                 setIsVerifyingAdminCode(false);
+                 return { success: false };
+             }
+             // If code is valid, keep finalRole as 'Admin'
+          } catch (error) {
+               console.error("Error verifying admin code:", error);
+               toast({ title: "Verification Error", description: "Could not verify authorization code.", variant: "destructive" });
+               setIsLoading(false);
+               setIsVerifyingAdminCode(false);
+               return { success: false };
+          } finally {
+              setIsVerifyingAdminCode(false);
+          }
+      } else {
+          setIsAdminCodeVerified(null); // Reset verification if not Admin
+          finalRole = selectedRole; // Use the selected non-Admin role
+      }
+
+
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate rest of signup process
       const success = Math.random() > 0.3;
-      let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined; // Use UserRole type
+      let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined;
 
       if (success) {
           const userId = `user_${Math.random().toString(36).substring(7)}`;
@@ -162,9 +208,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
               id: userId,
               name: name || email.split('@')[0] || `User ${userId.substring(0, 4)}`,
               avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-              role: 'User' // All new signups default to User
+              role: finalRole // Assign the determined role
           };
-          console.log(`Simulated saving essential signup data for user ${userId}:`, { licensePlate, hasMultipleCars }); // Removed ownerPhone
+          console.log(`Simulated saving essential signup data for user ${userId} with role ${finalRole}:`, { licensePlate, hasMultipleCars });
       }
       setIsLoading(false);
 
@@ -208,8 +254,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
    const handleSignUp = async (method: 'email') => { // Only email signup now
      if (!name) { toast({ title: "Missing Information", description: "Please enter your full name.", variant: "destructive" }); return; }
      if (!licensePlate) { toast({ title: "Missing Information", description: "Please enter your primary vehicle's license plate.", variant: "destructive" }); return; }
-     // if (!ownerPhone) { toast({ title: "Missing Information", description: "Please enter the vehicle owner's phone number.", variant: "destructive" }); return; } // Removed owner phone check
      if (method === 'email' && (!email || !password)) { toast({ title: "Missing Information", description: "Please enter your email address and create a password.", variant: "destructive" }); return; }
+      if (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false)) {
+          toast({ title: "Admin Verification Failed", description: "Please enter a valid admin authorization code.", variant: "destructive" });
+          return;
+      }
 
     const result = await mockSignUp(method);
     if (result.success && result.user) {
@@ -217,7 +266,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
        onAuthSuccess(result.user.id, result.user.name, result.user.avatarUrl, result.user.role);
        onClose();
     } else {
-       toast({ title: "Sign Up Failed", description: "Could not create account. Please try again.", variant: "destructive" });
+       if (isAdminCodeVerified !== false) { // Avoid double toast if admin code was invalid
+            toast({ title: "Sign Up Failed", description: "Could not create account. Please try again.", variant: "destructive" });
+       }
     }
   };
 
@@ -285,6 +336,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       handleSignIn('otp'); // Use the 'otp' method for mockSignIn
    }
 
+    const handleRoleChange = (value: string) => {
+        setSelectedRole(value as UserRole);
+        // Reset admin code verification if role changes from Admin
+        if (value !== 'Admin') {
+            setAdminAuthCode('');
+            setIsAdminCodeVerified(null);
+        }
+    };
+
 
    // Reset form state when dialog closes
    const handleDialogClose = (open: boolean) => {
@@ -293,9 +353,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             setEmail('');
             setPassword('');
             setPhone('');
-            setMobileMoneyNumber('');
+            // setMobileMoneyNumber(''); // Removed
             setLicensePlate('');
-            // setOwnerPhone(''); // Removed
             setHasMultipleCars(false); // Reset toggle
             setRfidStatus('idle');
             setOtpSent(false); // Reset OTP state
@@ -304,6 +363,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             setIsLoading(false);
             setPlateCheckResult(null);
             setIsCheckingPlate(false);
+            setSelectedRole('User'); // Reset role to default
+            setAdminAuthCode(''); // Reset admin code
+            setIsAdminCodeVerified(null); // Reset admin code verification
+            setIsVerifyingAdminCode(false);
             onClose();
        }
    }
@@ -326,7 +389,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
           {/* Sign In Tab */}
           <TabsContent value="signin">
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2"> {/* Added scroll */}
                 {/* --- OTP Login --- */}
                  {!otpSent ? (
                       <>
@@ -389,20 +452,22 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                 <div className="space-y-2">
                     <Label htmlFor="signin-license-plate">License Plate</Label>
                     <Input id="signin-license-plate" type="text" placeholder="e.g., ABX 1234" value={licensePlate} onChange={handlePlateNumberChange} disabled={isLoading || otpSent} className="uppercase"/>
+                     {/* Plate Check Result Display */}
+                     {isCheckingPlate && <div className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin"/> Verifying...</div>}
+                     {plateCheckResult && plateCheckResult !== 'error' && !isCheckingPlate && (
+                          <div className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="h-3 w-3"/> Found: {plateCheckResult.vehicleMake} ({plateCheckResult.registeredOwner})</div>
+                     )}
+                     {plateCheckResult === null && licensePlate.length >= 4 && !isCheckingPlate && (
+                          <div className="text-xs text-orange-600 flex items-center gap-1"><CircleAlert className="h-3 w-3"/> Plate not recognized. Try sign up?</div>
+                     )}
+                     {plateCheckResult === 'error' && !isCheckingPlate && (
+                          <div className="text-xs text-destructive flex items-center gap-1"><CircleAlert className="h-3 w-3"/> Error checking plate.</div>
+                     )}
                 </div>
-                <Button onClick={() => handleSignIn('licensePlate')} disabled={isLoading || !licensePlate || otpSent} variant="outline" className="w-full">
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Sign In with License Plate
+                <Button onClick={() => handleSignIn('licensePlate')} disabled={isLoading || !licensePlate || otpSent || isCheckingPlate} variant="outline" className="w-full">
+                    {(isLoading || isCheckingPlate) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />} Sign In with License Plate
                 </Button>
 
-
-               {/* Mobile Money Sign In */}
-                <div className="space-y-2">
-                    <Label htmlFor="signin-mobile-money">Mobile Money Number</Label>
-                    <Input id="signin-mobile-money" type="tel" placeholder="e.g., 09XX XXX XXX" value={mobileMoneyNumber} onChange={e => setMobileMoneyNumber(e.target.value)} disabled={isLoading || otpSent} />
-                </div>
-                <Button onClick={() => handleSignIn('mobileMoney')} disabled={isLoading || !mobileMoneyNumber || otpSent} variant="outline" className="w-full">
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />} Sign In with Mobile Money
-                </Button>
 
                {/* RFID Sign In */}
                 <Button onClick={handleRfidScan} disabled={isLoading || rfidStatus === 'scanning' || otpSent} variant="secondary" className="w-full">
@@ -415,6 +480,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                <Button disabled={true} variant="outline" className="w-full opacity-50 cursor-not-allowed">
                  <Fingerprint className="mr-2 h-4 w-4" /> Sign In with Biometrics (Coming Soon)
                </Button>
+
+                {/* Mobile Money Sign In (Placeholder - less common for sign-in) */}
+                <Button disabled={true} variant="outline" className="w-full opacity-50 cursor-not-allowed">
+                    <Smartphone className="mr-2 h-4 w-4" /> Sign In with Mobile Money (Link account in profile)
+                </Button>
             </div>
           </TabsContent>
 
@@ -461,6 +531,43 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                       <p className="text-xs text-muted-foreground pl-8">You can add more vehicles in your profile after signing up. Corporate packages are available.</p>
                   )}
 
+                  {/* User Role Selection */}
+                  <div className="space-y-2 pt-4 border-t">
+                      <Label htmlFor="signup-role">Account Type*</Label>
+                      <Tabs value={selectedRole} onValueChange={handleRoleChange} className="w-full">
+                          <TabsList className="grid w-full grid-cols-3">
+                              <TabsTrigger value="User" disabled={isLoading}>User</TabsTrigger>
+                              <TabsTrigger value="ParkingLotOwner" disabled={isLoading}>Owner</TabsTrigger>
+                              <TabsTrigger value="Admin" disabled={isLoading}>Admin</TabsTrigger>
+                              {/* Attendant role might not sign up this way */}
+                          </TabsList>
+                      </Tabs>
+                      {selectedRole === 'ParkingLotOwner' && <p className="text-xs text-muted-foreground pl-1">Manage your parking lot(s) and view analytics.</p>}
+                      {selectedRole === 'Admin' && (
+                          <div className="space-y-2 pl-1">
+                             <p className="text-xs text-muted-foreground">Requires authorization from Carpso Management.</p>
+                             <Label htmlFor="admin-auth-code">Authorization Code*</Label>
+                             <div className="flex items-center gap-2">
+                                <Input
+                                  id="admin-auth-code"
+                                  type="text"
+                                  placeholder="Enter Admin Code"
+                                  value={adminAuthCode}
+                                  onChange={(e) => {
+                                       setAdminAuthCode(e.target.value);
+                                       setIsAdminCodeVerified(null); // Reset verification on change
+                                  }}
+                                  disabled={isLoading || isVerifyingAdminCode}
+                                  required
+                                />
+                                  {isVerifyingAdminCode && <Loader2 className="h-4 w-4 animate-spin" />}
+                                  {isAdminCodeVerified === true && <CheckCircle className="h-4 w-4 text-green-600" />}
+                                  {isAdminCodeVerified === false && <CircleAlert className="h-4 w-4 text-destructive" />}
+                             </div>
+                          </div>
+                      )}
+                 </div>
+
 
                  {/* Email/Password Sign Up */}
                  <div className="space-y-2 pt-4 border-t">
@@ -468,7 +575,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                     <Input id="signup-email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} required/>
                     <Label htmlFor="signup-password">Create Password*</Label>
                     <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} required/>
-                    <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !email || !password} className="w-full">
+                    <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !email || !password || (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false))} className="w-full">
                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
                     </Button>
                  </div>

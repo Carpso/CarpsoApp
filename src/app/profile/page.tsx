@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useContext, useCallback } from 'react';
+import QRCode from 'qrcode.react'; // Import QRCode
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact } from 'lucide-react'; // Added RefreshCcw, MessageSquare, Contact
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer } from 'lucide-react'; // Added Printer
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints
@@ -547,13 +548,14 @@ export default function ProfilePage() {
             setWallet(walletData);
             setWalletTransactions(transactionsData);
             setLastUpdated(Date.now());
+            toast({ title: "Wallet Refreshed", description: `Balance: ${getCurrencySymbol(walletData.currency)} ${walletData.balance.toFixed(2)}`}); // Confirmation toast
         } catch (error) {
              console.error("Failed to refresh wallet data:", error);
              toast({ title: "Wallet Update Error", description: "Could not refresh wallet balance/transactions.", variant: "destructive" });
         } finally {
              setIsLoadingWallet(false);
         }
-    }, [userId, toast, isOnline]);
+    }, [userId, toast, isOnline]); // Added toast
 
     // Refresh gamification data (Online only) - Added refresh function
     const refreshGamificationData = useCallback(async () => {
@@ -570,6 +572,7 @@ export default function ProfilePage() {
             setGamification(gamificationData);
             setPointsTransactions(pointsTxnsData);
             setLastUpdated(Date.now());
+             toast({ title: "Rewards Refreshed", description: `Points: ${gamificationData.points}`});
         } catch (error) {
             console.error("Failed to refresh gamification data:", error);
             toast({ title: "Points Update Error", description: "Could not refresh points balance/history.", variant: "destructive" });
@@ -589,6 +592,7 @@ export default function ProfilePage() {
             const bookmarksData = await fetchUserBookmarks(userId);
             setBookmarks(bookmarksData);
             setLastUpdated(Date.now());
+             toast({ title: "Bookmarks Refreshed" });
         } catch (error) {
              console.error("Failed to refresh bookmarks:", error);
              toast({ title: "Bookmarks Update Error", description: "Could not refresh saved locations.", variant: "destructive" });
@@ -608,6 +612,7 @@ export default function ProfilePage() {
             const ratesData = await fetchExchangeRates();
             setExchangeRates(ratesData);
             setLastUpdated(Date.now());
+            toast({ title: "Currency Rates Refreshed" });
         } catch (error) {
              console.error("Failed to refresh exchange rates:", error);
              toast({ title: "Rates Update Error", description: "Could not refresh currency rates.", variant: "destructive" });
@@ -627,6 +632,7 @@ export default function ProfilePage() {
             const methodsData = await fetchPaymentMethods(userId);
             setPaymentMethods(methodsData);
             setLastUpdated(Date.now());
+             toast({ title: "Payment Methods Refreshed" });
         } catch (error) {
              console.error("Failed to refresh payment methods:", error);
              toast({ title: "Payment Methods Update Error", description: "Could not refresh payment methods.", variant: "destructive" });
@@ -1069,6 +1075,7 @@ export default function ProfilePage() {
     const currentTier = billingInfo?.subscriptionTier || 'Basic';
     const isPremium = currentTier === 'Premium';
      const preferredMethod = paymentMethods.find(pm => pm.id === userDetails?.preferredPaymentMethod); // Find preferred method details
+    const receivePaymentQrValue = userId ? `carpso_pay:${userId}` : 'carpso_pay:unknown_user'; // QR Code value
 
     // Render loading or empty state if not authenticated or data is loading
     if (isLoading && !userDetails) { // Show skeleton only on initial full load without cached data
@@ -1143,7 +1150,7 @@ export default function ProfilePage() {
                             ) : lastUpdated ? (
                                 <span>Last Updated: {new Date(lastUpdated).toLocaleTimeString()}</span>
                             ) : (
-                                <span>Up to date.</span>
+                                <span>Updating...</span> // Show if online but no timestamp yet
                             )}
                          </div>
                           {/* Display error if loading failed but some cached data exists */}
@@ -1287,7 +1294,7 @@ export default function ProfilePage() {
                                              )) : <SelectItem value="ZMW" disabled>ZMW (K)</SelectItem>}
                                         </SelectContent>
                                      </Select>
-                                    <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
+                                    <Button variant="outline" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
                                          {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" /> } Refresh
                                     </Button>
                                 </div>
@@ -1309,7 +1316,7 @@ export default function ProfilePage() {
                                                     </p>
                                                 )}
                                              </div>
-                                             {/* QR Code Trigger (Functionality needed) */}
+                                             {/* QR Code Trigger */}
                                               <Dialog>
                                                   <DialogTrigger asChild>
                                                       <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
@@ -1321,13 +1328,18 @@ export default function ProfilePage() {
                                                       <DialogHeaderSub>
                                                           <DialogTitleSub>Receive Payment</DialogTitleSub>
                                                           <DialogDescriptionSub>
-                                                              Scan this code to send money to {displayName}.
+                                                              Scan this code to send Carpso Wallet funds to {displayName}.
                                                           </DialogDescriptionSub>
                                                       </DialogHeaderSub>
                                                       <div className="flex justify-center py-4">
-                                                          <QRCode value={`carpso_pay:${userId}`} size={180} />
+                                                          {typeof window !== 'undefined' ? ( // Ensure QRCode renders client-side
+                                                              <QRCode value={receivePaymentQrValue} size={180} />
+                                                          ) : (
+                                                               <Skeleton className="h-[180px] w-[180px]" />
+                                                          )}
                                                       </div>
                                                       <p className="text-center text-sm text-muted-foreground">User ID: {userId}</p>
+                                                      <p className="text-center text-xs text-muted-foreground">Value: {receivePaymentQrValue}</p>
                                                   </DialogContent>
                                               </Dialog>
                                          </div>
@@ -1566,7 +1578,7 @@ export default function ProfilePage() {
                         <section className="mb-6">
                              <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Points</h3>
-                                <Button variant="ghost" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
+                                <Button variant="outline" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
                                     {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
                                 </Button>
                              </div>

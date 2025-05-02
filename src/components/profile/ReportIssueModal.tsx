@@ -40,7 +40,7 @@ interface ReportIssueModalProps {
   userId: string;
 }
 
-// Mock function to simulate report submission
+// Mock function to simulate report submission with escalation
 const submitParkingIssueReport = async (data: {
     reservationId: string;
     userId: string;
@@ -59,14 +59,28 @@ const submitParkingIssueReport = async (data: {
     const apiCheckSuccess = Math.random() > 0.2; // Simulate RTSA/authority check
     const caseId = "REP" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    if (isPlateValid && apiCheckSuccess) {
-        return { success: true, message: `Report submitted successfully. Case ID: ${caseId}`, caseId: caseId, timestamp: data.timestamp };
-    } else if (!isPlateValid) {
-        return { success: false, message: "Invalid license plate number provided.", timestamp: data.timestamp };
-    } else {
-        // Still submit, but with limited details acknowledgement
-        return { success: true, message: `Could not verify plate with authority. Report submitted with limited details. Case ID: ${caseId}`, caseId: caseId, timestamp: data.timestamp };
+    // Simulate Escalation Logic
+    console.log(`Report ${caseId}: Notifying Attendant for location ${data.locationId}...`);
+    // await notifyAttendant(data.locationId, caseId, data); // Replace with actual notification
+    await new Promise(resolve => setTimeout(resolve, 300));
+    console.log(`Report ${caseId}: Escalating to Owner for location ${data.locationId}...`);
+    // await notifyOwner(data.locationId, caseId, data); // Replace with actual notification
+     await new Promise(resolve => setTimeout(resolve, 300));
+    console.log(`Report ${caseId}: Logging for Carpso Management review...`);
+    // await logForManagement(caseId, data); // Replace with actual logging
+
+    let message = `Report submitted successfully. It has been forwarded to the parking attendant and owner. Case ID: ${caseId}`;
+    let success = true;
+
+    if (!isPlateValid) {
+        message = `Invalid license plate. ${message}`; // Prepend validation message
+        // Still consider it a successful submission in terms of logging
+    } else if (!apiCheckSuccess) {
+         message = `Could not verify plate with authority. ${message}`; // Prepend verification message
+         // Still consider it a successful submission
     }
+
+    return { success: success, message: message, caseId: caseId, timestamp: data.timestamp };
 };
 
 
@@ -142,6 +156,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                 ${reportData.details ? `<p><strong>Details:</strong> ${reportData.details}</p>` : ''}
                 ${reportData.photoSubmitted ? '<p><i>Photo submitted.</i></p>' : ''}
                 <hr />
+                 <p><i>This report has been forwarded to the parking attendant and owner for review.</i></p>
                  <p style="text-align:center; font-size: 0.8em;">Keep this confirmation for your records.</p>
                  <p style="text-align:center; font-size: 0.8em;">Thank you for helping improve Carpso!</p>
             `;
@@ -195,8 +210,8 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         timestamp: reportTimestamp, // Pass timestamp
       });
 
-      if (result.success) {
-         const reportDataForReceipt = {
+      // Even if plate check failed, the report is considered "submitted" for logging
+      const reportDataForReceipt = {
              timestamp: result.timestamp,
              caseId: result.caseId,
              spotId: reservation.spotId,
@@ -207,25 +222,28 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
              plateCheckResult: plateCheckResult, // Include check result for printing context
          };
 
-        toast({
-            title: "Report Submitted",
-            description: (
-                <div className="flex flex-col gap-2">
-                     <span>{result.message}</span>
-                     <Button
-                         variant="secondary"
-                         size="sm"
-                         onClick={() => handlePrintReportConfirmation(reportDataForReceipt)}
-                         className="mt-2"
-                     >
-                        <Printer className="mr-2 h-4 w-4"/> Print Confirmation
-                     </Button>
-                </div>
-            ),
-            duration: 8000,
-        });
-        onClose(); // Close modal on success
-        // Reset form state after a delay
+      toast({
+          title: result.success ? "Report Submitted" : "Report Submitted (with issues)",
+          description: (
+              <div className="flex flex-col gap-2">
+                  <span>{result.message}</span>
+                  {result.caseId && ( // Only show print button if a case ID was generated
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handlePrintReportConfirmation(reportDataForReceipt)}
+                        className="mt-2"
+                    >
+                       <Printer className="mr-2 h-4 w-4"/> Print Confirmation
+                    </Button>
+                  )}
+              </div>
+          ),
+          variant: result.success ? "default" : "warning", // Use warning if plate check failed
+          duration: 10000, // Longer duration
+      });
+      onClose(); // Close modal
+      // Reset form state after a delay
          setTimeout(() => {
              setPlateNumber('');
              setDetails('');
@@ -233,9 +251,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
              setPhotoPreview(null);
              setPlateCheckResult(null);
          }, 300);
-      } else {
-        toast({ title: "Submission Failed", description: result.message, variant: "destructive" });
-      }
+
     } catch (error) {
       console.error("Error submitting report:", error);
       toast({ title: "Error", description: "An unexpected error occurred. Please try again.", variant: "destructive" });
@@ -374,7 +390,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
             <Alert variant="default" className="col-span-4 mt-2 bg-blue-50 border-blue-200">
                 <Info className="h-4 w-4 text-blue-600" />
                  <AlertDescription className="text-xs text-blue-800">
-                     Submitting this report helps us manage parking efficiency. False reports may affect your account status. The license plate will be checked against official records (e.g., RTSA in Zambia) where available (requires internet).
+                     Your report will be sent to the parking attendant, owner, and logged by Carpso management. False reports may affect your account status. The license plate will be checked against official records where possible.
                  </AlertDescription>
              </Alert>
 
