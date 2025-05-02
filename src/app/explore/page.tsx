@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell } from "lucide-react"; // Correctly import Bath, Added Bath, ConciergeBell
+import { CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, Fuel, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Star } from "lucide-react"; // Added Star
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,8 +25,16 @@ const mockAuctions = [
     { id: 1, title: "Abandoned Vehicle Auction", location: "Mall Parking Deck - Level 3", date: "Sep 1st", description: "Several vehicles up for auction. Viewing starts at 9 AM.", image: "https://picsum.photos/seed/auctionCars/300/150", hint: "car auction parking garage vehicle", href: "#" }, // Added href and date
 ];
 
+// Define Featured Services (replace with dynamic fetching if needed)
+const featuredServices: { id: string; name: ParkingLotService; description: string; image: string; hint: string }[] = [
+    { id: 'feat_ev', name: 'EV Charging', description: 'Charge your electric vehicle conveniently while parked.', image: 'https://picsum.photos/seed/featEV/300/150', hint: 'ev charging electric car station' },
+    { id: 'feat_wash', name: 'Car Wash', description: 'Get your car sparkling clean with our professional washing services.', image: 'https://picsum.photos/seed/featWash/300/150', hint: 'car wash cleaning service' },
+    { id: 'feat_valet', name: 'Valet', description: 'Enjoy the convenience of valet parking at select locations.', image: 'https://picsum.photos/seed/featValet/300/150', hint: 'valet parking service attendant' },
+];
+
+
 // Helper to get service icon
-const getServiceIcon = (service: ParkingLotService | undefined, className = "h-4 w-4 text-primary") => { // Updated default size
+const getServiceIcon = (service: ParkingLotService | undefined, className = "h-4 w-4 text-primary") => {
     switch (service) {
       case 'EV Charging': return <Fuel className={className} />;
       case 'Car Wash': return <SprayCan className={className} />;
@@ -114,7 +122,7 @@ export default function ExplorePage() {
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
       <h1 className="text-3xl font-bold mb-6 flex items-center gap-2">
-        <Sparkles className="h-7 w-7 text-primary" /> Explore Nearby
+        <Sparkles className="h-7 w-7 text-primary" /> Explore Carpso Network
       </h1>
       <p className="text-muted-foreground mb-8">Discover events, promotions, and services happening at Carpso parking locations.</p>
 
@@ -183,6 +191,41 @@ export default function ExplorePage() {
         )}
       </section>
 
+       {/* Featured Services Section */}
+      <section className="mb-10">
+        <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
+            <Star className="h-6 w-6 text-accent" /> Featured Services
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {featuredServices.map(service => (
+                 <Card key={service.id} className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
+                      <div className="relative w-full h-40">
+                          <Image
+                              src={service.image}
+                              alt={service.name}
+                              fill
+                              className="object-cover"
+                              data-ai-hint={service.hint} // Add AI Hint
+                          />
+                           {/* Optional: Add icon overlay */}
+                          <div className="absolute top-2 right-2 bg-background/80 p-1.5 rounded-full">
+                              {getServiceIcon(service.name, "h-5 w-5 text-primary")}
+                          </div>
+                      </div>
+                     <CardHeader>
+                         <CardTitle>{service.name}</CardTitle>
+                     </CardHeader>
+                     <CardContent>
+                         <p className="text-sm text-muted-foreground line-clamp-2">{service.description}</p>
+                         {/* TODO: Link to locations offering this service? */}
+                     </CardContent>
+                 </Card>
+            ))}
+            {featuredServices.length === 0 && <p className="text-muted-foreground md:col-span-2 lg:col-span-3 text-center py-6">No featured services to display.</p>}
+        </div>
+      </section>
+
+
        {/* Auctions Section */}
       <section className="mb-10">
         <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
@@ -219,16 +262,16 @@ export default function ExplorePage() {
         </div>
       </section>
 
-       {/* Services Section - Dynamic Listing */}
+       {/* Available Services Section - Dynamic Listing */}
       <section>
         <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-accent" /> Available Services
+            <Sparkles className="h-6 w-6 text-accent" /> All Available Services by Location
         </h2>
         {isLoadingLots ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <Skeleton className="h-40 w-full rounded-lg" />
-                <Skeleton className="h-40 w-full rounded-lg" />
-                <Skeleton className="h-40 w-full rounded-lg" />
+                <Skeleton className="h-48 w-full rounded-lg" />
+                <Skeleton className="h-48 w-full rounded-lg" />
+                <Skeleton className="h-48 w-full rounded-lg" />
             </div>
         ) : errorLoadingLots ? (
             <div className="text-center py-10 text-destructive bg-destructive/10 rounded-md">
@@ -241,25 +284,39 @@ export default function ExplorePage() {
                     .filter(lot => lot.services && lot.services.length > 0) // Only show lots that offer services
                     .sort((a, b) => a.name.localeCompare(b.name)) // Sort lots alphabetically
                     .map(lot => (
-                    <Card key={lot.id}>
-                        <CardHeader>
-                            <CardTitle className="text-lg">{lot.name}</CardTitle>
-                            <CardDescription className="flex items-center gap-1 text-xs pt-1">
-                                <MapPin className="h-3 w-3" /> {lot.address}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="flex flex-wrap gap-3">
-                                {lot.services?.map(service => (
-                                    // Optionally make each service clickable, linking to lot or service details
-                                    // For now, just display them
-                                    <div key={service} className="flex items-center gap-1.5 p-2 border rounded-md bg-background text-sm">
-                                        {getServiceIcon(service, "h-4 w-4 text-muted-foreground")}
-                                        <span>{service}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
+                    <Card key={lot.id} className="relative overflow-hidden"> {/* Added relative positioning */}
+                        {/* Background Image - Subtle */}
+                         <div className="absolute inset-0 z-0 opacity-5">
+                           <Image
+                             src={`https://picsum.photos/seed/${lot.id}_bg/800/200?grayscale&blur=2`}
+                             alt=""
+                             layout="fill"
+                             objectFit="cover"
+                             aria-hidden="true"
+                             data-ai-hint="parking lot texture pattern"
+                           />
+                         </div>
+                         {/* Content - Positioned above background */}
+                        <div className="relative z-10">
+                           <CardHeader>
+                               <CardTitle className="text-lg">{lot.name}</CardTitle>
+                               <CardDescription className="flex items-center gap-1 text-xs pt-1">
+                                   <MapPin className="h-3 w-3" /> {lot.address}
+                               </CardDescription>
+                           </CardHeader>
+                           <CardContent>
+                               <div className="flex flex-wrap gap-3">
+                                   {lot.services?.map(service => (
+                                       // Optionally make each service clickable, linking to lot or service details
+                                       // For now, just display them
+                                       <div key={service} className="flex items-center gap-1.5 p-2 border rounded-md bg-background/80 backdrop-blur-sm text-sm shadow-sm"> {/* Added background with blur */}
+                                           {getServiceIcon(service, "h-4 w-4 text-muted-foreground")}
+                                           <span>{service}</span>
+                                       </div>
+                                   ))}
+                               </div>
+                           </CardContent>
+                         </div>
                     </Card>
                 ))}
                 {parkingLots.filter(lot => lot.services && lot.services.length > 0).length === 0 && (
@@ -274,3 +331,4 @@ export default function ExplorePage() {
     </div>
   );
 }
+```
