@@ -32,6 +32,18 @@ export interface UserBookmark {
   longitude?: number;
 }
 
+/**
+ * Represents a points transfer transaction.
+ */
+export interface PointsTransaction {
+    id: string;
+    timestamp: string;
+    senderId: string;
+    recipientId: string;
+    points: number;
+    type: 'sent' | 'received';
+}
+
 
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
@@ -45,6 +57,11 @@ const userGamificationData: Record<string, UserGamification> = {
         ],
         isCarpoolEligible: false,
     },
+     'user_def456': { // Add another user for testing transfers
+        points: 50,
+        badges: [],
+        isCarpoolEligible: true,
+    },
 };
 
 // Mock store for bookmarks
@@ -53,6 +70,12 @@ let userBookmarks: Record<string, UserBookmark[]> = {
         { id: 'bm_1', userId: 'user_abc123', label: 'Home', address: '10 Residential St, Anytown', latitude: 34.0600, longitude: -118.2300 },
         { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown', latitude: 34.0510, longitude: -118.2450 },
     ],
+};
+
+// Mock store for points transactions (optional, could be part of gamification history)
+let pointsTransactions: Record<string, PointsTransaction[]> = {
+     'user_abc123': [],
+     'user_def456': [],
 };
 
 
@@ -147,6 +170,76 @@ export async function updateCarpoolEligibility(userId: string, isEligible: boole
     return true;
 }
 
+/**
+ * Transfers gamification points from one user to another.
+ * @param senderId The ID of the user sending points.
+ * @param recipientId The ID of the user receiving points.
+ * @param pointsToTransfer The number of points to transfer.
+ * @returns A promise resolving to an object containing the sender's and recipient's new point balances.
+ * @throws Error if sender or recipient is not found, or if sender has insufficient points.
+ */
+export async function transferPoints(senderId: string, recipientId: string, pointsToTransfer: number): Promise<{ senderNewPoints: number; recipientNewPoints: number }> {
+    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
+
+    if (pointsToTransfer <= 0) {
+        throw new Error("Points to transfer must be positive.");
+    }
+    if (senderId === recipientId) {
+        throw new Error("Cannot transfer points to yourself.");
+    }
+
+    const senderData = userGamificationData[senderId];
+    const recipientData = userGamificationData[recipientId];
+
+    if (!senderData) {
+        throw new Error("Sender not found.");
+    }
+    if (!recipientData) {
+         // Optionally create recipient if they don't exist in gamification yet
+         userGamificationData[recipientId] = { points: 0, badges: [], isCarpoolEligible: false };
+         // throw new Error("Recipient not found.");
+    }
+
+    if (senderData.points < pointsToTransfer) {
+        throw new Error(`Insufficient points. You only have ${senderData.points}.`);
+    }
+
+    // Perform the transfer
+    senderData.points -= pointsToTransfer;
+    userGamificationData[recipientId].points += pointsToTransfer;
+
+    // Record the transaction (optional)
+    const timestamp = new Date().toISOString();
+    const transactionId = `pts_txn_${Date.now()}`;
+    const senderTx: PointsTransaction = { id: transactionId + '_s', timestamp, senderId, recipientId, points: pointsToTransfer, type: 'sent' };
+    const recipientTx: PointsTransaction = { id: transactionId + '_r', timestamp, senderId, recipientId, points: pointsToTransfer, type: 'received' };
+
+    if (!pointsTransactions[senderId]) pointsTransactions[senderId] = [];
+    if (!pointsTransactions[recipientId]) pointsTransactions[recipientId] = [];
+    pointsTransactions[senderId].push(senderTx);
+    pointsTransactions[recipientId].push(recipientTx);
+
+
+    console.log(`Transferred ${pointsToTransfer} points from ${senderId} to ${recipientId}.`);
+    console.log(`Sender new balance: ${senderData.points}. Recipient new balance: ${userGamificationData[recipientId].points}`);
+
+    return { senderNewPoints: senderData.points, recipientNewPoints: userGamificationData[recipientId].points };
+}
+
+/**
+ * Fetches the points transaction history for a user.
+ * @param userId The ID of the user.
+ * @param limit Max number of transactions to return.
+ * @returns A promise resolving to an array of points transactions.
+ */
+export async function getPointsTransactions(userId: string, limit: number = 10): Promise<PointsTransaction[]> {
+    await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
+    const transactions = pointsTransactions[userId] || [];
+    // Sort by timestamp descending and take limit
+    return transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+}
+
+
 // --- Bookmark Functions ---
 
 /**
@@ -227,3 +320,13 @@ export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
 
 
 // Add more functions as needed, e.g., getLeaderboard
+
+// Helper function for modals etc. to get mock users (replace with real user search later)
+export async function getMockUsersForTransfer(): Promise<{ id: string, name: string }[]> {
+     await new Promise(resolve => setTimeout(resolve, 100));
+     // Get all users from the gamification data as an example
+     return Object.keys(userGamificationData).map(id => ({
+         id,
+         name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
+     }));
+}

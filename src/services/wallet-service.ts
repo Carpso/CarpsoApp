@@ -5,12 +5,13 @@
  */
 export interface WalletTransaction {
   id: string;
-  type: 'top-up' | 'send' | 'receive' | 'payment';
+  type: 'top-up' | 'send' | 'receive' | 'payment' | 'payment_other'; // Added payment_other
   amount: number; // Positive for received/top-up, negative for sent/payment
   description: string; // e.g., "Sent to user_xyz", "Top up via Visa **** 1234", "Payment at Partner Cafe"
   timestamp: string;
-  relatedUserId?: string; // For send/receive
+  relatedUserId?: string; // For send/receive or payment_other
   partnerId?: string; // For payments
+  parkingRecordId?: string; // Optional link to parking record for payments
 }
 
 /**
@@ -25,14 +26,18 @@ export interface Wallet {
 // In a real app, this would be a secure database.
 let userWallets: Record<string, Wallet> = {
     'user_abc123': { balance: 25.50, currency: 'ZMW' },
+    'user_def456': { balance: 10.00, currency: 'ZMW' }, // Added another user wallet
 };
 let userTransactions: Record<string, WalletTransaction[]> = {
     'user_abc123': [
         { id: 'txn_1', type: 'top-up', amount: 50.00, description: 'Top up via Mobile Money', timestamp: new Date(Date.now() - 86400000).toISOString() },
         { id: 'txn_2', type: 'payment', amount: -15.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
-        { id: 'txn_3', type: 'send', amount: -10.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date().toISOString() },
+        { id: 'txn_3', type: 'send', amount: -10.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
          { id: 'txn_4', type: 'receive', amount: 5.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
     ],
+     'user_def456': [
+         { id: 'txn_5', type: 'receive', amount: 10.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+     ],
 };
 
 // --- Mock Service Functions ---
@@ -202,16 +207,71 @@ export async function makePartnerPayment(userId: string, partnerId: string, amou
      return userWallets[userId].balance;
 }
 
+/**
+ * Simulates paying for another user's parking fee.
+ * @param payerId The ID of the user making the payment.
+ * @param targetUserId The ID of the user whose parking is being paid for.
+ * @param parkingRecordId The ID of the specific parking record being paid.
+ * @param amount The amount to pay.
+ * @returns A promise resolving to the payer's new wallet balance.
+ * @throws Error if payer or target user is not found, insufficient balance, or invalid amount.
+ */
+export async function payForOtherUser(payerId: string, targetUserId: string, parkingRecordId: string, amount: number): Promise<number> {
+    await new Promise(resolve => setTimeout(resolve, 650)); // Simulate delay
+
+    if (amount <= 0) {
+        throw new Error("Payment amount must be positive.");
+    }
+    if (payerId === targetUserId) {
+        throw new Error("Use standard payment for your own parking.");
+    }
+
+    const payerWallet = userWallets[payerId];
+    // In a real scenario, you'd check if the target user exists and if the parking record is valid and unpaid.
+    // For mock, we'll assume target user exists.
+
+    if (!payerWallet) {
+        throw new Error("Payer wallet not found.");
+    }
+    if (payerWallet.balance < amount) {
+        throw new Error("Insufficient balance to pay for other user.");
+    }
+    if (!userTransactions[payerId]) {
+        userTransactions[payerId] = [];
+    }
+
+    // Deduct from payer
+    payerWallet.balance -= amount;
+
+    // Create transaction for payer
+    const paymentTxn: WalletTransaction = {
+        id: `txn_${Date.now()}`,
+        type: 'payment_other',
+        amount: -amount,
+        description: `Paid parking (ID: ${parkingRecordId.substring(0, 6)}...) for user ${targetUserId.substring(0, 8)}...`,
+        timestamp: new Date().toISOString(),
+        relatedUserId: targetUserId, // Link to the user who received the benefit
+        parkingRecordId: parkingRecordId, // Link to the specific parking record
+    };
+    userTransactions[payerId].push(paymentTxn);
+
+    console.log(`User ${payerId} paid ${amount} for user ${targetUserId}'s parking (Record: ${parkingRecordId}). Payer balance: ${payerWallet.balance}`);
+
+    // TODO: In a real application, update the status of the parkingRecordId to 'Completed' or 'Paid'.
+
+    return payerWallet.balance;
+}
+
+
 // TODO: Function to generate QR code data for receiving payments
 // TODO: Function to scan QR code and initiate payment/send
 
 // Function to get mock users for sending money selector
 export async function getMockUsersForTransfer(): Promise<{ id: string, name: string }[]> {
      await new Promise(resolve => setTimeout(resolve, 100));
-     // Exclude the example user 'user_abc123' from the list of recipients
-     return [
-         { id: 'user_def456', name: 'Bob Phiri (mock)' },
-         { id: 'user_ghi789', name: 'Charlie Zulu (mock)' },
-         { id: 'user_jkl012', name: 'Diana Mumba (mock)' },
-     ];
+     // Get all users from the wallet data as an example
+     return Object.keys(userWallets).map(id => ({
+         id,
+         name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
+     }));
 }
