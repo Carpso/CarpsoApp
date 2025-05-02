@@ -8,7 +8,7 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff } from 'lucide-react'; // Added WifiOff, RefreshCcw, StarOff
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search } from 'lucide-react'; // Added Search
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge"; // Import Badge component
@@ -24,6 +24,15 @@ import { cn } from '@/lib/utils';
 import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
 import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
 
+// Interface for pinned location data, now includes coordinates
+interface PinnedLocationData {
+    spotId: string;
+    locationId: string;
+    locationName: string;
+    latitude: number;
+    longitude: number;
+    timestamp: number;
+}
 
 export default function ParkingLotManager() {
   const {
@@ -45,7 +54,8 @@ export default function ParkingLotManager() {
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const [pinnedSpot, setPinnedSpot] = useState<{ spotId: string, locationId: string } | null>(null);
+  // Pinned Spot state now uses the new interface with coordinates
+  const [pinnedSpot, setPinnedSpot] = useState<PinnedLocationData | null>(null);
   const [isPinning, setIsPinning] = useState(false);
 
   const [recommendations, setRecommendations] = useState<RecommendParkingOutput['recommendations']>([]);
@@ -164,7 +174,7 @@ export default function ParkingLotManager() {
        setIsLoadingRecommendations(true);
        try {
            // Simulate getting user location (replace with actual data)
-           const currentCoords = { latitude: 34.0522, longitude: -118.2437 }; // Example: Near Downtown Garage
+           const currentCoords = { latitude: -15.4167, longitude: 28.2833 }; // Example: Lusaka
 
             // Try to get coords from bookmarks if destinationLabel matches
             let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
@@ -187,7 +197,7 @@ export default function ParkingLotManager() {
            const locationsWithPrice = await Promise.all(locations.map(async loc => {
                // Use cached pricing rules or fetch only if necessary
                const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic');
-               return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
+               return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost, latitude: loc.latitude, longitude: loc.longitude }; // Include lat/lon
            }));
            const nearbyLotsJson = JSON.stringify(locationsWithPrice);
             const bookmarksJson = JSON.stringify(currentBookmarks); // Pass current/cached bookmarks to the flow
@@ -349,9 +359,12 @@ export default function ParkingLotManager() {
                             else console.warn("Voice assistant speak function not available, offline, or not on client.");
                       }
                  } else if (pinnedSpot) {
-                     const location = locations.find(l => l.id === pinnedSpot.locationId);
+                     // const location = locations.find(l => l.id === pinnedSpot.locationId); // Already have lat/lon
                       toast({ title: "Getting Directions", description: `Opening map directions to your pinned car at ${pinnedSpot.spotId}...` });
-                      // TODO: Integrate with mapping service to pinned spot coordinates (if available)
+                     // Use pinned coordinates
+                      if (typeof window !== 'undefined' && pinnedSpot.latitude && pinnedSpot.longitude) {
+                         window.open(`https://www.google.com/maps/dir/?api=1&destination=${pinnedSpot.latitude},${pinnedSpot.longitude}`, '_blank');
+                      }
                  } else {
                       if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
                        else console.warn("Voice assistant speak function not available, offline, or not on client.");
@@ -629,14 +642,34 @@ export default function ParkingLotManager() {
 
   // Logout is handled in profile page or header now
 
+   // Function to simulate pinning car location - now includes coordinates
    const simulatePinCar = async (spotId: string, locationId: string) => {
        setIsPinning(true);
        setPinnedSpot(null);
-       console.log(`Simulating pinning car location at ${spotId} in ${locationId}...`);
-       await new Promise(resolve => setTimeout(resolve, 1000));
 
        const location = locations.find(l => l.id === locationId);
-       const pinData = { spotId, locationId, timestamp: Date.now() };
+       if (!location) {
+           console.error("Cannot pin car: Location details not found for", locationId);
+           toast({ title: "Pinning Error", description: "Could not find location details.", variant: "destructive" });
+           setIsPinning(false);
+           return;
+       }
+
+       // In a real app, get spot-specific coordinates if available, otherwise use lot coordinates
+       const pinLatitude = location.latitude; // Use lot's latitude as approximation
+       const pinLongitude = location.longitude; // Use lot's longitude as approximation
+
+       console.log(`Simulating pinning car location at ${spotId} in ${location.name} (${pinLatitude}, ${pinLongitude})...`);
+       await new Promise(resolve => setTimeout(resolve, 1000));
+
+       const pinData: PinnedLocationData = {
+            spotId,
+            locationId,
+            locationName: location.name,
+            latitude: pinLatitude,
+            longitude: pinLongitude,
+            timestamp: Date.now()
+       };
 
        setPinnedSpot(pinData);
        // Cache pinned location for offline access
@@ -665,11 +698,12 @@ export default function ParkingLotManager() {
             const maxPinAge = 6 * 60 * 60 * 1000; // 6 hours
             if (cachedPin) {
                 try {
-                    const pinData = JSON.parse(cachedPin);
-                    if (Date.now() - pinData.timestamp < maxPinAge) {
+                    const pinData = JSON.parse(cachedPin) as PinnedLocationData;
+                     // Check if required coordinates exist
+                     if (pinData.latitude && pinData.longitude && Date.now() - pinData.timestamp < maxPinAge) {
                         setPinnedSpot(pinData);
                     } else {
-                        localStorage.removeItem('pinnedCarLocation'); // Clear expired pin
+                        localStorage.removeItem('pinnedCarLocation'); // Clear expired or invalid pin
                     }
                 } catch {
                      console.error("Failed to parse cached pinned location");
@@ -748,6 +782,7 @@ export default function ParkingLotManager() {
   const getVoiceButtonIcon = () => {
         // Return placeholder or static icon before client-side hydration
         if (!isClient || !voiceAssistant) { // Added check for voiceAssistant initialization
+             // Return a non-interactive, visually distinct icon for SSR/initial state
              return <MicOff key="ssr-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         // Rest of the logic runs only on the client
@@ -854,8 +889,8 @@ export default function ParkingLotManager() {
         )}
 
 
-       {/* Pinned Location */}
-       {pinnedSpot && (
+       {/* Pinned Location & Map */}
+        {pinnedSpot && (
            <Card className="mb-6 border-primary bg-primary/5">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div className="flex items-center gap-2">
@@ -865,10 +900,38 @@ export default function ParkingLotManager() {
                      <Button variant="ghost" size="sm" onClick={clearPinnedLocation}>Clear Pin</Button>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-sm text-primary/90">
-                        Spot: <span className="font-medium">{pinnedSpot.spotId}</span> at {locations.find(l => l.id === pinnedSpot.locationId)?.name || pinnedSpot.locationId}
+                     <p className="text-sm text-primary/90 mb-3">
+                        Spot: <span className="font-medium">{pinnedSpot.spotId}</span> at {pinnedSpot.locationName}
                     </p>
-                    {/* TODO: Add button to get directions to pinned spot */}
+                    {/* Google Maps Embed */}
+                     <div className="aspect-video w-full overflow-hidden rounded-md border">
+                         {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? (
+                             <iframe
+                                title="Pinned Car Location Map"
+                                width="100%"
+                                height="100%"
+                                style={{ border: 0 }}
+                                loading="lazy"
+                                allowFullScreen
+                                referrerPolicy="no-referrer-when-downgrade"
+                                src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${pinnedSpot.latitude},${pinnedSpot.longitude}&zoom=17`} // Use Place mode with coordinates
+                            >
+                             </iframe>
+                         ) : (
+                             <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-sm">
+                                 Google Maps API Key missing. Map cannot be displayed.
+                             </div>
+                         )}
+                     </div>
+                     {/* Optional: Button to open in Google Maps app */}
+                     <Button
+                         variant="outline"
+                         size="sm"
+                         className="mt-3"
+                         onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${pinnedSpot.latitude},${pinnedSpot.longitude}`, '_blank')}
+                     >
+                        <Search className="mr-2 h-4 w-4" /> Open in Google Maps
+                    </Button>
                 </CardContent>
            </Card>
        )}
@@ -913,7 +976,7 @@ export default function ParkingLotManager() {
                                  </CardHeader>
                                  <CardContent>
                                      {/* Maybe show current availability summary? */}
-                                      <Badge variant={favLoc.currentOccupancy === undefined ? 'secondary' : (favLoc.capacity - favLoc.currentOccupancy) > 10 ? 'default' : (favLoc.capacity - favLoc.currentOccupancy) > 0 ? 'secondary' : 'destructive'} className="text-xs">
+                                      <Badge variant={favLoc.currentOccupancy === undefined ? 'secondary' : (favLoc.capacity - favLoc.currentOccupancy) > 10 ? 'default' : (favLoc.capacity - favLoc.currentOccupancy) > 0 ? 'secondary' : 'destructive'} className={cn("text-xs", (favLoc.currentOccupancy !== undefined && (favLoc.capacity - favLoc.currentOccupancy) > 10) && "bg-green-600 text-white")}>
                                           {favLoc.currentOccupancy === undefined ? 'Availability N/A' : `${favLoc.capacity - favLoc.currentOccupancy} Spots Free`}
                                       </Badge>
                                  </CardContent>

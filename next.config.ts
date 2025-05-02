@@ -16,6 +16,19 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Add Google Maps domains for potential static map images or street view
+      {
+        protocol: 'https',
+        hostname: 'maps.googleapis.com',
+        port: '',
+        pathname: '/**',
+      },
+       {
+        protocol: 'https',
+        hostname: '*.googleusercontent.com', // For Street View images
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
    // Expose environment variables prefixed with NEXT_PUBLIC_ to the browser

@@ -31,10 +31,10 @@ export interface ParkingLot {
    */
   currentOccupancy?: number;
   /**
-   * Geographical coordinates (optional).
+   * Geographical coordinates. Required for map view.
    */
-  latitude?: number;
-  longitude?: number;
+  latitude: number;
+  longitude: number;
   /**
    * List of services offered at the parking lot (optional).
    */
@@ -60,12 +60,12 @@ const futureDate = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).
 const pastDate = (days: number) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
 
 let sampleParkingLots: ParkingLot[] = [
-  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active' }, // Added Restroom
-  { id: 'lot_B', name: 'Airport Lot B (KKIA)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: futureDate(15) }, // Removed EV Charging, Added Wifi
-  { id: 'lot_C', name: 'East Park Mall Deck', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: pastDate(5) }, // Added EV Charging
-  { id: 'lot_D', name: 'Levy Junction Upper Level', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active' }, // Changed status to active, added Valet, Wifi
-  { id: 'lot_E', name: 'Arcades Park & Shop', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active'}, // New Lot
-  { id: 'lot_F', name: 'UTH Parking Zone 1', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive' }, // New Lot - Inactive
+  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active' },
+  { id: 'lot_B', name: 'Airport Lot B (KKIA)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: futureDate(15) },
+  { id: 'lot_C', name: 'East Park Mall Deck', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: pastDate(5) },
+  { id: 'lot_D', name: 'Levy Junction Upper Level', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active' },
+  { id: 'lot_E', name: 'Arcades Park & Shop', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active'},
+  { id: 'lot_F', name: 'UTH Parking Zone 1', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive' },
 ];
 
 
