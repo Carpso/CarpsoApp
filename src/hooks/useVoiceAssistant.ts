@@ -58,17 +58,18 @@ export function useVoiceAssistant({ onCommand, onStateChange }: VoiceAssistantOp
        console.log("Voice Assistant State Updated:", newState, "Activated:", isActivatedRef.current);
    }, [onStateChange]);
 
-
-  // --- Speech Synthesis (TTS) Setup ---
+    // --- Speech Synthesis (TTS) Setup ---
+    // Moved cancelSpeech definition before startListening which uses it
     const cancelSpeech = useCallback(() => {
         clearTimeout(speakingTimeoutRef.current!);
         if (isSpeechSynthesisSupported && window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        if (state === 'speaking') {
-            updateState('idle');
-        }
+            window.speechSynthesis.cancel();
+            if (state === 'speaking') {
+                updateState('idle');
+            }
         }
     }, [state, updateState]);
+
 
   const speak = useCallback((text: string) => {
     if (!isSpeechSynthesisSupported || !text) {
@@ -357,3 +358,4 @@ export function useVoiceAssistant({ onCommand, onStateChange }: VoiceAssistantOp
     error,
   };
 }
+

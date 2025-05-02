@@ -8,15 +8,13 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff } from 'lucide-react'; // Added WifiOff
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw } from 'lucide-react'; // Added WifiOff, RefreshCcw
 import AuthModal from '@/components/auth/AuthModal';
-// import UserProfile from '@/components/profile/UserProfile'; // No longer imported here
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge'; // Import Badge component
+import { Badge } from "@/components/ui/badge"; // Import Badge component
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
-// import Link from 'next/link'; // No longer needed for profile here
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
 import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark } from '@/services/user-service'; // Import gamification service and bookmark functions/type
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
@@ -24,6 +22,7 @@ import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistan
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
 import { cn } from '@/lib/utils';
 import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
+import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
 
 
 export default function ParkingLotManager() {
@@ -41,10 +40,10 @@ export default function ParkingLotManager() {
   const [locations, setLocations] = useState<ParkingLot[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [isLoadingLocations, setIsLoadingLocations] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // State for manual refresh
   const [error, setError] = useState<string | null>(null);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  // const [isProfileOpen, setIsProfileOpen] = useState(false); // Removed profile sheet state
 
   const [pinnedSpot, setPinnedSpot] = useState<{ spotId: string, locationId: string } | null>(null);
   const [isPinning, setIsPinning] = useState(false);
@@ -63,6 +62,7 @@ export default function ParkingLotManager() {
    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
    const [isClient, setIsClient] = useState(false); // State to track client-side mount
    const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle'); // Track voice assistant state for UI
+   const isVisible = useVisibilityChange(); // Track tab visibility
 
    useEffect(() => {
        // Ensure this only runs on the client
@@ -72,6 +72,9 @@ export default function ParkingLotManager() {
    // Show/hide persistent offline toast
     useEffect(() => {
         if (!isOnline && isClient) {
+            // Dismiss any existing offline toast before showing a new one
+            if (offlineToastId) dismiss(offlineToastId);
+
             const { id } = toast({
                 title: "Offline Mode",
                 description: "App functionality is limited. Displaying cached data.",
@@ -88,40 +91,58 @@ export default function ParkingLotManager() {
                 description: "Connection restored. Syncing data...",
                 duration: 3000,
             });
-            // TODO: Trigger data sync here
-            // Example: syncOfflineActions(); fetchFreshData();
-             fetchLocationsData(); // Re-fetch locations when back online
+            // Trigger data sync when back online
+             fetchLocationsData(true); // Force refresh locations
+             fetchUserBookmarks(); // Refresh bookmarks
+             // Recommendations will be fetched by the useEffect dependency change after locations/bookmarks are ready
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOnline, isClient, toast, dismiss]); // Add dismiss to dependencies
 
 
     const fetchUserBookmarks = useCallback(async () => {
-       if (!isAuthenticated || !userId || !isOnline) { // Don't fetch if offline
-            // Try loading from cache if needed for offline recommendations
-            return;
+       // Load cached bookmarks immediately if available
+       if (typeof window !== 'undefined') {
+          const cachedBookmarks = localStorage.getItem('cachedUserBookmarks');
+          if (cachedBookmarks) {
+              try {
+                   setUserBookmarks(JSON.parse(cachedBookmarks));
+              } catch {
+                   console.error("Failed to parse cached bookmarks");
+              }
+          }
        }
+       // Don't fetch fresh if offline
+       if (!isAuthenticated || !userId || !isOnline) return;
+
        setIsLoadingBookmarks(true);
        try {
            const bookmarks = await getUserBookmarks(userId);
            setUserBookmarks(bookmarks);
            // Cache bookmarks
            if (typeof window !== 'undefined') {
-               localStorage.setItem('cachedUserBookmarks', JSON.stringify(bookmarks));
+                try {
+                    localStorage.setItem('cachedUserBookmarks', JSON.stringify(bookmarks));
+                } catch (e) {
+                    console.error("Failed to cache bookmarks:", e);
+                }
            }
        } catch (err) {
            console.error("Failed to fetch user bookmarks:", err);
-           // Optional: toast notification
+           // Only show error toast if online
+           if (isOnline) toast({ title: "Error", description: "Could not refresh saved locations.", variant: "destructive" });
        } finally {
            setIsLoadingBookmarks(false);
        }
-    }, [isAuthenticated, userId, isOnline]); // Add isOnline
+    }, [isAuthenticated, userId, isOnline, toast]); // Added isOnline
 
 
      // Fetch recommendations when locations are loaded or user/destination changes
      const fetchRecommendations = useCallback(async (destinationLabel?: string) => { // Changed parameter to label
-       if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) { // Don't fetch if offline
-           setRecommendations([]); // Clear recommendations if not logged in, no locations, or offline
+       // Clear recommendations if offline or prerequisites not met
+       if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) {
+           setRecommendations([]);
+           setIsLoadingRecommendations(false); // Ensure loading state is reset
            return;
        }
        setIsLoadingRecommendations(true);
@@ -131,8 +152,8 @@ export default function ParkingLotManager() {
 
             // Try to get coords from bookmarks if destinationLabel matches
             let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
-             // Load bookmarks from state (which should be loaded/cached)
-             const currentBookmarks = userBookmarks.length > 0 ? userBookmarks : JSON.parse(localStorage.getItem('cachedUserBookmarks') || '[]');
+             // Use state which should have been loaded from cache or fetched
+             const currentBookmarks = userBookmarks;
 
             if (destinationLabel) {
                  const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
@@ -145,15 +166,11 @@ export default function ParkingLotManager() {
                 }
             }
 
-
-            // Fetch user preferences (e.g., from gamification/profile service)
-            // const gamificationData = await getUserGamification(userId);
-            // setUserPreferredServices(gamificationData.preferredServices || []); // Assuming preferences are stored there
-
            // Prepare input for the recommendation flow
            // Convert locations to JSON string with essential details
            const locationsWithPrice = await Promise.all(locations.map(async loc => {
-               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'); // Estimate for 1 hour, pass correct role
+               // Use cached pricing rules or fetch only if necessary
+               const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic');
                return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost };
            }));
            const nearbyLotsJson = JSON.stringify(locationsWithPrice);
@@ -179,7 +196,8 @@ export default function ParkingLotManager() {
 
        } catch (err) {
            console.error("Failed to fetch recommendations:", err);
-           toast({
+            // Only show error toast if online
+           if (isOnline) toast({
                title: "Recommendation Error",
                description: "Could not fetch personalized parking recommendations.",
                variant: "destructive",
@@ -191,6 +209,14 @@ export default function ParkingLotManager() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
      }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline]); // Add isOnline, userBookmarks dependency
 
+    // Moved voice assistant hook call *before* callbacks that use it
+    const voiceAssistant = useVoiceAssistant({
+       onCommand: (transcript) => handleVoiceCommand(transcript), // Pass callback ref
+       onStateChange: (newState) => {
+           console.log("Voice Assistant State (Manager):", newState);
+           setVoiceAssistantState(newState); // Update local state for UI
+       }
+   });
 
    // --- Voice Assistant Integration ---
     // Move handleVoiceCommandResult here
@@ -201,8 +227,9 @@ export default function ParkingLotManager() {
         console.log("Processed Entities:", entities);
 
         // Speak the response first (check if online/supported)
-        if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(responseText);
-        else console.warn("Voice assistant speak function not available or offline.");
+        // Ensure voiceAssistant and speak exist before calling
+        if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(responseText);
+        else console.warn("Voice assistant speak function not available, offline, or not on client.");
 
         // --- Execute action based on intent ---
         switch (intent) {
@@ -232,12 +259,12 @@ export default function ParkingLotManager() {
                          console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                          // TODO: Offline reservation queueing could be added here
                     } else {
-                        if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
-                        else console.warn("Voice assistant speak function not available or offline.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}. Please try again or select manually.`);
+                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
                     }
                 } else {
-                    if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
-                    else console.warn("Voice assistant speak function not available or offline.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
+                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
                 }
                 break;
 
@@ -250,23 +277,23 @@ export default function ParkingLotManager() {
                          setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                          // Availability check relies on fetched data (cached or live)
                     } else {
-                         if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
-                          else console.warn("Voice assistant speak function not available or offline.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                     }
                 } else if (entities.locationId) {
                      const location = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
                      if (location) {
                          setSelectedLocationId(location.id);
                          const available = location.capacity - (location.currentOccupancy ?? 0);
-                         if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
-                          else console.warn("Voice assistant speak function not available or offline.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, ${location.name} currently has about ${available} spots available.`);
+                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      } else {
-                         if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
-                          else console.warn("Voice assistant speak function not available or offline.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find the location ${entities.locationId}.`);
+                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      }
                  } else {
-                    if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot or location would you like me to check?");
-                    else console.warn("Voice assistant speak function not available or offline.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot or location would you like me to check?");
+                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
                 break;
 
@@ -280,7 +307,8 @@ export default function ParkingLotManager() {
                       let targetLat: number | undefined;
                       let targetLon: number | undefined;
                       let targetName = entities.destination;
-                        const currentBookmarks = userBookmarks.length > 0 ? userBookmarks : JSON.parse(localStorage.getItem('cachedUserBookmarks') || '[]');
+                         // Use state, which should be loaded/cached
+                        const currentBookmarks = userBookmarks;
 
                       // Check if destination is a bookmark
                       const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === entities.destination?.toLowerCase());
@@ -306,18 +334,20 @@ export default function ParkingLotManager() {
                       if (targetLat && targetLon) {
                           toast({ title: "Getting Directions", description: `Opening map directions for ${targetName}...` });
                           // Open Google Maps URL (requires internet)
-                           window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`, '_blank');
+                          if (typeof window !== 'undefined') {
+                             window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`, '_blank');
+                          }
                       } else {
-                           if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
-                            else console.warn("Voice assistant speak function not available or offline.");
+                           if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
+                            else console.warn("Voice assistant speak function not available, offline, or not on client.");
                       }
                  } else if (pinnedSpot) {
                      const location = locations.find(l => l.id === pinnedSpot.locationId);
                       toast({ title: "Getting Directions", description: `Opening map directions to your pinned car at ${pinnedSpot.spotId}...` });
                       // TODO: Integrate with mapping service to pinned spot coordinates (if available)
                  } else {
-                      if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
-                       else console.warn("Voice assistant speak function not available or offline.");
+                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Where would you like directions to?");
+                       else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
                 break;
 
@@ -337,23 +367,23 @@ export default function ParkingLotManager() {
                          setIsReportModalOpen(true);
                           // TODO: Add offline queuing for reports
                      } else if (!isAuthenticated) {
-                          if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to report an issue.");
-                          else console.warn("Voice assistant speak function not available or offline.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to report an issue.");
+                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                           setIsAuthModalOpen(true);
                      } else {
-                          if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
-                           else console.warn("Voice assistant speak function not available or offline.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
+                           else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      }
                 } else {
-                    if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot are you reporting an issue for?");
-                     else console.warn("Voice assistant speak function not available or offline.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Which spot are you reporting an issue for?");
+                     else console.warn("Voice assistant speak function not available, offline, or not on client.");
                 }
                 break;
 
             case 'add_bookmark':
                  if (!isAuthenticated || !userId) {
-                    if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to save locations.");
-                    else console.warn("Voice assistant speak function not available or offline.");
+                    if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("Please sign in to save locations.");
+                    else console.warn("Voice assistant speak function not available, offline, or not on client.");
                     setIsAuthModalOpen(true);
                     break;
                  }
@@ -378,19 +408,19 @@ export default function ParkingLotManager() {
                      try {
                          await addBookmark(userId, { label: entities.bookmarkLabel, address: addr, latitude: lat, longitude: lon });
                          await fetchUserBookmarks(); // Refresh bookmarks list
-                         if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, saved "${entities.bookmarkLabel}".`);
-                         else console.warn("Voice assistant speak function not available or offline.");
+                         if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Okay, saved "${entities.bookmarkLabel}".`);
+                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
                          toast({ title: "Bookmark Added", description: `Saved "${entities.bookmarkLabel}".` });
                      } catch (error: any) {
                          console.error("Error adding bookmark via voice:", error);
-                          if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't save the bookmark. ${error.message}`);
-                          else console.warn("Voice assistant speak function not available or offline.");
+                          if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak(`Sorry, I couldn't save the bookmark. ${error.message}`);
+                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                          toast({ title: "Save Failed", description: error.message, variant: "destructive" });
                      }
 
                  } else {
-                      if (isOnline && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("What label and location do you want to save?");
-                      else console.warn("Voice assistant speak function not available or offline.");
+                      if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) voiceAssistant.speak("What label and location do you want to save?");
+                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
                 break;
 
@@ -399,7 +429,8 @@ export default function ParkingLotManager() {
                 break;
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations, userId, userBookmarks, fetchUserBookmarks, isOnline]); // Add isOnline dependency
+    }, [locations, pinnedSpot, isAuthenticated, toast, fetchRecommendations, userId, userBookmarks, fetchUserBookmarks, isOnline, isClient, voiceAssistant]); // Added isClient, voiceAssistant
+
 
    const handleVoiceCommand = useCallback(async (transcript: string) => {
         if (!transcript) return;
@@ -408,7 +439,8 @@ export default function ParkingLotManager() {
             return;
         }
         try {
-             const currentBookmarks = userBookmarks.length > 0 ? userBookmarks : JSON.parse(localStorage.getItem('cachedUserBookmarks') || '[]');
+             // Use state, which should be loaded/cached
+             const currentBookmarks = userBookmarks;
              const bookmarksJson = JSON.stringify(currentBookmarks); // Pass current bookmarks context
             const result = await processVoiceCommand({ transcript, userBookmarks: bookmarksJson });
             await handleVoiceCommandResult(result);
@@ -420,21 +452,13 @@ export default function ParkingLotManager() {
                 variant: "destructive",
             });
             // Check if voiceAssistant exists before speaking
-            if (isOnline && voiceAssistant && voiceAssistant.speak) {
+            if (isOnline && isClient && voiceAssistant && voiceAssistant.speak) {
                voiceAssistant.speak("Sorry, I encountered an error trying to understand that.");
             } else {
-                console.warn("Voice assistant speak function not available or offline for error reporting.");
+                console.warn("Voice assistant speak function not available, offline, or not on client for error reporting.");
             }
         }
-    }, [handleVoiceCommandResult, toast, userBookmarks, isOnline]); // Added isOnline dependency
-
-   const voiceAssistant = useVoiceAssistant({
-       onCommand: handleVoiceCommand,
-       onStateChange: (newState) => {
-           console.log("Voice Assistant State (Manager):", newState);
-           setVoiceAssistantState(newState); // Update local state for UI
-       }
-   });
+    }, [handleVoiceCommandResult, toast, userBookmarks, isOnline, isClient, voiceAssistant]); // Added isClient, voiceAssistant
 
    useEffect(() => {
        // Start listening automatically when component mounts on client and is supported
@@ -448,7 +472,7 @@ export default function ParkingLotManager() {
 
    useEffect(() => {
         // Check if voiceAssistant exists before accessing error
-        if (voiceAssistant?.error) {
+        if (isClient && voiceAssistant?.error) {
            toast({
                title: "Voice Assistant Error",
                description: voiceAssistant.error,
@@ -456,12 +480,12 @@ export default function ParkingLotManager() {
                duration: 4000,
            });
         }
-   }, [voiceAssistant?.error, toast]); // Optional chaining for dependency
+   }, [isClient, voiceAssistant?.error, toast]); // Optional chaining for dependency
    // --- End Voice Assistant Integration ---
 
 
   // Fetch locations - Modified to use cache when offline
-   const fetchLocationsData = useCallback(async () => {
+   const fetchLocationsData = useCallback(async (forceRefresh = false) => {
      setIsLoadingLocations(true);
      setError(null);
      try {
@@ -470,44 +494,49 @@ export default function ParkingLotManager() {
          const cacheTimestampKey = 'cachedParkingLotsTimestamp';
          const maxCacheAge = 60 * 60 * 1000; // 1 hour in milliseconds
 
-         if (isOnline) {
-             try {
-                 fetchedLocations = await getAvailableParkingLots();
-                 // Cache the fresh data
-                 if (typeof window !== 'undefined') {
-                     localStorage.setItem(cacheKey, JSON.stringify(fetchedLocations));
-                     localStorage.setItem(cacheTimestampKey, Date.now().toString());
-                 }
-                 console.log("Fetched fresh locations.");
-             } catch (fetchError) {
-                 console.error("Failed to fetch fresh parking locations:", fetchError);
-                 // Try loading from cache as fallback even if online fetch failed
-                  if (typeof window !== 'undefined') {
-                       const cachedData = localStorage.getItem(cacheKey);
-                       if (cachedData) {
-                           fetchedLocations = JSON.parse(cachedData);
-                           console.warn("Online fetch failed, using cached locations.");
-                       } else {
-                           throw fetchError; // Re-throw if cache is also empty
-                       }
-                  } else {
-                      throw fetchError; // Re-throw if localStorage unavailable
+         // Try loading from cache first unless forceRefresh is true
+         if (!forceRefresh && typeof window !== 'undefined') {
+             const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
+             const cachedData = localStorage.getItem(cacheKey);
+             if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
+                  try {
+                     fetchedLocations = JSON.parse(cachedData);
+                     console.log("Using valid cached parking lots.");
+                  } catch {
+                      console.error("Failed to parse cached locations");
+                      localStorage.removeItem(cacheKey);
+                      localStorage.removeItem(cacheTimestampKey);
                   }
              }
-         } else {
-             // Offline: Try loading from cache
-             if (typeof window !== 'undefined') {
-                 const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
-                 const cachedData = localStorage.getItem(cacheKey);
-                 if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
-                     fetchedLocations = JSON.parse(cachedData);
-                     console.log("Using cached locations (offline).");
-                 } else {
-                     setError("Offline: Could not load fresh data and cache is old or empty.");
+         }
+
+         // If no valid cache or forcing refresh, and online, fetch fresh data
+         if ((!fetchedLocations || forceRefresh) && isOnline) {
+             try {
+                 console.log("Fetching fresh parking lots...");
+                 fetchedLocations = await getAvailableParkingLots();
+                 // Cache the fresh data if on client
+                 if (typeof window !== 'undefined') {
+                     try {
+                         localStorage.setItem(cacheKey, JSON.stringify(fetchedLocations));
+                         localStorage.setItem(cacheTimestampKey, Date.now().toString());
+                         console.log("Cached fresh parking lots.");
+                     } catch (e) {
+                         console.error("Failed to cache parking lots:", e);
+                     }
                  }
-             } else {
-                  setError("Offline: Cache unavailable.");
+             } catch (fetchError) {
+                 console.error("Failed to fetch fresh parking locations:", fetchError);
+                 // If fetch fails but we had cached data from earlier, keep it
+                 if (!fetchedLocations) {
+                     setError("Could not load parking locations. Please check connection.");
+                 } else {
+                      console.warn("Online fetch failed, continuing with previously cached data.");
+                 }
              }
+         } else if (!fetchedLocations && !isOnline) {
+             // Offline and no valid cache
+             setError("Offline: Could not load parking data.");
          }
 
          if (fetchedLocations) {
@@ -518,27 +547,33 @@ export default function ParkingLotManager() {
 
      } catch (err) {
        console.error("Error processing parking locations:", err);
-       setError("Could not load parking locations.");
+       setError("An unexpected error occurred while loading locations.");
      } finally {
        setIsLoadingLocations(false);
+       setIsRefreshing(false); // Stop refresh indicator
      }
    }, [isOnline]); // Depend on isOnline
+
+   // Manual refresh handler
+   const handleManualRefresh = () => {
+       if (!isOnline) {
+           toast({ title: "Offline", description: "Cannot refresh data while offline.", variant: "destructive"});
+           return;
+       }
+       setIsRefreshing(true);
+       fetchLocationsData(true); // Force fetch fresh data
+       fetchUserBookmarks(); // Refresh bookmarks too
+       // Recommendations will refresh based on location/bookmark changes
+   };
 
   useEffect(() => {
     fetchLocationsData();
   }, [fetchLocationsData]); // Run fetchLocationsData on mount and when it changes (due to isOnline)
 
-    // Fetch bookmarks when user logs in or comes online
+    // Fetch bookmarks when user logs in or initially (respects offline)
     useEffect(() => {
         if (isAuthenticated && userId) {
             fetchUserBookmarks();
-             // Try loading cached bookmarks immediately for faster UI responsiveness
-             if (typeof window !== 'undefined') {
-                const cachedBookmarks = localStorage.getItem('cachedUserBookmarks');
-                if (cachedBookmarks) {
-                    setUserBookmarks(JSON.parse(cachedBookmarks));
-                }
-             }
         } else {
              setUserBookmarks([]); // Clear bookmarks if logged out
              if (typeof window !== 'undefined') {
@@ -549,8 +584,7 @@ export default function ParkingLotManager() {
 
 
    useEffect(() => {
-        // Fetch recommendations after locations and bookmarks are loaded and user is authenticated
-        // Note: fetchRecommendations now internally checks isOnline
+        // Fetch recommendations after locations and bookmarks are loaded and user is authenticated (respects offline)
         if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated) {
             fetchRecommendations();
         }
@@ -564,12 +598,11 @@ export default function ParkingLotManager() {
     setIsAuthModalOpen(false);
     toast({title: "Authentication Successful"});
     fetchUserBookmarks(); // Fetch bookmarks after login
-    fetchLocationsData(); // Refetch locations potentially with user context
+    fetchLocationsData(true); // Force refetch locations potentially with user context
     // Recommendations will be fetched by the useEffect dependency change
   };
 
   // Logout is handled in profile page or header now
-  // const handleLogout = () => { ... }
 
    const simulatePinCar = async (spotId: string, locationId: string) => {
        setIsPinning(true);
@@ -583,7 +616,11 @@ export default function ParkingLotManager() {
        setPinnedSpot(pinData);
        // Cache pinned location for offline access
        if (typeof window !== 'undefined') {
-           localStorage.setItem('pinnedCarLocation', JSON.stringify(pinData));
+            try {
+               localStorage.setItem('pinnedCarLocation', JSON.stringify(pinData));
+            } catch (e) {
+                console.error("Failed to cache pinned location:", e);
+            }
        }
 
        setIsPinning(false);
@@ -602,11 +639,16 @@ export default function ParkingLotManager() {
             const cachedPin = localStorage.getItem('pinnedCarLocation');
             const maxPinAge = 6 * 60 * 60 * 1000; // 6 hours
             if (cachedPin) {
-                const pinData = JSON.parse(cachedPin);
-                if (Date.now() - pinData.timestamp < maxPinAge) {
-                    setPinnedSpot(pinData);
-                } else {
-                    localStorage.removeItem('pinnedCarLocation'); // Clear expired pin
+                try {
+                    const pinData = JSON.parse(cachedPin);
+                    if (Date.now() - pinData.timestamp < maxPinAge) {
+                        setPinnedSpot(pinData);
+                    } else {
+                        localStorage.removeItem('pinnedCarLocation'); // Clear expired pin
+                    }
+                } catch {
+                     console.error("Failed to parse cached pinned location");
+                     localStorage.removeItem('pinnedCarLocation');
                 }
             }
         }
@@ -623,12 +665,15 @@ export default function ParkingLotManager() {
                action: <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>,
            });
        } else {
-           simulatePinCar(spotId, locationId); // Pinning works offline (uses cached location name if offline)
+           simulatePinCar(spotId, locationId); // Pinning works offline (uses cached location name if available)
            if (userId && isOnline) {
                 // awardBadge(userId, 'badge_first_booking'); // Example gamification call - only if online
            }
            // TODO: Add reservation to an offline queue if !isOnline
-           // if (!isOnline) { queueReservation({ userId, spotId, locationId, timestamp: Date.now() }); }
+           if (!isOnline) {
+                console.log("Offline: Queuing reservation (Simulation)...", { userId, spotId, locationId });
+                // queueReservation({ userId, spotId, locationId, timestamp: Date.now() });
+           }
        }
   };
 
@@ -642,7 +687,11 @@ export default function ParkingLotManager() {
 
   const handleSelectRecommendation = (lotId: string) => {
       setSelectedLocationId(lotId);
-       document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' });
+      // Ensure element exists before scrolling
+       setTimeout(() => {
+            const element = document.getElementById('parking-grid-section');
+            element?.scrollIntoView({ behavior: 'smooth' });
+       }, 100); // Small delay to allow potential re-renders
   };
 
   const getVoiceButtonIcon = () => {
@@ -682,9 +731,11 @@ export default function ParkingLotManager() {
    };
 
     const getVoiceButtonTooltip = () => {
-         if (!isClient || !voiceAssistant) return "Loading...";
-          if (!isOnline) return "Voice commands unavailable offline";
-         if (!voiceAssistant.isSupported) return "Voice commands not supported";
+         // Default tooltip for SSR or before client mount
+        if (!isClient) return "Loading voice assistant...";
+         if (!voiceAssistant) return "Voice assistant unavailable";
+         if (!isOnline) return "Voice commands unavailable offline";
+         if (!voiceAssistant.isSupported) return "Voice commands not supported by your browser";
          switch (voiceAssistantState) {
               case 'activated': return "Say your command...";
               case 'listening': return "Listening for 'Hey Carpso' or command..."; // Updated tooltip
@@ -701,18 +752,29 @@ export default function ParkingLotManager() {
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Parking Availability</h1>
            <div className="flex items-center gap-2">
-                {/* Voice Assistant Button - Enhanced UI */}
+                {/* Refresh Button */}
+                <Button
+                     variant="outline"
+                     size="icon"
+                     onClick={handleManualRefresh}
+                     disabled={isRefreshing || !isOnline}
+                     aria-label="Refresh Data"
+                     title="Refresh Data"
+                >
+                    {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <RefreshCcw className="h-5 w-5" />}
+                </Button>
+                {/* Voice Assistant Button */}
                  <Button
                      variant="outline"
                      size="icon"
                      onClick={handleVoiceButtonClick}
-                      disabled={!isClient || (voiceAssistant && (!voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking')) || !isOnline || false} // Disable if offline
+                     disabled={!isClient || (voiceAssistant && (!voiceAssistant.isSupported || voiceAssistantState === 'processing' || voiceAssistantState === 'speaking')) || !isOnline}
                      aria-label={getVoiceButtonTooltip()}
                      title={getVoiceButtonTooltip()} // Tooltip for desktop
                      className={cn(
                          "transition-opacity", // Added for smoother loading
                          !isClient && "opacity-50 cursor-not-allowed", // Style for SSR/before mount
-                          isClient && (!voiceAssistant || !voiceAssistant.isSupported || !isOnline) && "opacity-50 cursor-not-allowed", // Style for unsupported or offline
+                         isClient && (!voiceAssistant || !voiceAssistant.isSupported || !isOnline) && "opacity-50 cursor-not-allowed", // Style for unsupported or offline
                          isClient && voiceAssistantState === 'activated' && "border-primary",
                          isClient && voiceAssistantState === 'listening' && "border-blue-600",
                          isClient && voiceAssistantState === 'error' && "border-destructive",
@@ -722,16 +784,15 @@ export default function ParkingLotManager() {
                      {getVoiceButtonIcon()}
                  </Button>
 
-               {/* Auth / Profile Button - Only shows Sign In if not authenticated */}
+               {/* Auth / Profile Button */}
                {!isAuthenticated && (
                     <Button onClick={() => setIsAuthModalOpen(true)}>
                         Sign In / Sign Up
                     </Button>
                )}
-               {/* Profile button is now in the header for desktop and bottom nav for mobile */}
            </div>
        </div>
-        {/* Voice Assistant Status Indicator (More informative) */}
+        {/* Voice Assistant Status Indicator */}
         {isClient && voiceAssistant && voiceAssistant.isSupported && isOnline && voiceAssistantState !== 'idle' && (
             <p className="text-sm text-muted-foreground text-center mb-4 italic">
                  {voiceAssistantState === 'activated' && "Say your command..."}
@@ -758,7 +819,6 @@ export default function ParkingLotManager() {
                         Spot: <span className="font-medium">{pinnedSpot.spotId}</span> at {locations.find(l => l.id === pinnedSpot.locationId)?.name || pinnedSpot.locationId}
                     </p>
                     {/* TODO: Add button to get directions to pinned spot */}
-                    {/* <Button size="sm" variant="link" className="mt-1 p-0 h-auto">Get Directions</Button> */}
                 </CardContent>
            </Card>
        )}
@@ -768,8 +828,8 @@ export default function ParkingLotManager() {
              </div>
         )}
 
-       {/* Recommendations Section (Show if logged in and recommendations available) */}
-        {isAuthenticated && !isLoadingLocations && isOnline && ( // Only show recommendations when online
+       {/* Recommendations Section (Respects offline state) */}
+        {isAuthenticated && !isLoadingLocations && (
             <Card className="mb-6 border-accent bg-accent/5">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -777,13 +837,16 @@ export default function ParkingLotManager() {
                         Recommended Parking For You
                     </CardTitle>
                      <CardDescription>Based on your preferences and current conditions.</CardDescription>
+                     {!isOnline && <CardDescription className="text-destructive text-xs pt-1">(Recommendations may be outdated)</CardDescription>}
                 </CardHeader>
                 <CardContent>
-                    {isLoadingRecommendations || isLoadingBookmarks ? ( // Also consider bookmark loading
+                    {isLoadingRecommendations || isLoadingBookmarks ? (
                         <div className="space-y-2">
                             <Skeleton className="h-10 w-full" />
                             <Skeleton className="h-10 w-full" />
                         </div>
+                    ) : !isOnline && recommendations.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Recommendations require an internet connection.</p>
                     ) : recommendations.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {recommendations.map((rec) => (
@@ -833,9 +896,11 @@ export default function ParkingLotManager() {
             <Skeleton className="h-10 w-full" />
           ) : error ? (
              <p className="text-destructive">{error}</p>
-          ) : locations.length === 0 ? (
-              <p className="text-muted-foreground">No parking locations available (check connection or cache).</p>
-          ) : (
+          ) : locations.length === 0 && isOnline ? ( // Only show 'no locations' if online and empty
+              <p className="text-muted-foreground">No parking locations available.</p>
+           ) : locations.length === 0 && !isOnline ? ( // Specific message if offline and empty
+               <p className="text-muted-foreground">Offline: No cached parking locations available.</p>
+           ) : (
             <Select
               value={selectedLocationId || ""}
               onValueChange={(value) => setSelectedLocationId(value)}
@@ -859,7 +924,7 @@ export default function ParkingLotManager() {
       {selectedLocation ? (
         <div id="parking-grid-section">
             <ParkingLotGrid
-              key={selectedLocation.id}
+              key={selectedLocation.id} // Key ensures remount on location change
               location={selectedLocation}
               onSpotReserved={handleSpotReserved}
               userTier={userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic'}
@@ -867,7 +932,7 @@ export default function ParkingLotManager() {
         </div>
       ) : !isLoadingLocations && !error && locations.length > 0 ? (
          <p className="text-center text-muted-foreground">
-             {isAuthenticated && isOnline ? 'Select a recommended or specific parking location above.' : 'Please select a parking location above.'}
+             {isAuthenticated ? 'Select a recommended or specific parking location above.' : 'Please select a parking location above.'}
          </p>
       ) : null }
 
@@ -877,16 +942,8 @@ export default function ParkingLotManager() {
            onAuthSuccess={handleAuthSuccess}
        />
 
-       {/* UserProfile component is removed, profile access is via dedicated page */}
-       {/* {isAuthenticated && userId && (
-           <UserProfile ... />
-       )} */}
-
         <BottomNavBar
-             isAuthenticated={isAuthenticated}
-             userRole={userRole || 'User'}
-             userName={userName}
-             userAvatarUrl={userAvatarUrl}
+             // Props now passed from context automatically within BottomNavBar
              onAuthClick={() => setIsAuthModalOpen(true)}
              // onProfileClick is removed
          />
@@ -917,3 +974,4 @@ interface ParkingHistoryEntry {
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
 }
+

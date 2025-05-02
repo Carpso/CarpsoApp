@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff } from 'lucide-react'; // Added DollarSign, Clock, Car, WifiOff
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw } from 'lucide-react'; // Added RefreshCcw
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
@@ -26,12 +26,16 @@ import LiveLocationView from './LiveLocationView'; // Import LiveLocationView
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import { Alert, AlertTitle } from '@/components/ui/alert'; // Import Alert components
+import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
 
 interface ParkingLotGridProps {
   location: ParkingLot;
   onSpotReserved: (spotId: string, locationId: string) => void; // Callback when a spot is reserved
   userTier?: 'Basic' | 'Premium'; // Optional user tier for pricing
 }
+
+const REFRESH_INTERVAL_MS = 60000; // 60 seconds - Reduced background refresh frequency
+const FOCUSED_REFRESH_INTERVAL_MS = 15000; // 15 seconds - More frequent when tab is active
 
 export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'Basic' }: ParkingLotGridProps) {
   const { userId, isOnline } = useContext(AppStateContext)!; // Get userId and isOnline from context
@@ -49,23 +53,23 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const [costRule, setCostRule] = useState<string | null>(null);
   const [isCostLoading, setIsCostLoading] = useState(false);
   const [lastFetchTimestamp, setLastFetchTimestamp] = useState<number | null>(null);
+  const [manualRefreshTrigger, setManualRefreshTrigger] = useState(0); // For manual refresh
+  const isVisible = useVisibilityChange(); // Track tab visibility
 
   const { toast } = useToast();
 
-  // Fetch spot status (respecting online status)
-  const fetchSpotStatuses = useCallback(async () => {
-      // Only set loading true on initial load or location change
-      if (spots.length === 0 || (spots.length > 0 && !spots[0]?.spotId.startsWith(location.id))) {
+  // Fetch spot status (respecting online status and visibility)
+  const fetchSpotStatuses = useCallback(async (isManualRefresh = false) => {
+      // Only set loading true on initial load, location change, or manual refresh
+      if (isManualRefresh || spots.length === 0 || (spots.length > 0 && !spots[0]?.spotId.startsWith(location.id))) {
           setIsLoading(true);
       }
 
       // If offline, don't attempt to fetch fresh data
       if (!isOnline) {
           console.log("Offline: Skipping spot status fetch for", location.name);
-           // Optionally update UI to show data might be stale
-           // If we had cached spot data, we could load it here
-           // For now, just keep existing data or show loading/error
-            if (spots.length === 0) setIsLoading(false); // Stop loading if offline and no data initially
+           // Keep existing data or stop loading if offline and no data initially
+            if (spots.length === 0) setIsLoading(false);
            return;
       }
 
@@ -89,7 +93,6 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             });
         }
       } finally {
-         // Only set loading false on initial load/location change or successful fetch
          setIsLoading(false);
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,7 +123,6 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           setPrediction(predictionResult);
       } catch (err) {
           console.error('Prediction failed:', err);
-          // Avoid toast if offline, though this block shouldn't run if offline
           if (isOnline) toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default" });
       } finally {
           setIsPredictionLoading(false);
@@ -128,6 +130,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
       try {
           // Fetch Estimated Cost (simulate for 1 hour)
+           // Use cached pricing rules or fetch only if needed
           const costResult = await calculateEstimatedCost(location, 60, userId, userTier);
           setEstimatedCost(costResult.cost);
           setCostRule(costResult.appliedRule);
@@ -140,11 +143,45 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   }, [location, userId, userTier, toast, isOnline]); // Added isOnline dependency
 
 
+  // --- Effect for Periodic Refresh ---
   useEffect(() => {
-    fetchSpotStatuses(); // Fetch initially and on location/online status change
-    const intervalId = setInterval(fetchSpotStatuses, 30000); // Refresh every 30 seconds (will skip if offline)
-    return () => clearInterval(intervalId); // Cleanup interval on unmount
-  }, [fetchSpotStatuses]); // Depend on the memoized fetch function
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const startInterval = () => {
+      // Clear existing interval before starting a new one
+      if (intervalId) clearInterval(intervalId);
+
+      // Only set interval if online
+      if (isOnline) {
+        // Fetch immediately when starting interval (or when tab becomes visible)
+        fetchSpotStatuses();
+
+        const intervalDuration = isVisible ? FOCUSED_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+        console.log(`Setting refresh interval to ${intervalDuration / 1000}s (Visible: ${isVisible})`);
+        intervalId = setInterval(fetchSpotStatuses, intervalDuration);
+      } else {
+          console.log("Offline, clearing refresh interval.");
+      }
+    };
+
+    startInterval(); // Start interval on mount/dependency change
+
+    // Cleanup interval on unmount or when dependencies change
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [fetchSpotStatuses, isOnline, isVisible]); // Re-run effect if fetch function, online status, or visibility changes
+
+
+ // --- Effect for Manual Refresh Trigger ---
+ useEffect(() => {
+     if (manualRefreshTrigger > 0) {
+         fetchSpotStatuses(true); // Pass true to indicate manual refresh
+     }
+ // Only depend on the trigger value
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [manualRefreshTrigger]);
+
 
  const handleSelectSpot = async (spot: ParkingSpotStatus) => {
      if (!spot.isOccupied) {
@@ -160,12 +197,17 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                  clearInterval(predictionInterval);
              }
 
-             // Set up interval for periodic updates (only if online)
+             // Set up interval for periodic updates (only if online and dialog open)
              const intervalId = setInterval(() => {
-                 if (isOnline) { // Double check online status inside interval
+                  // Check if dialog is still open and online
+                 if (isDialogOpen && isOnline) {
                     fetchPredictionAndCost(spot); // Re-fetch both prediction and cost
+                 } else if (predictionInterval) {
+                      // Clear interval if dialog closes or goes offline
+                      clearInterval(predictionInterval);
+                      setPredictionInterval(null);
                  }
-             }, 15000); // Increased interval slightly
+             }, FOCUSED_REFRESH_INTERVAL_MS); // Use faster refresh for dialog
              setPredictionInterval(intervalId); // Store the interval ID
          } else {
              // Handle offline case for dialog - clear prediction/cost
@@ -203,41 +245,70 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const handleReserveConfirm = async () => {
       if (!selectedSpot || !isOnline) { // Prevent reservation if offline
           toast({ title: "Offline", description: "Cannot reserve spots while offline.", variant: "destructive"});
+          setIsReserving(false); // Ensure loading stops if offline
           return;
       }
       setIsReserving(true);
 
-      // Simulate reservation API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+         // Simulate reservation API call
+         await new Promise(resolve => setTimeout(resolve, 1000));
 
-      setIsReserving(false);
-      setIsDialogOpen(false); // Close dialog on successful reservation
+         // Simulate API success/failure
+         const reservationSuccess = Math.random() > 0.1; // 90% success rate
 
-      toast({
-        title: "Reservation Successful",
-        description: (
-             <div className="flex flex-col gap-2">
-               <span>Spot {selectedSpot.spotId} reserved successfully! Estimated cost: ~${estimatedCost?.toFixed(2)}/hr.</span>
-               <Button variant="outline" size="sm" onClick={() => {
-                   setLiveLocationSpotId(selectedSpot.spotId);
-                   setShowLiveLocation(true);
-               }}>
-                 <Eye className="mr-2 h-4 w-4" /> View Live Location
-               </Button>
-            </div>
-        ),
-        duration: 7000, // Keep toast longer
-      });
+         if (!reservationSuccess) throw new Error("Failed to confirm reservation with the server.");
 
-      // Optimistically update the spot status
-      setSpots(prevSpots =>
-        prevSpots.map(spot =>
-          spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true } : spot
-        )
-      );
-      onSpotReserved(selectedSpot.spotId, location.id); // Notify parent
-      setSelectedSpot(null); // Clear selection
-      // TODO: If offline reservation queue exists, remove this reservation from the queue
+         setIsDialogOpen(false); // Close dialog on successful reservation
+
+         toast({
+           title: "Reservation Successful",
+           description: (
+                <div className="flex flex-col gap-2">
+                  <span>Spot {selectedSpot.spotId} reserved successfully! Estimated cost: ~${estimatedCost?.toFixed(2)}/hr.</span>
+                  <Button variant="outline" size="sm" onClick={() => {
+                      setLiveLocationSpotId(selectedSpot.spotId);
+                      setShowLiveLocation(true);
+                  }}>
+                    <Eye className="mr-2 h-4 w-4" /> View Live Location
+                  </Button>
+               </div>
+           ),
+           duration: 7000, // Keep toast longer
+         });
+
+         // Optimistically update the spot status
+         setSpots(prevSpots =>
+           prevSpots.map(spot =>
+             spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true } : spot
+           )
+         );
+         onSpotReserved(selectedSpot.spotId, location.id); // Notify parent
+         setSelectedSpot(null); // Clear selection
+
+      } catch (error: any) {
+           console.error("Reservation failed:", error);
+           toast({
+               title: "Reservation Failed",
+               description: error.message || "Could not reserve the spot. Please try again.",
+               variant: "destructive",
+           });
+           // Optionally refetch spot status on failure to get the latest state
+           fetchSpotStatuses();
+      } finally {
+           setIsReserving(false);
+            // Clear prediction interval on dialog close/failure
+            if (predictionInterval) {
+                clearInterval(predictionInterval);
+                setPredictionInterval(null);
+            }
+      }
+
+      // TODO: If offline reservation queue exists, remove this reservation from the queue on success, or mark as failed on error
+       if (!isOnline) {
+            // Handle offline queue result (simulation)
+           // updateOfflineQueueStatus(selectedSpot.spotId, reservationSuccess ? 'synced' : 'failed');
+       }
   };
 
   const handleDialogClose = (open: boolean) => {
@@ -256,6 +327,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           }, 300);
       } else {
           setIsDialogOpen(true);
+          // When dialog opens, fetch prediction/cost if online
+          if (selectedSpot && isOnline) {
+              fetchPredictionAndCost(selectedSpot);
+          }
       }
   }
 
@@ -278,6 +353,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
         }, 300);
   };
 
+   const handleManualRefresh = () => {
+       setManualRefreshTrigger(prev => prev + 1); // Increment trigger to run effect
+   };
+
 
   const availableSpots = spots.filter(spot => !spot.isOccupied).length;
   const totalSpots = location.capacity;
@@ -286,24 +365,39 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
     <>
        <Card className="mb-8">
          <CardHeader>
-             <CardTitle>Select an Available Spot at {location.name}</CardTitle>
-             <CardDescription>{location.address}</CardDescription>
-             <CardDescription>Click on a green spot (<Car className="inline h-4 w-4 text-green-800" />) to reserve.</CardDescription>
+             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                 <div>
+                     <CardTitle>Select an Available Spot at {location.name}</CardTitle>
+                     <CardDescription>{location.address}</CardDescription>
+                     <CardDescription>Click on a green spot (<Car className="inline h-4 w-4 text-green-800" />) to reserve.</CardDescription>
+                 </div>
+                 {/* Manual Refresh Button */}
+                 <Button
+                     variant="outline"
+                     size="sm"
+                     onClick={handleManualRefresh}
+                     disabled={isLoading || !isOnline} // Disable if loading or offline
+                     className="w-full sm:w-auto"
+                 >
+                     {isLoading && manualRefreshTrigger > 0 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+                     Refresh Status
+                 </Button>
+             </div>
               {/* Display last updated time or offline status */}
-              <div className="text-xs text-muted-foreground pt-1">
-                 {isLoading ? (
+              <div className="text-xs text-muted-foreground pt-2">
+                 {isLoading && !(manualRefreshTrigger > 0) ? ( // Show "Loading..." only on initial load
                      <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading...</span>
                  ) : !isOnline ? (
                      <span className="flex items-center gap-1 text-destructive"><WifiOff className="h-3 w-3" /> Offline - Data may be outdated.</span>
                  ) : lastFetchTimestamp ? (
                      <span>Last Updated: {new Date(lastFetchTimestamp).toLocaleTimeString()}</span>
                  ) : (
-                      <span>Updating...</span>
+                      <span>Updating...</span> // Show if online but no timestamp yet
                  )}
              </div>
          </CardHeader>
          <CardContent>
-            {isLoading ? (
+            {isLoading && spots.length === 0 ? ( // Show skeleton only on initial load when spots are empty
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3">
                 {Array.from({ length: totalSpots }).map((_, index) => (
                     <Skeleton key={index} className="h-20 w-full aspect-square" />
@@ -325,7 +419,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          </CardContent>
          <CardFooter className="flex justify-center items-center pt-4">
            <div className="text-sm text-muted-foreground">
-               {isLoading ? 'Loading spots...' : `${availableSpots} / ${totalSpots} spots available`}
+               {isLoading && spots.length === 0 ? 'Loading spots...' : `${availableSpots} / ${totalSpots} spots available`}
            </div>
          </CardFooter>
        </Card>
@@ -335,7 +429,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
-               {/* Moved description text here */}
+              {/* Moved description text here */}
               <div className="text-sm text-muted-foreground pt-2">
                  You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
               </div>
@@ -429,7 +523,3 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
     </>
   );
 }
-
-
-// Helper Icon for ParkingSpot
-import { Ban } from 'lucide-react'; // Moved import here
