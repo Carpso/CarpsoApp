@@ -14,11 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, UserPlus, User, Phone, Car, DollarSign, WifiOff, Printer } from 'lucide-react'; // Added Printer
+import { Loader2, UserPlus, User, Phone, Car, DollarSign, WifiOff, Printer, Search, CircleAlert } from 'lucide-react'; // Added Search, CircleAlert
 import { useToast } from '@/hooks/use-toast';
-import { payForOtherUser, getMockUsersForTransfer } from '@/services/wallet-service'; // Import service
+import { payForOtherUser, getMockUsersForTransfer, checkUserOrPlateExists } from '@/services/wallet-service'; // Import service, added checkUserOrPlateExists
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import Receipt from '@/components/common/Receipt'; // Import Receipt component
+import { Alert, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert'; // Use AlertDescription alias
 
 interface PayForOtherModalProps {
   isOpen: boolean;
@@ -52,6 +53,9 @@ export default function PayForOtherModal({
   const [availableUsers, setAvailableUsers] = useState<MockUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any | null>(null); // Store transaction for receipt
+  const [isCheckingTarget, setIsCheckingTarget] = useState(false); // State for checking target existence
+  const [targetCheckResult, setTargetCheckResult] = useState<'valid' | 'invalid' | 'error' | null>(null); // State for check result
+  const [targetIdentifier, setTargetIdentifier] = useState<string>(''); // Store the identifier being checked/used
   const { toast } = useToast();
 
    // Fetch mock users when component mounts or modal opens (only if online)
@@ -72,8 +76,8 @@ export default function PayForOtherModal({
            };
            fetchUsers();
        } else if (isOpen && !isOnline) {
-           setIsLoadingUsers(false);
-           setAvailableUsers([]); // Clear user list if offline
+            setIsLoadingUsers(false);
+            setAvailableUsers([]); // Clear user list if offline
        } else {
            // Reset state when modal closes
            setRecipientType('user');
@@ -83,6 +87,8 @@ export default function PayForOtherModal({
            setParkingRecordId('');
            setAvailableUsers([]);
            setLastTransaction(null); // Clear transaction on close
+           setTargetCheckResult(null); // Reset check result
+           setTargetIdentifier(''); // Reset identifier
        }
    }, [isOpen, payerId, toast, isOnline]); // Add isOnline dependency
 
@@ -125,6 +131,43 @@ export default function PayForOtherModal({
     setAmount(value === '' ? '' : Number(value));
   };
 
+    // --- Check Target User/Plate Existence ---
+    const checkTarget = async () => {
+        let identifier: string | null = null;
+        if (recipientType === 'user' && selectedUserId) {
+            identifier = selectedUserId;
+        } else if (recipientType === 'plate' && targetPlateNumber && targetPlateNumber.length >= 3) { // Check plate only if >= 3 chars
+            identifier = targetPlateNumber;
+        } else {
+             setTargetCheckResult(null); // Clear result if input is invalid/empty
+             setTargetIdentifier('');
+            return;
+        }
+
+        setTargetIdentifier(identifier); // Store the identifier being checked
+        setIsCheckingTarget(true);
+        setTargetCheckResult(null); // Reset before check
+        try {
+            const exists = await checkUserOrPlateExists(identifier);
+            setTargetCheckResult(exists ? 'valid' : 'invalid');
+        } catch (error) {
+            console.error("Error checking target:", error);
+            setTargetCheckResult('error');
+        } finally {
+            setIsCheckingTarget(false);
+        }
+    };
+
+   // Trigger check when user ID or plate number changes (with debounce/blur would be better in real app)
+   useEffect(() => {
+      if (isOpen && isOnline) {
+         // Optional: Add a debounce here to avoid checking on every keystroke
+         checkTarget();
+      }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [selectedUserId, targetPlateNumber, recipientType, isOpen, isOnline]);
+
+
   const handleSubmit = async () => {
       setLastTransaction(null); // Clear previous transaction
     if (!isOnline) {
@@ -132,17 +175,21 @@ export default function PayForOtherModal({
         return;
     }
 
-    let targetIdentifier: string | null = null;
-    if (recipientType === 'user' && selectedUserId) {
-        targetIdentifier = selectedUserId;
-    } else if (recipientType === 'plate' && targetPlateNumber) {
-        targetIdentifier = targetPlateNumber; // Use plate number as identifier for target user
-    }
-
+    // Use the stored targetIdentifier that was checked
     if (!targetIdentifier) {
         toast({ title: "Missing Recipient Info", description: "Please select a user or enter a license plate.", variant: "destructive" });
         return;
     }
+
+    // Re-check target validity before proceeding (important if user changes input quickly)
+    if (targetCheckResult !== 'valid') {
+         let errorMsg = "Target recipient/plate could not be verified.";
+         if (targetCheckResult === 'invalid') errorMsg = `User or Plate "${targetIdentifier}" not found in Carpso system.`;
+         if (targetCheckResult === 'error') errorMsg = `Error verifying recipient/plate "${targetIdentifier}".`;
+         toast({ title: "Recipient Not Found", description: errorMsg, variant: "destructive" });
+         return;
+    }
+
 
     if (amount === '' || amount <= 0) {
         toast({ title: "Invalid Amount", description: "Please enter a valid positive amount.", variant: "destructive" });
@@ -202,6 +249,16 @@ export default function PayForOtherModal({
     }
   };
 
+  // Determine if submit button should be disabled
+  const canSubmit = !isLoading &&
+                     isOnline &&
+                     amount !== '' &&
+                     amount > 0 &&
+                     amount <= payerBalance &&
+                     targetIdentifier !== '' &&
+                     targetCheckResult === 'valid'; // Target must be valid
+
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !isLoading && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -220,7 +277,7 @@ export default function PayForOtherModal({
             <div className="flex gap-2">
                 <Button
                     variant={recipientType === 'user' ? 'default' : 'outline'}
-                    onClick={() => setRecipientType('user')}
+                    onClick={() => { setRecipientType('user'); setTargetPlateNumber(''); setTargetCheckResult(null); }} // Clear other field on switch
                     className="flex-1"
                     disabled={isLoading || !isOnline}
                 >
@@ -228,7 +285,7 @@ export default function PayForOtherModal({
                 </Button>
                  <Button
                     variant={recipientType === 'plate' ? 'default' : 'outline'}
-                    onClick={() => setRecipientType('plate')}
+                    onClick={() => { setRecipientType('plate'); setSelectedUserId(''); setTargetCheckResult(null); }} // Clear other field on switch
                     className="flex-1"
                     disabled={isLoading || !isOnline}
                 >
@@ -257,17 +314,39 @@ export default function PayForOtherModal({
              ) : (
                   <div className="space-y-1">
                      <Label htmlFor="targetPlate">Target License Plate</Label>
-                     <Input
-                         id="targetPlate"
-                         type="text"
-                         value={targetPlateNumber}
-                         onChange={(e) => setTargetPlateNumber(e.target.value.toUpperCase())}
-                         placeholder="e.g., ABC 1234"
-                         className="uppercase"
-                         disabled={isLoading || !isOnline}
-                     />
+                      <div className="relative">
+                         <Input
+                             id="targetPlate"
+                             type="text"
+                             value={targetPlateNumber}
+                             onChange={(e) => setTargetPlateNumber(e.target.value.toUpperCase())}
+                             placeholder="e.g., ABC 1234"
+                             className="uppercase pr-8" // Add padding for loader
+                             disabled={isLoading || !isOnline}
+                         />
+                          {isCheckingTarget && isOnline && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+                      </div>
                   </div>
              )}
+
+             {/* Target Check Result Indicator */}
+            {isOnline && targetIdentifier && !isCheckingTarget && targetCheckResult !== null && (
+                 <Alert variant={targetCheckResult === 'valid' ? 'default' : 'destructive'} className="mt-[-8px]">
+                     {targetCheckResult === 'valid' ? <User className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+                      <AlertDescriptionSub className="text-xs">
+                          {targetCheckResult === 'valid' && `User/Plate "${targetIdentifier}" found.`}
+                          {targetCheckResult === 'invalid' && `User/Plate "${targetIdentifier}" not found in Carpso system.`}
+                          {targetCheckResult === 'error' && `Error verifying recipient/plate "${targetIdentifier}".`}
+                      </AlertDescriptionSub>
+                 </Alert>
+            )}
+            {!isOnline && (
+                 <Alert variant="warning" className="mt-[-8px]">
+                    <WifiOff className="h-4 w-4" />
+                    <AlertDescriptionSub className="text-xs">Offline: Recipient verification unavailable.</AlertDescriptionSub>
+                 </Alert>
+            )}
+
 
            {/* Amount Input */}
            <div className="space-y-1">
@@ -304,7 +383,7 @@ export default function PayForOtherModal({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0 || amount > payerBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'plate' && !targetPlateNumber)}>
+          <Button onClick={handleSubmit} disabled={!canSubmit}> {/* Use derived canSubmit state */}
              {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Pay K {amount || 0} {/* Use K symbol */}
           </Button>

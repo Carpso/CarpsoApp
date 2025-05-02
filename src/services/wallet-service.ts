@@ -40,6 +40,7 @@ export interface PaymentMethod {
 let userWallets: Record<string, Wallet> = {
     'user_abc123': { balance: 550.50, currency: 'ZMW' }, // Default to ZMW
     'user_def456': { balance: 100.00, currency: 'ZMW' }, // Default to ZMW
+    'user_premium_test': { balance: 2000.00, currency: 'ZMW' }, // Add wallet for premium user
 };
 let userTransactions: Record<string, WalletTransaction[]> = {
     'user_abc123': [
@@ -51,6 +52,9 @@ let userTransactions: Record<string, WalletTransaction[]> = {
      'user_def456': [
          { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
      ],
+     'user_premium_test': [
+          { id: 'txn_6', type: 'top-up', amount: 2000.00, description: 'Initial Premium Top Up', paymentMethodUsed: 'card_visa_chip', timestamp: new Date(Date.now() - 10 * 86400000).toISOString() },
+     ]
 };
 
 // Mock store for saved payment methods
@@ -62,7 +66,25 @@ let userPaymentMethods: Record<string, PaymentMethod[]> = {
      'user_def456': [
         { id: 'pm_3', type: 'MobileMoney', details: 'Airtel 097X XXX XXX', isPrimary: true },
      ],
+      'user_premium_test': [
+        { id: 'pm_4', type: 'Card', details: 'Mastercard **** 5678', isPrimary: true },
+     ],
 };
+
+// Add mock vehicle data (can be imported from user-service if structure matches)
+const mockVehicleData = [
+    { userId: 'user_abc123', plate: 'ABC 123', make: 'Toyota', model: 'Corolla' },
+    { userId: 'user_abc123', plate: 'XYZ 789', make: 'Nissan', model: 'Hardbody' },
+    { userId: 'user_def456', plate: 'DEF 456', make: 'Honda', model: 'CRV' },
+    { userId: 'user_premium_test', plate: 'PREMIUM 1', make: 'BMW', model: 'X5' },
+];
+// Add mock user data (can be imported from user-service if structure matches)
+const mockUserData = [
+    { userId: 'user_abc123', userName: 'Alice Smith', phone: '0977123456', role: 'User' },
+    { userId: 'user_def456', userName: 'Bob Phiri', phone: '0966789012', role: 'Premium' },
+    { userId: 'attendant_001', userName: 'Attendant One', phone: '0955555555', role: 'ParkingAttendant' },
+    { userId: 'user_premium_test', userName: 'Premium Tester', phone: '0977777777', role: 'Premium' },
+];
 
 // --- Mock Service Functions ---
 
@@ -138,6 +160,7 @@ export async function topUpWallet(
 
 /**
  * Simulates sending money from one user to another.
+ * Ensures recipient exists before transferring.
  * @param senderId The ID of the user sending money.
  * @param recipientIdentifier The ID or unique identifier (e.g., phone) of the recipient.
  * @param amount The amount to send.
@@ -163,6 +186,26 @@ export async function sendMoney(
         userTransactions[senderId] = [];
      }
 
+     // Check if recipient exists
+     const recipientExists = await checkUserOrPlateExists(recipientIdentifier);
+     if (!recipientExists) {
+         throw new Error(`Recipient "${recipientIdentifier}" not found in the Carpso system.`);
+     }
+     // Find actual recipient ID if identifier was phone (for crediting)
+     let recipientId = Object.keys(userWallets).find(id => id === recipientIdentifier);
+     if (!recipientId) {
+         const userByPhone = mockUserData.find(u => u.phone && u.phone.replace(/\D/g, '') === recipientIdentifier.replace(/\D/g, ''));
+         if (userByPhone) recipientId = userByPhone.userId;
+     }
+     if (!recipientId) {
+         // Should not happen if checkUserOrPlateExists passed, but safety check
+         throw new Error(`Could not resolve recipient ID for "${recipientIdentifier}".`);
+     }
+     if (recipientId === senderId) {
+         throw new Error("Cannot send money to yourself.");
+     }
+
+
     // Deduct from sender
     userWallets[senderId].balance -= amount;
 
@@ -173,37 +216,24 @@ export async function sendMoney(
         amount: -amount, // Negative for sender
         description: `Sent to ${recipientIdentifier}${note ? ` (${note})` : ''}`,
         timestamp: new Date().toISOString(),
-        relatedUserId: recipientIdentifier, // Store identifier used
+        relatedUserId: recipientId, // Store the resolved recipient ID
     };
     userTransactions[senderId].push(senderTxn);
 
-    // Simulate adding to recipient
-    // Try to find recipient by ID first, then simulate finding by phone if needed
-    let recipientId = Object.keys(userWallets).find(id => id === recipientIdentifier);
-    if (!recipientId) {
-        // Simulate finding user by phone number (replace with actual lookup)
-        if (recipientIdentifier === '0977111222') recipientId = 'user_def456';
-        // Add more mock phone lookups if needed
-    }
-
-    if (recipientId && recipientId !== senderId) {
-         if (!userWallets[recipientId]) userWallets[recipientId] = { balance: 0, currency: 'ZMW' }; // Default ZMW
-         if (!userTransactions[recipientId]) userTransactions[recipientId] = [];
-         userWallets[recipientId].balance += amount;
-         const recipientTxn: WalletTransaction = {
-             id: `txn_${Date.now()}_rec`,
-             type: 'receive',
-             amount: amount,
-             description: `Received from ${senderId}${note ? ` (${note})` : ''}`,
-             timestamp: new Date().toISOString(),
-             relatedUserId: senderId,
-         };
-         userTransactions[recipientId].push(recipientTxn);
-         console.log(`Credited ${recipientId} with ${amount}`);
-    } else {
-        console.log(`Recipient ${recipientIdentifier} not found or is sender, only logging sender transaction.`);
-        // In a real app, might send notification or hold funds if recipient needs to sign up
-    }
+    // Add to recipient
+    if (!userWallets[recipientId]) userWallets[recipientId] = { balance: 0, currency: 'ZMW' }; // Default ZMW
+    if (!userTransactions[recipientId]) userTransactions[recipientId] = [];
+    userWallets[recipientId].balance += amount;
+    const recipientTxn: WalletTransaction = {
+        id: `txn_${Date.now()}_rec`,
+        type: 'receive',
+        amount: amount,
+        description: `Received from ${senderId}${note ? ` (${note})` : ''}`,
+        timestamp: new Date().toISOString(),
+        relatedUserId: senderId,
+    };
+    userTransactions[recipientId].push(recipientTxn);
+    console.log(`Credited ${recipientId} with ${amount}`);
 
 
     console.log(`Sent ${amount} from ${senderId} to ${recipientIdentifier}. Sender balance: ${userWallets[senderId].balance}`);
@@ -254,16 +284,17 @@ export async function makePartnerPayment(userId: string, partnerId: string, amou
 
 /**
  * Simulates paying for another user's parking fee.
+ * Ensures target user/plate exists before paying.
  * @param payerId The ID of the user making the payment.
- * @param targetUserId The ID or identifier (like plate#) of the user whose parking is being paid for.
+ * @param targetIdentifier The user ID or license plate# of the user whose parking is being paid for.
  * @param parkingRecordId The ID of the specific parking record being paid.
  * @param amount The amount to pay.
  * @returns A promise resolving to an object containing the payer's new balance and the transaction details.
- * @throws Error if payer wallet not found, insufficient balance, or invalid amount.
+ * @throws Error if payer wallet not found, insufficient balance, invalid amount, or target not found.
  */
 export async function payForOtherUser(
     payerId: string,
-    targetUserId: string, // Can be userId or plate# in simulation
+    targetIdentifier: string, // Can be userId or plate# in simulation
     parkingRecordId: string,
     amount: number
 ): Promise<{ newBalance: number; transaction: WalletTransaction }> {
@@ -285,6 +316,12 @@ export async function payForOtherUser(
         userTransactions[payerId] = [];
     }
 
+    // Check if target user/plate exists before proceeding
+    const targetExists = await checkUserOrPlateExists(targetIdentifier);
+    if (!targetExists) {
+        throw new Error(`Target user or plate "${targetIdentifier}" not found in Carpso system.`);
+    }
+
     // Deduct from payer
     payerWallet.balance -= amount;
 
@@ -293,14 +330,14 @@ export async function payForOtherUser(
         id: `txn_${Date.now()}`,
         type: 'payment_other',
         amount: -amount,
-        description: `Paid parking (ID: ${parkingRecordId.substring(0, 6)}...) for ${targetUserId}`,
+        description: `Paid parking (ID: ${parkingRecordId.substring(0, 6)}...) for ${targetIdentifier}`,
         timestamp: new Date().toISOString(),
-        relatedUserId: targetUserId, // Link to the user/plate who received the benefit
+        relatedUserId: targetIdentifier, // Link to the user/plate who received the benefit
         parkingRecordId: parkingRecordId, // Link to the specific parking record
     };
     userTransactions[payerId].push(paymentTxn);
 
-    console.log(`User ${payerId} paid ${amount} for ${targetUserId}'s parking (Record: ${parkingRecordId}). Payer balance: ${payerWallet.balance}`);
+    console.log(`User ${payerId} paid ${amount} for ${targetIdentifier}'s parking (Record: ${parkingRecordId}). Payer balance: ${payerWallet.balance}`);
 
     // TODO: In a real application, update the status of the parkingRecordId to 'Completed' or 'Paid'.
 
@@ -381,8 +418,36 @@ export async function updatePaymentMethods(userId: string, methods: PaymentMetho
 }
 
 
-// TODO: Function to generate QR code data for receiving payments
-// TODO: Function to scan QR code and initiate payment/send
+/**
+ * Checks if a given identifier (user ID, phone number, or license plate) exists in the system.
+ * Simulates checking relevant data sources.
+ * @param identifier The identifier to check.
+ * @returns A promise resolving to true if the identifier exists, false otherwise.
+ */
+export async function checkUserOrPlateExists(identifier: string): Promise<boolean> {
+    await new Promise(resolve => setTimeout(resolve, 250)); // Simulate check delay
+
+    // 1. Check if it's a known user ID
+    if (userWallets[identifier] || mockUserData.some(u => u.userId === identifier)) {
+        return true;
+    }
+
+    // 2. Check if it's a known phone number (normalized)
+    const normalizedPhone = identifier.replace(/\D/g, '');
+    if (normalizedPhone.length >= 9 && mockUserData.some(u => u.phone && u.phone.replace(/\D/g, '') === normalizedPhone)) {
+        return true;
+    }
+
+    // 3. Check if it's a known license plate (normalized)
+    const normalizedPlate = identifier.replace(/\s+/g, '').toUpperCase();
+    if (normalizedPlate.length >= 3 && mockVehicleData.some(v => v.plate.replace(/\s+/g, '').toUpperCase() === normalizedPlate)) {
+        return true;
+    }
+
+    // If none of the above match
+    return false;
+}
+
 
 // Function to get mock users for sending money selector
 export async function getMockUsersForTransfer(): Promise<{ id: string, name: string }[]> {
@@ -390,6 +455,6 @@ export async function getMockUsersForTransfer(): Promise<{ id: string, name: str
      // Get all users from the wallet data as an example
      return Object.keys(userWallets).map(id => ({
          id,
-         name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
-     }));
+         name: mockUserData.find(u => u.userId === id)?.userName || `User ${id.substring(0, 5)} (mock)`, // Use actual name if available
+     })).filter(u => u.name); // Ensure user has a name
 }

@@ -15,12 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowUpRight, User, Phone, Users, WifiOff, Printer } from 'lucide-react'; // Added Printer
+import { Loader2, ArrowUpRight, User, Phone, Users, WifiOff, Printer, CircleAlert } from 'lucide-react'; // Added Printer, CircleAlert
 import { useToast } from '@/hooks/use-toast';
-import { sendMoney, getMockUsersForTransfer } from '@/services/wallet-service'; // Import service
+import { sendMoney, getMockUsersForTransfer, checkUserOrPlateExists } from '@/services/wallet-service'; // Import service, added checkUserOrPlateExists
 import { cn } from '@/lib/utils';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import Receipt from '@/components/common/Receipt'; // Import Receipt component
+import { Alert, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert'; // Use AlertDescription alias
 
 interface SendMoneyModalProps {
   isOpen: boolean;
@@ -54,6 +55,9 @@ export default function SendMoneyModal({
   const [availableUsers, setAvailableUsers] = useState<MockUser[]>([]); // State for user list
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any | null>(null); // Store transaction for receipt
+  const [isCheckingTarget, setIsCheckingTarget] = useState(false); // State for checking target existence
+  const [targetCheckResult, setTargetCheckResult] = useState<'valid' | 'invalid' | 'error' | null>(null); // State for check result
+  const [targetIdentifier, setTargetIdentifier] = useState<string>(''); // Store the identifier being checked/used
   const { toast } = useToast();
 
    // Fetch mock users when component mounts or modal opens (only if online)
@@ -85,6 +89,8 @@ export default function SendMoneyModal({
            setNote('');
            setAvailableUsers([]);
            setLastTransaction(null); // Clear transaction on close
+           setTargetCheckResult(null); // Reset check result
+           setTargetIdentifier(''); // Reset identifier
        }
    }, [isOpen, userId, toast, isOnline]); // Add isOnline dependency
 
@@ -97,12 +103,13 @@ export default function SendMoneyModal({
              printWindow.document.write('<html><head><title>Print Receipt</title>');
              printWindow.document.write('<style>body{font-family:sans-serif;margin:1rem;}h2,h3{margin-bottom:0.5rem;}p{margin:0.2rem 0;}hr{border:none;border-top:1px dashed #ccc;margin:0.5rem 0;}</style>');
              printWindow.document.write('</head><body>');
+             const recipientDisplay = availableUsers.find(u => u.id === transaction.relatedUserId)?.name || transaction.relatedUserId;
              const receiptHtml = `
                  <h2>Money Sent Receipt</h2>
                  <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
                  <hr />
                  <p><strong>Amount Sent:</strong> K ${Math.abs(transaction.amount).toFixed(2)}</p> {/* Use K symbol */}
-                 <p><strong>To:</strong> ${transaction.relatedUserId}</p>
+                 <p><strong>To:</strong> ${recipientDisplay}</p>
                  ${transaction.note ? `<p><strong>Note:</strong> ${transaction.note}</p>` : ''}
                  <hr />
                  <p><strong>Your New Balance:</strong> K ${transaction.newBalance.toFixed(2)}</p> {/* Use K symbol */}
@@ -127,6 +134,42 @@ export default function SendMoneyModal({
     setAmount(value === '' ? '' : Number(value));
   };
 
+    // --- Check Target User/Phone Existence ---
+    const checkTarget = async () => {
+        let identifier: string | null = null;
+        if (recipientType === 'user' && selectedUserId) {
+            identifier = selectedUserId;
+        } else if (recipientType === 'phone' && recipientPhone && recipientPhone.length >= 9) { // Check phone only if >= 9 digits
+            identifier = recipientPhone;
+        } else {
+             setTargetCheckResult(null); // Clear result if input is invalid/empty
+             setTargetIdentifier('');
+            return;
+        }
+
+        setTargetIdentifier(identifier); // Store the identifier being checked
+        setIsCheckingTarget(true);
+        setTargetCheckResult(null); // Reset before check
+        try {
+            const exists = await checkUserOrPlateExists(identifier); // Use the same check function
+            setTargetCheckResult(exists ? 'valid' : 'invalid');
+        } catch (error) {
+            console.error("Error checking target:", error);
+            setTargetCheckResult('error');
+        } finally {
+            setIsCheckingTarget(false);
+        }
+    };
+
+   // Trigger check when user ID or phone number changes (with debounce/blur would be better)
+   useEffect(() => {
+      if (isOpen && isOnline) {
+         checkTarget();
+      }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [selectedUserId, recipientPhone, recipientType, isOpen, isOnline]);
+
+
   const handleSubmit = async () => {
        setLastTransaction(null); // Clear previous transaction
       if (!isOnline) {
@@ -134,17 +177,21 @@ export default function SendMoneyModal({
           return;
       }
 
-      let recipientIdentifier: string | null = null;
-      if (recipientType === 'user' && selectedUserId) {
-          recipientIdentifier = selectedUserId;
-      } else if (recipientType === 'phone' && recipientPhone) {
-          recipientIdentifier = recipientPhone; // Use phone number as identifier
-      }
-
-      if (!recipientIdentifier) {
+      // Use the stored targetIdentifier that was checked
+      if (!targetIdentifier) {
           toast({ title: "Missing Recipient", description: "Please select or enter a recipient.", variant: "destructive" });
           return;
       }
+
+       // Re-check target validity before proceeding
+       if (targetCheckResult !== 'valid') {
+         let errorMsg = "Recipient could not be verified.";
+         if (targetCheckResult === 'invalid') errorMsg = `User/Phone "${targetIdentifier}" not found in Carpso system.`;
+         if (targetCheckResult === 'error') errorMsg = `Error verifying recipient/phone "${targetIdentifier}".`;
+         toast({ title: "Recipient Not Found", description: errorMsg, variant: "destructive" });
+         return;
+       }
+
 
       if (amount === '' || amount <= 0) {
         toast({ title: "Invalid Amount", description: "Please enter a valid positive amount.", variant: "destructive" });
@@ -161,7 +208,7 @@ export default function SendMoneyModal({
 
     try {
       // Assuming sendMoney now returns the transaction details along with the new balance
-      const { newBalance, transaction } = await sendMoney(userId, recipientIdentifier, amount, note);
+      const { newBalance, transaction } = await sendMoney(userId, targetIdentifier, amount, note);
 
       const transactionForReceipt = {
            ...transaction,
@@ -171,12 +218,14 @@ export default function SendMoneyModal({
       };
       setLastTransaction(transactionForReceipt);
 
+      const recipientName = availableUsers.find(u => u.id === recipientIdentifier)?.name || recipientIdentifier;
+
       toast({
           title: "Money Sent Successfully",
           description: (
                <div className="flex flex-col gap-2">
                   <span>
-                     K {amount.toFixed(2)} sent to {recipientIdentifier}. New balance: K {newBalance.toFixed(2)} {/* Use K symbol */}
+                     K {amount.toFixed(2)} sent to {recipientName}. New balance: K {newBalance.toFixed(2)} {/* Use K symbol */}
                   </span>
                   <Button
                       variant="secondary"
@@ -201,6 +250,15 @@ export default function SendMoneyModal({
     }
   };
 
+    // Determine if submit button should be disabled
+    const canSubmit = !isLoading &&
+                       isOnline &&
+                       amount !== '' &&
+                       amount > 0 &&
+                       amount <= currentBalance &&
+                       targetIdentifier !== '' &&
+                       targetCheckResult === 'valid'; // Target must be valid
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !isLoading && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -219,7 +277,7 @@ export default function SendMoneyModal({
             <div className="flex gap-2">
                 <Button
                     variant={recipientType === 'user' ? 'default' : 'outline'}
-                    onClick={() => setRecipientType('user')}
+                    onClick={() => { setRecipientType('user'); setRecipientPhone(''); setTargetCheckResult(null); }} // Clear other field on switch
                     className="flex-1"
                     disabled={isLoading || !isOnline}
                 >
@@ -227,7 +285,7 @@ export default function SendMoneyModal({
                 </Button>
                  <Button
                     variant={recipientType === 'phone' ? 'default' : 'outline'}
-                    onClick={() => setRecipientType('phone')}
+                    onClick={() => { setRecipientType('phone'); setSelectedUserId(''); setTargetCheckResult(null); }} // Clear other field on switch
                     className="flex-1"
                     disabled={isLoading || !isOnline}
                 >
@@ -257,15 +315,37 @@ export default function SendMoneyModal({
             ) : (
                  <div className="space-y-1">
                     <Label htmlFor="recipientPhone">Recipient Phone Number</Label>
-                    <Input
-                        id="recipientPhone"
-                        type="tel"
-                        value={recipientPhone}
-                        onChange={(e) => setRecipientPhone(e.target.value)}
-                        placeholder="e.g., 09XXXXXXXX"
-                        disabled={isLoading || !isOnline}
-                    />
+                     <div className="relative">
+                        <Input
+                            id="recipientPhone"
+                            type="tel"
+                            value={recipientPhone}
+                            onChange={(e) => setRecipientPhone(e.target.value)}
+                            placeholder="e.g., 09XXXXXXXX"
+                            disabled={isLoading || !isOnline}
+                            className="pr-8" // Add padding for loader
+                        />
+                         {isCheckingTarget && isOnline && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+                     </div>
                  </div>
+            )}
+
+             {/* Target Check Result Indicator */}
+            {isOnline && targetIdentifier && !isCheckingTarget && targetCheckResult !== null && (
+                 <Alert variant={targetCheckResult === 'valid' ? 'default' : 'destructive'} className="mt-[-8px]">
+                     {targetCheckResult === 'valid' ? <User className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+                      <AlertDescriptionSub className="text-xs">
+                          {targetCheckResult === 'valid' && `User/Phone "${targetIdentifier}" found.`}
+                          {targetCheckResult === 'invalid' && `User/Phone "${targetIdentifier}" not found in Carpso system.`}
+                          {targetCheckResult === 'error' && `Error verifying recipient/phone "${targetIdentifier}".`}
+                      </AlertDescriptionSub>
+                 </Alert>
+            )}
+            {!isOnline && (
+                 <Alert variant="warning" className="mt-[-8px]">
+                    <WifiOff className="h-4 w-4" />
+                    <AlertDescriptionSub className="text-xs">Offline: Recipient verification unavailable.</AlertDescriptionSub>
+                 </Alert>
             )}
 
 
@@ -305,7 +385,7 @@ export default function SendMoneyModal({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0 || amount > currentBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'phone' && !recipientPhone)}>
+          <Button onClick={handleSubmit} disabled={!canSubmit}> {/* Use derived canSubmit state */}
              {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Send K {amount || 0} {/* Use K symbol */}
           </Button>
