@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useContext } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"; // Added CardFooter import
 import { Fuel, CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Building, Send, Info, ExternalLink } from "lucide-react"; // Added Fuel, Bath, ConciergeBell, Building, Send, Info, ExternalLink
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
