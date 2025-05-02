@@ -37,12 +37,11 @@ export default function Header() {
              <SheetHeader className="p-4 pb-2">
                <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
              </SheetHeader>
-             <SheetClose asChild> {/* Close when logo link is clicked */}
-                <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
-                    <Car className="h-6 w-6 text-primary" />
-                    <span className="font-bold">Carpso</span>
-                </Link>
-            </SheetClose>
+             {/* Ensure no whitespace around the Link component */}
+             <SheetClose asChild><Link href="/" className="flex items-center space-x-2 mb-4 px-4">
+                <Car className="h-6 w-6 text-primary" />
+                <span className="font-bold">Carpso</span>
+            </Link></SheetClose>
             <nav className="flex flex-col space-y-1 px-2 flex-grow">
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
@@ -138,7 +137,7 @@ export default function Header() {
         {/* Auth / Profile Button Area - Now managed here for desktop */}
         <div className="hidden md:flex items-center justify-end space-x-2 ml-auto">
             {isAuthenticated ? (
-                 <Link href="/profile"> {/* Removed legacyBehavior */}
+                 <Link href="/profile">
                      <Button variant="ghost" className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
                               <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User'} className="object-cover" />
