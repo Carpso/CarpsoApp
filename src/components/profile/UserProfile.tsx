@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket } from 'lucide-react'; // Added Printer, UsersRound, Copy, Ticket
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink } from 'lucide-react'; // Added Printer, UsersRound, Copy, Ticket, ExternalLink
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions
@@ -29,7 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from '@/lib/utils'; // Import cn utility
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
 import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as DialogHeaderSub, DialogTitle as DialogTitleSub, DialogDescription as DialogDescriptionSub, DialogClose } from "@/components/ui/dialog"; // Import Dialog components
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select'; // Import Select components for currency
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
 import { convertToCSV, getParkingRecords, ParkingRecord } from '@/services/pricing-service'; // Import parking records functions
 import PaymentMethodModal from '@/components/profile/PaymentMethodModal'; // Import PaymentMethodModal
 
@@ -304,6 +304,15 @@ const getCurrencySymbol = (currencyCode: string): string => {
         default: return currencyCode; // Fallback to code
     }
 };
+
+// WhatsApp Support Numbers (adjust country code as needed)
+const WHATSAPP_NUMBER_1 = "+260955202036"; // +260 is Zambia's code
+const WHATSAPP_NUMBER_2 = "+260968551110";
+// You can construct the WhatsApp click-to-chat link
+// Example: https://wa.me/<number_without_plus_or_spaces>
+// Using a primary number for the main link for simplicity:
+const WHATSAPP_CHAT_LINK_1 = `https://wa.me/${WHATSAPP_NUMBER_1.replace(/\D/g, '')}`;
+
 
 export default function ProfilePage() {
     const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout, isOnline } = useContext(AppStateContext)!;
@@ -709,7 +718,7 @@ export default function ProfilePage() {
      const handleDownloadHistory = () => {
          const parkingData = parkingHistory?.map(h => ({
              recordId: h.recordId,
-             locationName: h.locationName,
+             locationName: h.lotName, // Use lotName from record
              spotId: h.spotId,
              startTime: h.startTime,
              endTime: h.endTime || 'N/A',
@@ -1024,14 +1033,7 @@ export default function ProfilePage() {
     // --- End Payment Method Management ---
 
      // --- Tawk.to Chat Integration ---
-     const handleOpenChat = () => {
-         if (typeof window !== 'undefined' && (window as any).Tawk_API && (window as any).Tawk_API.maximize) {
-            (window as any).Tawk_API.maximize();
-         } else {
-             // Fallback or error message if Tawk API isn't available
-             toast({ title: "Chat Unavailable", description: "Live chat support is currently unavailable.", variant: "default" });
-         }
-     };
+     // Removed handleOpenChat function, using direct link now.
      // --- End Tawk.to Chat Integration ---
 
      // --- Referral Code Copy ---
@@ -1870,23 +1872,39 @@ export default function ProfilePage() {
                          <section className="mb-6">
                              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
-                                     <MessageSquare className="mr-3 h-5 w-5" />
-                                     <div>
-                                        <p className="font-medium">Live Chat</p>
-                                        <p className="text-xs text-muted-foreground">Get help from our support team.</p>
-                                     </div>
-                                  </Button>
-                                  {/* Link to FAQ or Help Center */}
-                                  <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
-                                      <a href="/help" target="_blank" rel="noopener noreferrer">
-                                         <Info className="mr-3 h-5 w-5" />
-                                         <div>
-                                             <p className="font-medium">Help Center</p>
-                                             <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
-                                         </div>
-                                      </a>
-                                  </Button>
+                                  {/* WhatsApp Button */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href={WHATSAPP_CHAT_LINK_1} target="_blank" rel="noopener noreferrer">
+                                          <MessageSquare className="mr-3 h-5 w-5 text-green-600" />
+                                          <div>
+                                             <p className="font-medium">WhatsApp Chat</p>
+                                             <p className="text-xs text-muted-foreground">Get help via WhatsApp (+260 95...).</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
+                                   {/* Phone Call Link (Second Number) - Example */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href={`tel:${WHATSAPP_NUMBER_2}`}>
+                                          <Smartphone className="mr-3 h-5 w-5" />
+                                          <div>
+                                             <p className="font-medium">Call Support</p>
+                                             <p className="text-xs text-muted-foreground">(+260 96...).</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
+                                   {/* Link to FAQ or Help Center */}
+                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                       <a href="/help" target="_blank" rel="noopener noreferrer">
+                                          <Info className="mr-3 h-5 w-5" />
+                                          <div>
+                                              <p className="font-medium">Help Center</p>
+                                              <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
+                                          </div>
+                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       </a>
+                                   </Button>
                              </div>
                          </section>
 
@@ -2087,4 +2105,3 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
-
