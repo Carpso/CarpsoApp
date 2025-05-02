@@ -14,10 +14,10 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer } from 'lucide-react'; // Added Printer
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket } from 'lucide-react'; // Added Printer, UsersRound, Copy, Ticket
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
-import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
 import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency, getPaymentMethods, updatePaymentMethods, PaymentMethod } from '@/services/wallet-service'; // Import wallet service, added currency functions, payment methods
@@ -77,6 +77,7 @@ const CACHE_KEYS = {
     wallet: (userId: string) => `cachedUserWallet_${userId}`,
     walletTxns: (userId: string) => `cachedUserWalletTxns_${userId}`,
     bookmarks: (userId: string) => `cachedUserBookmarks_${userId}`,
+    referralHistory: (userId: string) => `cachedReferralHistory_${userId}`, // Added referral history cache
     exchangeRates: 'cachedExchangeRates', // Cache key for exchange rates
     timestampSuffix: '_timestamp',
 };
@@ -157,41 +158,6 @@ const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     return vehicles;
 };
 
-// --- Gamification Data (Mock) ---
-const userGamificationData: Record<string, UserGamification> = {
-    'user_abc123': { points: 150, badges: [], isCarpoolEligible: false },
-    'user_def456': { points: 50, badges: [], isCarpoolEligible: true },
-};
-const pointsTransactions: Record<string, PointsTransaction[]> = {
-    'user_abc123': [],
-    'user_def456': [],
-};
-
-// --- Wallet Data (Mock) ---
-const userWallets: Record<string, Wallet> = {
-    'user_abc123': { balance: 255.50, currency: 'ZMW' },
-    'user_def456': { balance: 100.00, currency: 'ZMW' },
-};
-const userTransactions: Record<string, WalletTransaction[]> = {
-    'user_abc123': [
-        { id: 'txn_1', type: 'top-up', amount: 500.00, description: 'Top up via Mobile Money MTN', timestamp: new Date(Date.now() - 86400000).toISOString() },
-        { id: 'txn_2', type: 'payment', amount: -150.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
-        { id: 'txn_3', type: 'send', amount: -100.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
-        { id: 'txn_4', type: 'receive', amount: 5.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
-    ],
-     'user_def456': [
-         { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
-     ],
-};
-
-// --- Bookmarks Data (Mock) ---
-const userBookmarks: Record<string, UserBookmark[]> = {
-    'user_abc123': [
-        { id: 'bm_1', userId: 'user_abc123', label: 'Home', address: '10 Residential St, Anytown' },
-        { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown' },
-    ],
-};
-
 // --- Payment Methods Fetch (using wallet-service mock) ---
 const fetchPaymentMethods = async (userId: string): Promise<PaymentMethod[]> => {
     const methods = await getPaymentMethods(userId); // Use the mock function from wallet-service
@@ -202,36 +168,45 @@ const fetchPaymentMethods = async (userId: string): Promise<PaymentMethod[]> => 
 // --- Modified Gamification Fetch to Cache ---
 const fetchUserGamification = async (userId: string): Promise<UserGamification> => {
     await new Promise(resolve => setTimeout(resolve, 300));
-    const gamification = userGamificationData[userId] || { points: 0, badges: [], isCarpoolEligible: false };
+    // Use function from user-service which includes default initialization and caching
+    const gamification = await getUserGamification(userId);
+    // Cache is handled within getUserGamification, but let's ensure it's done
     setCachedData(CACHE_KEYS.gamification(userId), gamification);
     return gamification;
 }
 // --- Modified Points Transactions Fetch to Cache ---
 const fetchPointsTransactions = async (userId: string, limit: number = 5): Promise<PointsTransaction[]> => {
     await new Promise(resolve => setTimeout(resolve, 350));
-    const transactions = (pointsTransactions[userId] || []).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+    const transactions = await getPointsTransactions(userId, limit); // Use function from user-service
     setCachedData(CACHE_KEYS.pointsTxns(userId), transactions); // Cache recent txns
     return transactions;
 }
 // --- Modified Wallet Fetch to Cache ---
 const fetchUserWallet = async (userId: string): Promise<Wallet> => {
      await new Promise(resolve => setTimeout(resolve, 200));
-     const wallet = userWallets[userId] || { balance: 0, currency: 'ZMW' };
+     const wallet = await getWalletBalance(userId); // Use function from wallet-service
      setCachedData(CACHE_KEYS.wallet(userId), wallet);
      return wallet;
 }
 const fetchUserWalletTransactions = async (userId: string, limit: number = 5): Promise<WalletTransaction[]> => {
      await new Promise(resolve => setTimeout(resolve, 350));
-     const transactions = (userTransactions[userId] || []).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+     const transactions = await getWalletTransactions(userId, limit); // Use function from wallet-service
      setCachedData(CACHE_KEYS.walletTxns(userId), transactions); // Cache recent txns
      return transactions;
 }
 // --- Modified Bookmarks Fetch to Cache ---
 const fetchUserBookmarks = async (userId: string): Promise<UserBookmark[]> => {
     await new Promise(resolve => setTimeout(resolve, 250));
-    const bookmarks = userBookmarks[userId] || [];
+    const bookmarks = await getUserBookmarks(userId); // Use function from user-service
     setCachedData(CACHE_KEYS.bookmarks(userId), bookmarks);
     return bookmarks;
+}
+// --- Fetch Referral History with Cache ---
+const fetchReferralHistory = async (userId: string): Promise<Referral[]> => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const history = await getReferralHistory(userId); // Use function from user-service
+    setCachedData(CACHE_KEYS.referralHistory(userId), history); // Cache referral history
+    return history;
 }
 // --- Fetch Exchange Rates with Caching ---
 const fetchExchangeRates = async (): Promise<Record<string, number>> => {
@@ -253,7 +228,7 @@ const updateUserDetails = async (userId: string, updates: Partial<UserDetails>):
      console.log("Simulating user details update:", userId, updates);
      // In a real app, update the backend data source
      // This mock doesn't persist changes across sessions in memory, but caches
-     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User', preferredPaymentMethod: undefined };
+     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User', preferredPaymentMethod: undefined, notificationPreferences: { promotions: false, updates: false } };
      const updatedDetails: UserDetails = {
          ...currentDetails,
          name: updates.name || currentDetails.name,
@@ -336,6 +311,7 @@ export default function ProfilePage() {
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
     const [pointsTransactions, setPointsTransactions] = useState<PointsTransaction[]>([]); // Added state for points txns
     const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]); // State for bookmarks
+    const [referralHistory, setReferralHistory] = useState<Referral[]>([]); // State for referral history
     const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null); // State for exchange rates
     const [displayCurrency, setDisplayCurrency] = useState<string>('ZMW'); // State for selected display currency
 
@@ -345,6 +321,7 @@ export default function ProfilePage() {
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
     const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(true); // Added loading state
     const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
+    const [isLoadingReferrals, setIsLoadingReferrals] = useState(true); // Loading state for referrals
     const [isLoadingRates, setIsLoadingRates] = useState(true); // Loading state for rates
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<number | null>(null); // Track last successful fetch time
@@ -369,6 +346,10 @@ export default function ProfilePage() {
     const [isPayForOtherModalOpen, setIsPayForOtherModalOpen] = useState(false); // Added state
     const [isTransferPointsModalOpen, setIsTransferPointsModalOpen] = useState(false); // Added state
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false); // State for payment method modal
+
+    // Promo Code State
+    const [promoCodeInput, setPromoCodeInput] = useState('');
+    const [isApplyingPromo, setIsApplyingPromo] = useState(false);
 
 
     // Bookmark Modal State
@@ -397,6 +378,7 @@ export default function ProfilePage() {
         setIsLoadingVehicles(true);
         setIsLoadingPaymentMethods(true); // Set payment methods loading
         setIsLoadingBookmarks(true);
+        setIsLoadingReferrals(true); // Set referrals loading
         setIsLoadingRates(true); // Set rates loading
         setErrorLoading(null);
 
@@ -415,6 +397,7 @@ export default function ProfilePage() {
         const hasCachedPaymentMethods = loadFromCache(CACHE_KEYS.paymentMethods, setPaymentMethods); // Load payment methods cache
         const hasCachedGamification = loadFromCache(CACHE_KEYS.gamification, setGamification);
         const hasCachedPointsTxns = loadFromCache(CACHE_KEYS.pointsTxns, setPointsTransactions); // Load points txns cache
+        const hasCachedReferrals = loadFromCache(CACHE_KEYS.referralHistory, setReferralHistory); // Load referral history cache
         const hasCachedWallet = loadFromCache(CACHE_KEYS.wallet, setWallet);
         const hasCachedTxns = loadFromCache(CACHE_KEYS.walletTxns, setWalletTransactions);
         const hasCachedBookmarks = loadFromCache(CACHE_KEYS.bookmarks, setBookmarks);
@@ -432,7 +415,7 @@ export default function ProfilePage() {
         setEditPreferredPaymentMethod(initialDetails?.preferredPaymentMethod); // Initialize preferred payment method
 
         // Determine if full refresh is needed
-        const needsFullRefresh = forceRefresh || !hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedPaymentMethods || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates;
+        const needsFullRefresh = forceRefresh || !hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedPaymentMethods || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedReferrals || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates;
 
 
         if (!isOnline && !needsFullRefresh) {
@@ -443,6 +426,7 @@ export default function ProfilePage() {
             setIsLoadingVehicles(false);
             setIsLoadingPaymentMethods(false); // Update payment methods loading
             setIsLoadingBookmarks(false);
+            setIsLoadingReferrals(false); // Update referrals loading
             setIsLoadingRates(false);
             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
             setLastUpdated(ts ? parseInt(ts) : null);
@@ -460,7 +444,8 @@ export default function ProfilePage() {
             if (!hasCachedVehicles) setIsLoadingVehicles(false);
             if (!hasCachedPaymentMethods) setIsLoadingPaymentMethods(false); // Update payment methods loading
             if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
-            if (!hasCachedRates) setIsLoadingRates(false); // Update rates loading
+            if (!hasCachedReferrals) setIsLoadingReferrals(false); // Update referrals loading
+            if (!hasCachedRates) setIsLoadingRates(false);
              const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
              setLastUpdated(ts ? parseInt(ts) : null);
             return;
@@ -470,7 +455,7 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
-            const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
+            const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, referralsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
@@ -478,6 +463,7 @@ export default function ProfilePage() {
                 fetchPaymentMethods(userId), // Fetch payment methods
                 fetchUserGamification(userId),
                 fetchPointsTransactions(userId, 5), // Fetch points transactions
+                fetchReferralHistory(userId), // Fetch referral history
                 fetchUserWallet(userId),
                 fetchUserWalletTransactions(userId, 5),
                 fetchUserBookmarks(userId),
@@ -490,6 +476,7 @@ export default function ProfilePage() {
             setPaymentMethods(paymentMethodsData); // Set payment methods
             setGamification(gamificationData);
             setPointsTransactions(pointsTxnsData); // Set points transactions
+            setReferralHistory(referralsData); // Set referral history
             setWallet(walletData);
             setWalletTransactions(transactionsData);
             setBookmarks(bookmarksData);
@@ -516,6 +503,7 @@ export default function ProfilePage() {
             if (!hasCachedPaymentMethods) setPaymentMethods([]); // Reset payment methods on error
             if (!hasCachedGamification) setGamification(null);
             if (!hasCachedPointsTxns) setPointsTransactions([]); // Reset points txns on error
+            if (!hasCachedReferrals) setReferralHistory([]); // Reset referrals on error
             if (!hasCachedWallet) setWallet(null);
             if (!hasCachedTxns) setWalletTransactions([]);
             if (!hasCachedBookmarks) setBookmarks([]);
@@ -527,6 +515,7 @@ export default function ProfilePage() {
             setIsLoadingVehicles(false);
             setIsLoadingPaymentMethods(false); // Update payment methods loading
             setIsLoadingBookmarks(false);
+            setIsLoadingReferrals(false); // Update referrals loading
             setIsLoadingRates(false); // Update rates loading
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -560,22 +549,24 @@ export default function ProfilePage() {
     // Refresh gamification data (Online only) - Added refresh function
     const refreshGamificationData = useCallback(async () => {
         if (!userId || !isOnline) {
-            if (!isOnline) toast({ title: "Offline", description: "Points actions require an internet connection.", variant: "destructive" });
+            if (!isOnline) toast({ title: "Offline", description: "Rewards actions require an internet connection.", variant: "destructive" });
             return;
         }
         setIsLoadingGamification(true);
         try {
-            const [gamificationData, pointsTxnsData] = await Promise.all([
+            const [gamificationData, pointsTxnsData, referralsData] = await Promise.all([
                 fetchUserGamification(userId),
                 fetchPointsTransactions(userId, 5),
+                fetchReferralHistory(userId), // Refresh referrals too
             ]);
             setGamification(gamificationData);
             setPointsTransactions(pointsTxnsData);
+            setReferralHistory(referralsData); // Update referral state
             setLastUpdated(Date.now());
-             toast({ title: "Rewards Refreshed", description: `Points: ${gamificationData.points}`});
+             toast({ title: "Rewards & Referrals Refreshed", description: `Points: ${gamificationData.points}`});
         } catch (error) {
-            console.error("Failed to refresh gamification data:", error);
-            toast({ title: "Points Update Error", description: "Could not refresh points balance/history.", variant: "destructive" });
+            console.error("Failed to refresh gamification/referral data:", error);
+            toast({ title: "Rewards Update Error", description: "Could not refresh points/referral data.", variant: "destructive" });
         } finally {
             setIsLoadingGamification(false);
         }
@@ -653,6 +644,7 @@ export default function ProfilePage() {
             setIsLoadingVehicles(false);
             setIsLoadingPaymentMethods(false); // Clear payment methods loading
             setIsLoadingBookmarks(false);
+            setIsLoadingReferrals(false); // Clear referrals loading
             setIsLoadingRates(false); // Clear rates loading
             setUserDetails(null);
             setBillingInfo(null);
@@ -661,6 +653,7 @@ export default function ProfilePage() {
             setPaymentMethods([]); // Clear payment methods
             setGamification(null);
             setPointsTransactions([]); // Clear points txns
+            setReferralHistory([]); // Clear referrals
             setWallet(null);
             setWalletTransactions([]);
             setBookmarks([]);
@@ -736,10 +729,18 @@ export default function ProfilePage() {
              recipientId: t.recipientId,
              timestamp: t.timestamp,
          }));
+         const referralsData = referralHistory.map(r => ({ // Include referrals in download
+              referringUserId: r.referringUserId,
+              referredUserId: r.referredUserId,
+              referredUserName: r.referredUserName || 'N/A',
+              signupTimestamp: r.signupTimestamp,
+              bonusAwarded: r.bonusAwarded,
+         }));
 
          downloadCSV(parkingData, `carpso-parking-history-${userId}.csv`);
          downloadCSV(walletData, `carpso-wallet-history-${userId}.csv`);
          downloadCSV(pointsData, `carpso-points-history-${userId}.csv`);
+         downloadCSV(referralsData, `carpso-referral-history-${userId}.csv`); // Add referral download
      };
 
       const downloadCSV = (data: any[], filename: string) => {
@@ -777,7 +778,7 @@ export default function ProfilePage() {
             const success = await updateCarpoolEligibility(userId, checked);
             if (success) {
                 // Fetch updated gamification data to get latest points/badges
-                const updatedGamification = await fetchUserGamification(userId);
+                const updatedGamification = await getUserGamification(userId);
                 setGamification(updatedGamification);
                 toast({ title: "Carpool Status Updated", description: checked ? "Eligible for carpooling benefits!" : "Carpooling benefits disabled." });
             } else { throw new Error("Failed to update carpool status."); }
@@ -1024,6 +1025,49 @@ export default function ProfilePage() {
      };
      // --- End Tawk.to Chat Integration ---
 
+     // --- Referral Code Copy ---
+      const handleCopyReferralCode = () => {
+          if (gamification?.referralCode && typeof navigator !== 'undefined' && navigator.clipboard) {
+              navigator.clipboard.writeText(gamification.referralCode)
+                 .then(() => toast({ title: "Referral Code Copied!" }))
+                 .catch(err => {
+                      console.error("Failed to copy referral code:", err);
+                      toast({ title: "Copy Failed", variant: "destructive" });
+                 });
+          }
+      };
+      // --- End Referral Code Copy ---
+
+      // --- Promo Code Apply ---
+      const handleApplyPromoCode = async () => {
+           if (!promoCodeInput || !userId || !isOnline) {
+               if (!isOnline) toast({ title: "Offline", description: "Cannot apply promo codes offline.", variant: "destructive" });
+               else toast({ title: "Missing Code", description: "Please enter a promo code.", variant: "destructive" });
+               return;
+           }
+           setIsApplyingPromo(true);
+           try {
+               const result = await applyPromoCode(promoCodeInput, userId);
+               if (result.success) {
+                   toast({ title: "Success!", description: result.message });
+                   setPromoCodeInput(''); // Clear input on success
+                   // Refresh relevant data (e.g., points if points were awarded)
+                    if (result.pointsAwarded) {
+                        await refreshGamificationData();
+                    }
+                    // If discount applied, it might need to be stored locally or fetched with next cost calculation
+               } else {
+                   toast({ title: "Invalid Code", description: result.message, variant: "destructive" });
+               }
+           } catch (error: any) {
+               console.error("Error applying promo code:", error);
+               toast({ title: "Error", description: "Could not apply promo code.", variant: "destructive" });
+           } finally {
+               setIsApplyingPromo(false);
+           }
+      };
+      // --- End Promo Code Apply ---
+
 
     const handleLogout = () => {
         logout();
@@ -1154,7 +1198,7 @@ export default function ProfilePage() {
                             )}
                          </div>
                           {/* Display error if loading failed but some cached data exists */}
-                         {errorLoading && (isLoadingPaymentMethods || isLoadingVehicles || isLoadingGamification || isLoadingWallet) && (
+                         {errorLoading && (isLoadingPaymentMethods || isLoadingVehicles || isLoadingGamification || isLoadingWallet || isLoadingReferrals) && (
                               <Alert variant="warning" className="mt-2">
                                   <AlertTriangle className="h-4 w-4" />
                                   <AlertTitle>Loading Issue</AlertTitle>
@@ -1574,16 +1618,17 @@ export default function ProfilePage() {
                         <Separator className="my-6" />
 
 
-                        {/* Gamification Section */}
+                        {/* Rewards & Referrals Section */}
                         <section className="mb-6">
                              <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Points</h3>
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Referrals</h3>
                                 <Button variant="outline" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
                                     {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
                                 </Button>
                              </div>
-                             {isLoadingGamification && !gamification ? <Skeleton className="h-48 w-full"/> : (
+                             {isLoadingGamification && !gamification ? <Skeleton className="h-64 w-full"/> : (
                                 <>
+                                    {/* Points and Carpool */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                         <Card className="flex items-center justify-between p-4">
                                             <div className="flex items-center gap-3">
@@ -1602,6 +1647,7 @@ export default function ProfilePage() {
                                             <Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool || !isOnline} />
                                         </Card>
                                     </div>
+                                    {/* Transfer Points */}
                                     <Button
                                         variant="outline" size="sm" className="w-full mb-4"
                                         onClick={() => setIsTransferPointsModalOpen(true)}
@@ -1609,6 +1655,52 @@ export default function ProfilePage() {
                                     >
                                         <Gift className="mr-2 h-4 w-4" /> Transfer Points to Friend
                                     </Button>
+
+                                    {/* Referral Code */}
+                                     <Card className="mb-4 border-dashed border-primary/50">
+                                         <CardHeader className="pb-3">
+                                             <CardTitle className="text-base flex items-center gap-2">
+                                                  <UsersRound className="h-4 w-4 text-primary" /> Your Referral Code
+                                             </CardTitle>
+                                         </CardHeader>
+                                         <CardContent>
+                                             <div className="flex items-center justify-between gap-2 p-2 border rounded-md bg-muted">
+                                                 <span className="font-mono text-sm font-semibold text-primary truncate">{gamification?.referralCode || 'Loading...'}</span>
+                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={handleCopyReferralCode} disabled={!gamification?.referralCode || typeof navigator === 'undefined' || !navigator.clipboard}>
+                                                     <Copy className="h-4 w-4" />
+                                                     <span className="sr-only">Copy Code</span>
+                                                 </Button>
+                                             </div>
+                                             <p className="text-xs text-muted-foreground mt-2">Share this code with friends! You both get bonus points when they sign up and complete their first parking.</p>
+                                             <p className="text-xs font-medium mt-1">Referrals Completed: {gamification?.referralsCompleted ?? 0}</p>
+                                         </CardContent>
+                                     </Card>
+
+                                    {/* Promo Code Input */}
+                                     <Card className="mb-4">
+                                         <CardHeader className="pb-3">
+                                             <CardTitle className="text-base flex items-center gap-2">
+                                                 <Ticket className="h-4 w-4 text-accent"/> Apply Promo Code
+                                             </CardTitle>
+                                         </CardHeader>
+                                         <CardContent>
+                                             <div className="flex items-center gap-2">
+                                                 <Input
+                                                    id="promo-code"
+                                                    value={promoCodeInput}
+                                                    onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                                                    placeholder="Enter code"
+                                                    disabled={isApplyingPromo || !isOnline}
+                                                    className="flex-grow uppercase"
+                                                 />
+                                                  <Button onClick={handleApplyPromoCode} disabled={isApplyingPromo || !isOnline || !promoCodeInput}>
+                                                     {isApplyingPromo ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Apply
+                                                 </Button>
+                                             </div>
+                                         </CardContent>
+                                     </Card>
+
+                                     {/* Recent Points Activity */}
                                      <div className="mt-4">
                                         <p className="text-sm font-medium mb-2">Recent Points Activity:</p>
                                          {pointsTransactions.length > 0 ? (
@@ -1619,16 +1711,16 @@ export default function ProfilePage() {
                                                              {getPointsTransactionIcon(txn.type)}
                                                              <div className="flex-1 truncate">
                                                                   <p className="text-xs font-medium truncate">
-                                                                     {txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` : `Received from ${txn.senderId.substring(0,8)}...`}
+                                                                     {txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` : txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` : 'System Update'}
                                                                  </p>
                                                                  <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
                                                              </div>
                                                          </div>
                                                          <span className={cn(
                                                              "font-semibold text-xs whitespace-nowrap",
-                                                             txn.type === 'received' ? "text-green-600" : "text-red-600"
+                                                             txn.type === 'received' ? "text-green-600" : txn.type === 'sent' ? "text-red-600" : "text-primary"
                                                          )}>
-                                                             {txn.type === 'received' ? '+' : '-'}{txn.points} points
+                                                             {txn.type === 'received' ? '+' : txn.type === 'sent' ? '-' : ''}{txn.points} points
                                                          </span>
                                                      </div>
                                                  ))}
@@ -1637,6 +1729,7 @@ export default function ProfilePage() {
                                              <p className="text-sm text-muted-foreground text-center py-3">No recent points activity.</p>
                                          )}
                                     </div>
+                                     {/* Earned Badges */}
                                      <div className="mt-4">
                                         <p className="text-sm font-medium mb-2">Earned Badges:</p>
                                         {gamification?.badges && gamification.badges.length > 0 ? (
@@ -1664,6 +1757,28 @@ export default function ProfilePage() {
                                             <p className="text-sm text-muted-foreground">No badges earned yet. Keep parking!</p>
                                         )}
                                     </div>
+                                     {/* Referral History (Optional/Collapsible) */}
+                                      <div className="mt-4">
+                                          <p className="text-sm font-medium mb-2">Referral History ({gamification?.referralsCompleted ?? 0} Completed):</p>
+                                           {isLoadingReferrals ? <Skeleton className="h-16 w-full"/> : referralHistory.length > 0 ? (
+                                                <ScrollArea className="h-[150px] border rounded-md p-2">
+                                                    <Table>
+                                                        <TableHeader><TableRow><TableHead className="h-8 text-xs">Referred User</TableHead><TableHead className="h-8 text-xs">Date</TableHead><TableHead className="h-8 text-xs text-right">Bonus Awarded</TableHead></TableRow></TableHeader>
+                                                        <TableBody>
+                                                            {referralHistory.map((ref, index) => (
+                                                                <TableRow key={index}>
+                                                                    <TableCell className="py-1 text-xs">{ref.referredUserName || ref.referredUserId.substring(0, 8)}...</TableCell>
+                                                                    <TableCell className="py-1 text-xs">{new Date(ref.signupTimestamp).toLocaleDateString()}</TableCell>
+                                                                    <TableCell className="py-1 text-xs text-right">{ref.bonusAwarded ? <CheckCircle className="h-4 w-4 text-green-600 inline"/> : 'Pending'}</TableCell>
+                                                                </TableRow>
+                                                            ))}
+                                                        </TableBody>
+                                                    </Table>
+                                                </ScrollArea>
+                                           ) : (
+                                               <p className="text-sm text-muted-foreground text-center py-3">No referral history yet.</p>
+                                           )}
+                                      </div>
                                 </>
                              )}
                         </section>
@@ -1921,18 +2036,23 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-16 w-full rounded-md"/>
          </div>
         <Separator />
-        {/* Rewards Skeleton */}
+        {/* Rewards & Referrals Skeleton */}
         <div className="space-y-4">
             <Skeleton className="h-6 w-1/3 mb-3" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Skeleton className="h-20 w-full rounded-md" />
-                <Skeleton className="h-20 w-full rounded-md" />
-            </div>
+            {/* Points & Carpool */}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <Skeleton className="h-20 w-full rounded-md" />
+                 <Skeleton className="h-20 w-full rounded-md" />
+             </div>
              <Skeleton className="h-9 w-full mt-2 rounded-md"/> {/* Transfer Button */}
-            <Skeleton className="h-5 w-1/4 mt-4" /> {/* History Title */}
+             <Skeleton className="h-24 w-full rounded-md" /> {/* Referral Code Card */}
+             <Skeleton className="h-20 w-full rounded-md" /> {/* Promo Code Card */}
+             <Skeleton className="h-5 w-1/4 mt-4" /> {/* History Title */}
              <Skeleton className="h-10 w-full rounded-md"/> {/* History Item */}
             <Skeleton className="h-5 w-1/4 mt-4" /> {/* Badges Title */}
             <div className="flex gap-2"> <Skeleton className="h-8 w-20 rounded-full"/> <Skeleton className="h-8 w-24 rounded-full"/></div>
+             <Skeleton className="h-5 w-1/3 mt-4" /> {/* Referral History Title */}
+             <Skeleton className="h-24 w-full rounded-md" /> {/* Referral History Table */}
         </div>
          <Separator />
          {/* Active Reservation Skeleton */}
@@ -1958,3 +2078,4 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
+    
