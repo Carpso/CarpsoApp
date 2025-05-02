@@ -8,10 +8,10 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building } from 'lucide-react'; // Added ExternalLink, Building
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon } from 'lucide-react'; // Added Phone, GlobeIcon
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge'; // Import Badge component
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
@@ -606,7 +606,7 @@ export default function ParkingLotManager() {
     setIsLoadingLocations(true);
     setError(null);
     let fetchedLocations: ParkingLot[] | null = null;
-    const cacheKey = 'cachedParkingLotsWithExternal'; // Use a different key to include external
+    const cacheKey = 'cachedParkingLotsWithExternal_v2'; // Updated cache key
     const cacheTimestampKey = `${cacheKey}Timestamp`;
     const maxCacheAge = isVisible ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 mins active, 1 hour inactive
 
@@ -631,7 +631,7 @@ export default function ParkingLotManager() {
         try {
             console.log("Fetching fresh parking lots...");
              // Pass user context to potentially filter early on backend if needed
-            const freshData = await getAvailableParkingLots(userRole || 'User', userId);
+            const freshData = await getAvailableParkingLots(userRole || 'User', userId, true); // Pass forceRefresh to underlying fetcher too
             // Update cache if on client
             if (typeof window !== 'undefined') {
                 try {
@@ -673,8 +673,21 @@ export default function ParkingLotManager() {
     }
 
     // Update selected location ID based on fetched/cached data
-    if (fetchedLocations) {
-       setSelectedLocationId(prevId => fetchedLocations!.some(loc => loc.id === prevId) ? prevId : null);
+    if (fetchedLocations && fetchedLocations.length > 0) {
+       // Maintain selection if valid, otherwise default to first available (Carpso first, then external)
+       setSelectedLocationId(prevId => {
+           if (fetchedLocations!.some(loc => loc.id === prevId)) {
+               return prevId;
+           }
+           // Default to first Carpso location, then first external, then null
+            const firstCarpso = fetchedLocations!.find(l => l.isCarpsoManaged);
+            if (firstCarpso) return firstCarpso.id;
+            const firstExternal = fetchedLocations!.find(l => !l.isCarpsoManaged);
+            if (firstExternal) return firstExternal.id;
+            return null;
+       });
+    } else {
+        setSelectedLocationId(null); // No locations, clear selection
     }
 
     setIsLoadingLocations(false);
@@ -691,7 +704,11 @@ export default function ParkingLotManager() {
       setIsRefreshing(true);
       fetchLocationsData(true); // Force fetch fresh data
       fetchUserBookmarks(); // Refresh bookmarks too
-      fetchRecommendations(); // Trigger recommendation refresh after data sync
+      // Only fetch recommendations if authenticated after data sync
+      if (isAuthenticated && userId) {
+           // Wait a moment for locations/bookmarks to potentially update state before fetching recs
+          setTimeout(() => fetchRecommendations(), 500);
+      }
   };
 
    // Effect for periodic refresh based on visibility and online status
@@ -1114,7 +1131,7 @@ export default function ParkingLotManager() {
                                 <CardContent>
                                     {/* Maybe show current availability summary? */}
                                      <Badge variant={favLoc.currentOccupancy === undefined ? 'secondary' : (favLoc.capacity - favLoc.currentOccupancy) > 10 ? 'default' : (favLoc.capacity - favLoc.currentOccupancy) > 0 ? 'secondary' : 'destructive'} className={cn("text-xs", (favLoc.currentOccupancy !== undefined && (favLoc.capacity - favLoc.currentOccupancy) > 10) && "bg-green-600 text-white")}>
-                                         {favLoc.currentOccupancy === undefined ? 'Availability N/A' : `${favLoc.capacity - favLoc.currentOccupancy} Spots Free`}
+                                         {favLoc.isCarpsoManaged && favLoc.currentOccupancy !== undefined ? `${favLoc.capacity - favLoc.currentOccupancy} Spots Free` : 'Details N/A'}
                                      </Badge>
                                 </CardContent>
                             </Card>
@@ -1253,13 +1270,14 @@ export default function ParkingLotManager() {
                              </span>
                           </SelectItem>
                         ))}
-                        <hr className="my-1" />
+
                     </>
                 )}
                 {/* External Locations Group */}
                  {externalLots.length > 0 && (
                      <>
-                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Other Locations (via Google)</div>
+                         <hr className="my-1" />
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Other Nearby Locations (via Google)</div>
                         {externalLots.map((loc) => (
                           <SelectItem key={loc.id} value={loc.id}>
                              <span className="flex items-center gap-2">
@@ -1303,10 +1321,27 @@ export default function ParkingLotManager() {
                       <p className="text-sm text-muted-foreground mb-4">
                           This is an external parking location identified via Google Maps. Real-time spot availability and Carpso reservations are not available here.
                       </p>
-                      {/* Add Google Maps link */}
-                      <Button variant="outline" onClick={() => openExternalMap(selectedLocation)}>
-                          <ExternalLink className="mr-2 h-4 w-4" /> Open in Google Maps
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                          {/* Google Maps link */}
+                          <Button variant="outline" onClick={() => openExternalMap(selectedLocation)} size="sm">
+                              <ExternalLink className="mr-2 h-4 w-4" /> Open in Google Maps
+                          </Button>
+                           {/* Optional: Display Contact Info if available */}
+                          {selectedLocation.phoneNumber && (
+                              <Button variant="outline" size="sm" asChild>
+                                   <a href={`tel:${selectedLocation.phoneNumber}`}>
+                                       <Phone className="mr-2 h-4 w-4" /> Call
+                                   </a>
+                              </Button>
+                          )}
+                           {selectedLocation.website && (
+                              <Button variant="outline" size="sm" asChild>
+                                   <a href={selectedLocation.website} target="_blank" rel="noopener noreferrer">
+                                       <GlobeIcon className="mr-2 h-4 w-4" /> Website
+                                   </a>
+                              </Button>
+                           )}
+                      </div>
                   </CardContent>
               </Card>
           )
