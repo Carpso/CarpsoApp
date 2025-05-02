@@ -26,39 +26,40 @@ interface AppStateProviderProps {
 }
 
 const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
-  const [userState, setUserState] = useState<UserState>(() => {
-      // Initialize state from localStorage if available (client-side only)
-      if (typeof window !== 'undefined') {
-          const storedUser = localStorage.getItem('carpsoUser');
-          if (storedUser) {
-              try {
-                   const parsedUser = JSON.parse(storedUser) as UserState;
-                   // Basic validation
-                   if (parsedUser.isAuthenticated && parsedUser.userId) {
-                       return parsedUser;
-                   }
-              } catch (e) {
-                   console.error("Failed to parse stored user state:", e);
-                   localStorage.removeItem('carpsoUser'); // Clear invalid state
-              }
-          }
-      }
-      // Default initial state
-      return {
-         isAuthenticated: false,
-         userId: null,
-         userName: null,
-         userAvatarUrl: null,
-         userRole: null,
-     };
+  const [isClient, setIsClient] = useState(false); // Track if component has mounted
+  const [userState, setUserState] = useState<UserState>({ // Default initial state (matches server)
+      isAuthenticated: false,
+      userId: null,
+      userName: null,
+      userAvatarUrl: null,
+      userRole: null,
   });
-
   const [isOnline, setIsOnline] = useState(true); // Default to true, check on mount
 
-   // Effect to check initial online status and add listeners
-   useEffect(() => {
-     // Ensure this runs only on the client
-     if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+  // Effect to run only on the client after mounting
+  useEffect(() => {
+    setIsClient(true);
+
+    // Initialize state from localStorage
+    const storedUser = localStorage.getItem('carpsoUser');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser) as UserState;
+        // Basic validation
+        if (parsedUser.isAuthenticated && parsedUser.userId) {
+          setUserState(parsedUser);
+        } else {
+             // Clear invalid state
+             localStorage.removeItem('carpsoUser');
+        }
+      } catch (e) {
+        console.error("Failed to parse stored user state:", e);
+        localStorage.removeItem('carpsoUser'); // Clear invalid state
+      }
+    }
+
+     // Check initial online status and add listeners
+     if (typeof navigator !== 'undefined') {
        setIsOnline(navigator.onLine);
 
        const handleOnline = () => setIsOnline(true);
@@ -73,7 +74,7 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
          window.removeEventListener('offline', handleOffline);
        };
      }
-   }, []);
+  }, []);
 
 
   const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => { // Use UserRole type
@@ -148,6 +149,12 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
            return newState;
        });
    }, []);
+
+   // If not yet mounted on client, return null or a basic loading state to avoid hydration mismatch
+   // Or, always render children but ensure the initial userState matches the server (logged out)
+   // if (!isClient) {
+   //    return null; // Or a loading spinner, but this might cause layout shifts
+   // }
 
   return (
     <AppStateContext.Provider value={{ ...userState, isOnline, login, logout, updateUserProfile }}>
