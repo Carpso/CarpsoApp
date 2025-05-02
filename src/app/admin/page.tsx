@@ -410,7 +410,7 @@ export default function AdminDashboardPage() {
         setIsAdModalOpen(true);
     };
     const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setCurrentAd(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value });
+    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value })); // Fixed closing parenthesis
     const handleSaveAd = async () => {
         if (!currentAd.title || !currentAd.description) { toast({ title: "Missing Info", description: "Title and description required.", variant: "destructive" }); return; }
          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
@@ -1250,3 +1250,5 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
+    
