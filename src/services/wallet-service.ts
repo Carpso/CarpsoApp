@@ -26,18 +26,18 @@ export interface Wallet {
 // --- Mock Data Store ---
 // In a real app, this would be a secure database.
 let userWallets: Record<string, Wallet> = {
-    'user_abc123': { balance: 25.50, currency: 'ZMW' },
-    'user_def456': { balance: 10.00, currency: 'ZMW' }, // Added another user wallet
+    'user_abc123': { balance: 550.50, currency: 'ZMW' }, // Default to ZMW
+    'user_def456': { balance: 100.00, currency: 'ZMW' }, // Default to ZMW
 };
 let userTransactions: Record<string, WalletTransaction[]> = {
     'user_abc123': [
-        { id: 'txn_1', type: 'top-up', amount: 50.00, description: 'Top up via Mobile Money MTN', paymentMethodUsed: 'mobile_money_mtn', timestamp: new Date(Date.now() - 86400000).toISOString() },
-        { id: 'txn_2', type: 'payment', amount: -15.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
-        { id: 'txn_3', type: 'send', amount: -10.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
-         { id: 'txn_4', type: 'receive', amount: 5.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
+        { id: 'txn_1', type: 'top-up', amount: 500.00, description: 'Top up via Mobile Money MTN', paymentMethodUsed: 'mobile_money_mtn', timestamp: new Date(Date.now() - 86400000).toISOString() },
+        { id: 'txn_2', type: 'payment', amount: -150.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
+        { id: 'txn_3', type: 'send', amount: -100.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+         { id: 'txn_4', type: 'receive', amount: 55.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
     ],
      'user_def456': [
-         { id: 'txn_5', type: 'receive', amount: 10.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+         { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
      ],
 };
 
@@ -51,7 +51,7 @@ let userTransactions: Record<string, WalletTransaction[]> = {
 export async function getWalletBalance(userId: string): Promise<Wallet> {
     await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
     if (!userWallets[userId]) {
-        userWallets[userId] = { balance: 0, currency: 'ZMW' }; // Create wallet if not exists
+        userWallets[userId] = { balance: 0, currency: 'ZMW' }; // Create wallet if not exists, default ZMW
     }
     console.log(`Fetched balance for ${userId}:`, userWallets[userId]);
     return userWallets[userId];
@@ -86,7 +86,7 @@ export async function topUpWallet(
     if (amount <= 0) throw new Error("Top-up amount must be positive.");
 
     if (!userWallets[userId]) {
-        userWallets[userId] = { balance: 0, currency: 'ZMW' };
+        userWallets[userId] = { balance: 0, currency: 'ZMW' }; // Default ZMW
     }
      if (!userTransactions[userId]) {
         userTransactions[userId] = [];
@@ -157,7 +157,7 @@ export async function sendMoney(
     // Simulate adding to recipient
     const recipientId = Object.keys(userWallets).find(id => id === recipientIdentifier);
     if (recipientId && recipientId !== senderId) {
-         if (!userWallets[recipientId]) userWallets[recipientId] = { balance: 0, currency: 'ZMW' };
+         if (!userWallets[recipientId]) userWallets[recipientId] = { balance: 0, currency: 'ZMW' }; // Default ZMW
          if (!userTransactions[recipientId]) userTransactions[recipientId] = [];
          userWallets[recipientId].balance += amount;
          const recipientTxn: WalletTransaction = {
@@ -241,10 +241,6 @@ export async function payForOtherUser(
     if (amount <= 0) {
         throw new Error("Payment amount must be positive.");
     }
-    // Cannot easily check payerId === targetUserId if targetUserId is a plate#
-    // if (payerId === targetUserId) {
-    //     throw new Error("Use standard payment for your own parking.");
-    // }
 
     const payerWallet = userWallets[payerId];
 
@@ -278,6 +274,37 @@ export async function payForOtherUser(
     // TODO: In a real application, update the status of the parkingRecordId to 'Completed' or 'Paid'.
 
     return { newBalance: payerWallet.balance, transaction: paymentTxn };
+}
+
+/**
+ * Gets mock exchange rates. In a real app, fetch from an API.
+ * @returns A promise resolving to an object with exchange rates relative to ZMW.
+ */
+export async function getExchangeRates(): Promise<Record<string, number>> {
+    await new Promise(resolve => setTimeout(resolve, 100)); // Simulate API call
+    return {
+        'ZMW': 1,
+        'USD': 0.040, // Example rate: 1 ZMW = 0.040 USD
+        'EUR': 0.037, // Example rate: 1 ZMW = 0.037 EUR
+        'GBP': 0.032, // Example rate: 1 ZMW = 0.032 GBP
+        'ZAR': 0.75, // Example rate: 1 ZMW = 0.75 ZAR
+    };
+}
+
+/**
+ * Converts an amount from ZMW to a target currency.
+ * @param amountZMW The amount in Zambian Kwacha.
+ * @param targetCurrency The target currency code (e.g., 'USD').
+ * @param rates Exchange rates object (ZMW must be 1).
+ * @returns The converted amount or null if rate is unavailable.
+ */
+export function convertCurrency(amountZMW: number, targetCurrency: string, rates: Record<string, number>): number | null {
+    const rate = rates[targetCurrency];
+    if (rate === undefined) {
+        console.warn(`Exchange rate for ${targetCurrency} not available.`);
+        return null;
+    }
+    return amountZMW * rate;
 }
 
 

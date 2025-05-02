@@ -295,7 +295,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           // Show toast with buttons
          toast({
              title: "Reservation Successful",
-             description: `Spot ${selectedSpot.spotId} reserved! Est. Cost: ~$${estimatedCost?.toFixed(2)}/hr`,
+             description: `Spot ${selectedSpot.spotId} reserved! Est. Cost: ~K ${estimatedCost?.toFixed(2)}/hr`, // Use K symbol
              duration: 15000, // Keep toast longer to allow interaction
              action: (
                  <div className="flex flex-col gap-2 mt-2">
@@ -521,7 +521,6 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
-              {/* Moved description text here */}
                <AlertDialogDescription>
                  You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
                </AlertDialogDescription>
@@ -541,7 +540,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                 )}
                 {/* Estimated Cost Display */}
                  <div className="text-sm border-t pt-3">
-                    <h4 className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</h4>
+                     <div className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</div> {/* Changed to div */}
                      {isCostLoading && isOnline ? (
                         <div className="flex items-center gap-2 text-muted-foreground">
                             <Loader2 className="h-4 w-4 animate-spin" /> Calculating cost...
@@ -550,7 +549,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                           <p className="text-muted-foreground text-xs flex items-center gap-1"><WifiOff className="h-3 w-3" /> Unavailable offline</p>
                     ) : estimatedCost !== null ? (
                          <div className="space-y-1">
-                            <p>Rate: <span className="font-semibold">${estimatedCost.toFixed(2)} / hour</span></p>
+                            <p>Rate: <span className="font-semibold">K {estimatedCost.toFixed(2)} / hour</span></p> {/* Use K symbol */}
                             <p className="text-xs text-muted-foreground">Based on: {costRule || 'Standard rate'}</p>
                          </div>
                     ) : (
@@ -559,7 +558,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                  </div>
                 {/* Prediction Display */}
                 <div className="text-sm border-t pt-3">
-                   <h4 className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</h4>
+                    <div className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</div> {/* Changed to div */}
                     {isPredictionLoading && isOnline ? (
                        <div className="flex items-center gap-2 text-muted-foreground">
                            <Loader2 className="h-4 w-4 animate-spin" /> Loading prediction...

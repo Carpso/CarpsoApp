@@ -25,7 +25,7 @@ interface PayForOtherModalProps {
   onClose: () => void;
   payerId: string;
   payerBalance: number;
-  currency: string;
+  currency: string; // Base currency (ZMW)
   onSuccess: () => void; // Callback to refresh data
 }
 
@@ -39,7 +39,7 @@ export default function PayForOtherModal({
     onClose,
     payerId,
     payerBalance,
-    currency,
+    currency, // Base currency (ZMW)
     onSuccess
 }: PayForOtherModalProps) {
   const { isOnline } = useContext(AppStateContext)!; // Get online status
@@ -99,11 +99,11 @@ export default function PayForOtherModal({
                  <h2>Payment Receipt (For Other)</h2>
                  <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
                  <hr />
-                 <p><strong>Amount Paid:</strong> ${transaction.currency} ${Math.abs(transaction.amount).toFixed(2)}</p>
+                 <p><strong>Amount Paid:</strong> K ${Math.abs(transaction.amount).toFixed(2)}</p> {/* Use K symbol */}
                  <p><strong>For User/Plate:</strong> ${transaction.relatedUserId || transaction.targetIdentifier}</p>
                  ${transaction.parkingRecordId ? `<p><strong>Parking Ref:</strong> ${transaction.parkingRecordId.substring(0, 10)}...</p>` : ''}
                  <hr />
-                 <p><strong>Your New Balance:</strong> ${transaction.currency} ${transaction.newBalance.toFixed(2)}</p>
+                 <p><strong>Your New Balance:</strong> K ${transaction.newBalance.toFixed(2)}</p> {/* Use K symbol */}
                  <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
                  <hr />
                  <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
@@ -137,8 +137,6 @@ export default function PayForOtherModal({
         targetIdentifier = selectedUserId;
     } else if (recipientType === 'plate' && targetPlateNumber) {
         targetIdentifier = targetPlateNumber; // Use plate number as identifier for target user
-        // TODO: In a real app, you'd likely need to *resolve* the plate number to a userId or active parking session first.
-        // This mock assumes the backend can handle payment by plate number directly.
     }
 
     if (!targetIdentifier) {
@@ -152,7 +150,7 @@ export default function PayForOtherModal({
     }
 
     if (amount > payerBalance) {
-        toast({ title: "Insufficient Balance", description: `You only have ${currency} ${payerBalance.toFixed(2)} available.`, variant: "destructive" });
+        toast({ title: "Insufficient Balance", description: `You only have K ${payerBalance.toFixed(2)} available.`, variant: "destructive" }); // Use K symbol
         return;
     }
 
@@ -168,7 +166,7 @@ export default function PayForOtherModal({
        const transactionForReceipt = {
            ...transaction,
            newBalance,
-           currency,
+           currency: 'ZMW', // Assuming base currency is ZMW
            targetIdentifier: targetIdentifier, // Pass identifier used
        };
        setLastTransaction(transactionForReceipt);
@@ -179,7 +177,7 @@ export default function PayForOtherModal({
           description: (
               <div className="flex flex-col gap-2">
                  <span>
-                    {currency} {amount.toFixed(2)} paid for {targetIdentifier}. Your new balance: {currency} {newBalance.toFixed(2)}
+                    K {amount.toFixed(2)} paid for {targetIdentifier}. Your new balance: K {newBalance.toFixed(2)} {/* Use K symbol */}
                  </span>
                  <Button
                      variant="secondary"
@@ -212,7 +210,7 @@ export default function PayForOtherModal({
             <UserPlus className="h-5 w-5 text-primary" /> Pay for Another User
           </DialogTitle>
           <DialogDescription>
-             Pay parking fees for another user from your wallet. Balance: {currency} {payerBalance.toFixed(2)}.
+             Pay parking fees for another user from your wallet. Balance: K {payerBalance.toFixed(2)}. {/* Use K symbol */}
              {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
@@ -273,7 +271,7 @@ export default function PayForOtherModal({
 
            {/* Amount Input */}
            <div className="space-y-1">
-               <Label htmlFor="paymentAmount">Payment Amount ({currency})</Label>
+               <Label htmlFor="paymentAmount">Payment Amount (K)</Label> {/* Use K symbol */}
                <Input
                     id="paymentAmount"
                     type="number"
@@ -308,7 +306,7 @@ export default function PayForOtherModal({
           </Button>
           <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0 || amount > payerBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'plate' && !targetPlateNumber)}>
              {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Pay {currency} {amount || 0}
+            Pay K {amount || 0} {/* Use K symbol */}
           </Button>
         </DialogFooter>
       </DialogContent>

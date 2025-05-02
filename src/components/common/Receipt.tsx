@@ -8,7 +8,7 @@ interface ReceiptProps {
     amount: number;
     description?: string;
     timestamp: string;
-    currency: string;
+    currency: string; // e.g., ZMW, USD
     paymentMethodLabel?: string;
     newBalance?: number;
     relatedUserId?: string;
@@ -21,11 +21,26 @@ interface ReceiptProps {
   title?: string;
 }
 
+// Function to get currency symbol (simplified)
+const getCurrencySymbol = (currencyCode: string): string => {
+    switch (currencyCode.toUpperCase()) {
+        case 'ZMW': return 'K';
+        case 'USD': return '$';
+        case 'EUR': return '€';
+        case 'GBP': return '£';
+        case 'ZAR': return 'R';
+        default: return currencyCode; // Fallback to code
+    }
+};
+
+
 /**
  * Basic Receipt component for display/printing.
  * Note: Styling here is minimal and assumes basic print styles.
  */
 const Receipt: React.FC<ReceiptProps> = ({ transaction, title = "Transaction Receipt" }) => {
+  const currencySymbol = getCurrencySymbol(transaction.currency);
+
   return (
     <div style={{ fontFamily: 'monospace', fontSize: '12px', padding: '10px', maxWidth: '300px' }}>
       <h2 style={{ textAlign: 'center', margin: '0 0 10px 0', borderBottom: '1px dashed #ccc', paddingBottom: '5px' }}>
@@ -38,10 +53,10 @@ const Receipt: React.FC<ReceiptProps> = ({ transaction, title = "Transaction Rec
 
       {/* Specific details based on type */}
       {(transaction.type === 'top-up' || transaction.type === 'receive') && (
-        <p><strong>Amount Received:</strong> {transaction.currency || ''} {transaction.amount.toFixed(2)}</p>
+        <p><strong>Amount Received:</strong> {currencySymbol} {transaction.amount.toFixed(2)}</p>
       )}
       {(transaction.type === 'send' || transaction.type === 'payment' || transaction.type === 'payment_other') && (
-        <p><strong>Amount Paid:</strong> {transaction.currency || ''} {Math.abs(transaction.amount).toFixed(2)}</p>
+        <p><strong>Amount Paid:</strong> {currencySymbol} {Math.abs(transaction.amount).toFixed(2)}</p>
       )}
       {transaction.type === 'sent' || transaction.type === 'received' && transaction.points && (
          <p><strong>Points:</strong> {transaction.points}</p>
@@ -53,7 +68,7 @@ const Receipt: React.FC<ReceiptProps> = ({ transaction, title = "Transaction Rec
       {/* Add sender/recipient info if available */}
       {transaction.relatedUserId && transaction.type === 'send' && <p><strong>To:</strong> {transaction.relatedUserId}</p>}
       {transaction.relatedUserId && transaction.type === 'receive' && <p><strong>From:</strong> {transaction.relatedUserId}</p>}
-      {transaction.relatedUserId && transaction.type === 'payment_other' && <p><strong>For User:</strong> {transaction.relatedUserId}</p>}
+      {transaction.relatedUserId && transaction.type === 'payment_other' && <p><strong>For User/Plate:</strong> {transaction.relatedUserId}</p>}
       {transaction.senderId && transaction.type === 'received' && <p><strong>From:</strong> {transaction.senderId}</p>}
       {transaction.recipientId && transaction.type === 'sent' && <p><strong>To:</strong> {transaction.recipientId}</p>}
 
@@ -63,7 +78,7 @@ const Receipt: React.FC<ReceiptProps> = ({ transaction, title = "Transaction Rec
 
 
       {transaction.newBalance !== undefined && (
-        <p><strong>New Balance:</strong> {transaction.currency || ''} {transaction.newBalance.toFixed(2)}</p>
+        <p><strong>New Balance:</strong> {currencySymbol} {transaction.newBalance.toFixed(2)}</p>
       )}
 
       <p style={{ borderTop: '1px dashed #ccc', paddingTop: '5px', marginTop: '10px' }}>

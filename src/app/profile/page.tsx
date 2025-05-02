@@ -13,13 +13,13 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2, WifiOff, UserPlus, Sparkles
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe } from 'lucide-react'; // Added Landmark, Globe
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
-import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction } from '@/services/wallet-service'; // Import wallet service
+import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency } from '@/services/wallet-service'; // Import wallet service, added currency functions
 import TopUpModal from '@/components/wallet/TopUpModal'; // Import TopUpModal
 import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendMoneyModal
 import PayForOtherModal from '@/components/wallet/PayForOtherModal'; // Import PayForOtherModal
@@ -28,6 +28,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from '@/lib/utils'; // Import cn utility
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
 import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as DialogHeaderSub, DialogTitle as DialogTitleSub, DialogDescription as DialogDescriptionSub, DialogClose } from "@/components/ui/dialog"; // Import Dialog components
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
 
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
@@ -82,6 +83,7 @@ const CACHE_KEYS = {
     wallet: (userId: string) => `cachedUserWallet_${userId}`,
     walletTxns: (userId: string) => `cachedUserWalletTxns_${userId}`,
     bookmarks: (userId: string) => `cachedUserBookmarks_${userId}`,
+    exchangeRates: 'cachedExchangeRates', // Cache key for exchange rates
     timestampSuffix: '_timestamp',
 };
 
@@ -144,10 +146,10 @@ const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[
     const now = Date.now();
     const history: ParkingHistoryEntry[] = [
       { id: 'res1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 30 * 60000).toISOString(), endTime: new Date(now + 60 * 60000).toISOString(), cost: 0, status: 'Active' },
-      { id: 'hist1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 2 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (2 * 24 - 1.5) * 60 * 60000).toISOString(), cost: 3.50, status: 'Completed' },
-      { id: 'hist2', spotId: 'lot_B-S22', locationName: 'Airport Lot B', locationId: 'lot_B', startTime: new Date(now - 5 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (5 * 24 - 2) * 60 * 60000).toISOString(), cost: 5.00, status: 'Completed' },
-      { id: 'hist3', spotId: 'lot_A-S12', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 7 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (7 * 24 - 0.75) * 60 * 60000).toISOString(), cost: 1.50, status: 'Completed' },
-      { id: 'hist4', spotId: 'lot_C-S100', locationName: 'Mall Parking Deck', locationId: 'lot_C', startTime: new Date(now - 10 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (10 * 24 - 3) * 60 * 60000).toISOString(), cost: 7.00, status: 'Completed' },
+      { id: 'hist1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 2 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (2 * 24 - 1.5) * 60 * 60000).toISOString(), cost: 35.00, status: 'Completed' }, // Adjusted cost for ZMW
+      { id: 'hist2', spotId: 'lot_B-S22', locationName: 'Airport Lot B', locationId: 'lot_B', startTime: new Date(now - 5 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (5 * 24 - 2) * 60 * 60000).toISOString(), cost: 50.00, status: 'Completed' }, // Adjusted cost for ZMW
+      { id: 'hist3', spotId: 'lot_A-S12', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 7 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (7 * 24 - 0.75) * 60 * 60000).toISOString(), cost: 15.00, status: 'Completed' }, // Adjusted cost for ZMW
+      { id: 'hist4', spotId: 'lot_C-S100', locationName: 'Mall Parking Deck', locationId: 'lot_C', startTime: new Date(now - 10 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (10 * 24 - 3) * 60 * 60000).toISOString(), cost: 70.00, status: 'Completed' }, // Adjusted cost for ZMW
     ];
      const sortedHistory = history.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
      setCachedData(CACHE_KEYS.parkingHistory(userId), sortedHistory);
@@ -163,6 +165,41 @@ const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     ];
     setCachedData(CACHE_KEYS.vehicles(userId), vehicles);
     return vehicles;
+};
+
+// --- Gamification Data (Mock) ---
+const userGamificationData: Record<string, UserGamification> = {
+    'user_abc123': { points: 150, badges: [], isCarpoolEligible: false },
+    'user_def456': { points: 50, badges: [], isCarpoolEligible: true },
+};
+const pointsTransactions: Record<string, PointsTransaction[]> = {
+    'user_abc123': [],
+    'user_def456': [],
+};
+
+// --- Wallet Data (Mock) ---
+const userWallets: Record<string, Wallet> = {
+    'user_abc123': { balance: 255.50, currency: 'ZMW' },
+    'user_def456': { balance: 100.00, currency: 'ZMW' },
+};
+const userTransactions: Record<string, WalletTransaction[]> = {
+    'user_abc123': [
+        { id: 'txn_1', type: 'top-up', amount: 500.00, description: 'Top up via Mobile Money MTN', timestamp: new Date(Date.now() - 86400000).toISOString() },
+        { id: 'txn_2', type: 'payment', amount: -150.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
+        { id: 'txn_3', type: 'send', amount: -100.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+        { id: 'txn_4', type: 'receive', amount: 5.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
+    ],
+     'user_def456': [
+         { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+     ],
+};
+
+// --- Bookmarks Data (Mock) ---
+const userBookmarks: Record<string, UserBookmark[]> = {
+    'user_abc123': [
+        { id: 'bm_1', userId: 'user_abc123', label: 'Home', address: '10 Residential St, Anytown' },
+        { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown' },
+    ],
 };
 
 // --- Modified Gamification Fetch to Cache ---
@@ -198,6 +235,18 @@ const fetchUserBookmarks = async (userId: string): Promise<UserBookmark[]> => {
     const bookmarks = userBookmarks[userId] || [];
     setCachedData(CACHE_KEYS.bookmarks(userId), bookmarks);
     return bookmarks;
+}
+// --- Fetch Exchange Rates with Caching ---
+const fetchExchangeRates = async (): Promise<Record<string, number>> => {
+    const cachedRates = getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates, 6 * 60 * 60 * 1000); // Cache for 6 hours
+    if (cachedRates) {
+        console.log("Using cached exchange rates.");
+        return cachedRates;
+    }
+    console.log("Fetching fresh exchange rates...");
+    const rates = await getExchangeRates(); // Fetch from service
+    setCachedData(CACHE_KEYS.exchangeRates, rates);
+    return rates;
 }
 
 
@@ -254,6 +303,18 @@ const getBookmarkIcon = (label: string): React.ElementType => {
     return BookMarked; // Default bookmark icon
 };
 
+// Function to get currency symbol (simplified)
+const getCurrencySymbol = (currencyCode: string): string => {
+    switch (currencyCode.toUpperCase()) {
+        case 'ZMW': return 'K';
+        case 'USD': return '$';
+        case 'EUR': return '€';
+        case 'GBP': return '£';
+        case 'ZAR': return 'R';
+        default: return currencyCode; // Fallback to code
+    }
+};
+
 export default function ProfilePage() {
     const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout, isOnline } = useContext(AppStateContext)!;
     const router = useRouter();
@@ -268,12 +329,15 @@ export default function ProfilePage() {
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
     const [pointsTransactions, setPointsTransactions] = useState<PointsTransaction[]>([]); // Added state for points txns
     const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]); // State for bookmarks
+    const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null); // State for exchange rates
+    const [displayCurrency, setDisplayCurrency] = useState<string>('ZMW'); // State for selected display currency
 
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
     const [isLoadingGamification, setIsLoadingGamification] = useState(true); // Added gamification loading state
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
     const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
+    const [isLoadingRates, setIsLoadingRates] = useState(true); // Loading state for rates
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<number | null>(null); // Track last successful fetch time
 
@@ -321,6 +385,7 @@ export default function ProfilePage() {
         setIsLoadingGamification(true); // Set gamification loading
         setIsLoadingVehicles(true);
         setIsLoadingBookmarks(true);
+        setIsLoadingRates(true); // Set rates loading
         setErrorLoading(null);
 
         const loadFromCache = (keyFunc: (userId: string) => string, setter: Function) => {
@@ -339,6 +404,8 @@ export default function ProfilePage() {
         const hasCachedWallet = loadFromCache(CACHE_KEYS.wallet, setWallet);
         const hasCachedTxns = loadFromCache(CACHE_KEYS.walletTxns, setWalletTransactions);
         const hasCachedBookmarks = loadFromCache(CACHE_KEYS.bookmarks, setBookmarks);
+        const hasCachedRates = !!getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates); // Check if rates are cached
+        if (hasCachedRates) setExchangeRates(getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates));
 
         // Immediately initialize edit states from cached/global state
         const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName || '', avatarUrl: userAvatarUrl || '', memberSince: '', role: userRole || 'User', phone: '', email: '', notificationPreferences: { promotions: false, updates: false } };
@@ -349,19 +416,20 @@ export default function ProfilePage() {
         setEditVehicles(getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId)) || []);
         setEditNotificationPrefs(initialDetails?.notificationPreferences || { promotions: false, updates: false });
 
-        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedPointsTxns && hasCachedWallet && hasCachedTxns && hasCachedBookmarks) {
+        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedPointsTxns && hasCachedWallet && hasCachedTxns && hasCachedBookmarks && hasCachedRates) {
             console.log("Offline: Using cached profile data.");
             setIsLoading(false);
             setIsLoadingWallet(false);
             setIsLoadingGamification(false); // Update gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
+            setIsLoadingRates(false); // Update rates loading
             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
             setLastUpdated(ts ? parseInt(ts) : null);
             return; // Stop if offline and all data loaded from cache
         }
 
-        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks)) {
+        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates)) {
             console.warn("Offline: Missing some cached profile data.");
             setErrorLoading("Offline: Some profile data is unavailable.");
             // Keep loading spinners for missing sections? Or show cached data + error for missing?
@@ -371,6 +439,7 @@ export default function ProfilePage() {
             if (!hasCachedGamification) setIsLoadingGamification(false); // Update gamification loading
             if (!hasCachedVehicles) setIsLoadingVehicles(false);
             if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
+            if (!hasCachedRates) setIsLoadingRates(false); // Update rates loading
              const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
              setLastUpdated(ts ? parseInt(ts) : null);
             return;
@@ -380,7 +449,7 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
-            const [details, billing, history, vehiclesData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData] = await Promise.all([
+            const [details, billing, history, vehiclesData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
@@ -390,6 +459,7 @@ export default function ProfilePage() {
                 fetchUserWallet(userId),
                 fetchUserWalletTransactions(userId, 5),
                 fetchUserBookmarks(userId),
+                fetchExchangeRates(), // Fetch exchange rates
             ]);
             setUserDetails(details);
             setBillingInfo(billing);
@@ -400,6 +470,7 @@ export default function ProfilePage() {
             setWallet(walletData);
             setWalletTransactions(transactionsData);
             setBookmarks(bookmarksData);
+            setExchangeRates(ratesData); // Set exchange rates
             setLastUpdated(Date.now());
 
             // Re-Initialize edit states with fresh data
@@ -423,12 +494,14 @@ export default function ProfilePage() {
             if (!hasCachedWallet) setWallet(null);
             if (!hasCachedTxns) setWalletTransactions([]);
             if (!hasCachedBookmarks) setBookmarks([]);
+            if (!hasCachedRates) setExchangeRates(null); // Reset rates on error
         } finally {
             setIsLoading(false);
             setIsLoadingWallet(false);
             setIsLoadingGamification(false); // Update gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
+            setIsLoadingRates(false); // Update rates loading
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId, userRole, isOnline]); // userName/userAvatarUrl removed from deps, added isOnline
@@ -498,6 +571,25 @@ export default function ProfilePage() {
         }
     }, [userId, toast, isOnline]);
 
+     // Refresh exchange rates (Online only)
+    const refreshExchangeRates = useCallback(async () => {
+        if (!isOnline) {
+             toast({ title: "Offline", description: "Cannot refresh exchange rates.", variant: "destructive" });
+            return;
+        }
+        setIsLoadingRates(true);
+        try {
+            const ratesData = await fetchExchangeRates();
+            setExchangeRates(ratesData);
+            setLastUpdated(Date.now());
+        } catch (error) {
+             console.error("Failed to refresh exchange rates:", error);
+             toast({ title: "Rates Update Error", description: "Could not refresh currency rates.", variant: "destructive" });
+        } finally {
+             setIsLoadingRates(false);
+        }
+    }, [isOnline, toast]);
+
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -509,6 +601,7 @@ export default function ProfilePage() {
             setIsLoadingGamification(false); // Clear gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
+            setIsLoadingRates(false); // Clear rates loading
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
@@ -518,6 +611,7 @@ export default function ProfilePage() {
             setWallet(null);
             setWalletTransactions([]);
             setBookmarks([]);
+            setExchangeRates(null); // Clear rates
             setLastUpdated(null);
         }
     }, [isAuthenticated, loadProfileData]);
@@ -787,6 +881,22 @@ export default function ProfilePage() {
         }
     };
 
+    // Format currency based on selected display currency
+    const formatAmount = (amount: number): string => {
+        const baseCurrency = wallet?.currency || 'ZMW';
+        if (displayCurrency === baseCurrency) {
+            return `${getCurrencySymbol(baseCurrency)} ${amount.toFixed(2)}`;
+        }
+        if (!exchangeRates || isLoadingRates) {
+            return `${getCurrencySymbol(baseCurrency)} ${amount.toFixed(2)} (Converting...)`;
+        }
+        const convertedAmount = convertCurrency(amount, displayCurrency, exchangeRates);
+        if (convertedAmount === null) {
+            return `${getCurrencySymbol(baseCurrency)} ${amount.toFixed(2)} (Rate N/A)`;
+        }
+        return `${getCurrencySymbol(displayCurrency)} ${convertedAmount.toFixed(2)}`;
+    };
+
 
     const activeReservations = parkingHistory?.filter(h => h.status === 'Active') || [];
     const completedHistory = parkingHistory?.filter(h => h.status === 'Completed') || [];
@@ -951,11 +1061,31 @@ export default function ProfilePage() {
 
                         {/* Wallet Section */}
                         <section className="mb-6">
-                             <div className="flex justify-between items-center mb-3">
+                             <div className="flex justify-between items-center mb-3 flex-wrap gap-2"> {/* Added flex-wrap and gap */}
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><WalletIcon className="h-5 w-5 text-primary" /> Wallet</h3>
-                                <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
-                                     {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                     {/* Currency Selector */}
+                                     <Select
+                                        value={displayCurrency}
+                                        onValueChange={setDisplayCurrency}
+                                        disabled={isLoadingRates || !exchangeRates || !isOnline}
+                                     >
+                                        <SelectTrigger className="w-[90px] h-8 text-xs" aria-label="Select display currency">
+                                             <SelectValue placeholder="Currency" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {exchangeRates && Object.keys(exchangeRates).map(curr => (
+                                                 <SelectItem key={curr} value={curr} className="text-xs">
+                                                    {curr} ({getCurrencySymbol(curr)})
+                                                </SelectItem>
+                                            ))}
+                                             {!exchangeRates && <SelectItem value="ZMW" disabled>ZMW (K)</SelectItem>}
+                                        </SelectContent>
+                                     </Select>
+                                    <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
+                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
+                                    </Button>
+                                </div>
                              </div>
                               {isLoadingWallet && !wallet ? <Skeleton className="h-44 w-full"/> : (
                                  <>
@@ -964,8 +1094,15 @@ export default function ProfilePage() {
                                              <div>
                                                 <p className="text-sm font-medium opacity-80">Available Balance</p>
                                                 <p className="text-3xl font-bold">
-                                                    {wallet?.currency || 'ZMW'} {wallet?.balance?.toFixed(2) ?? '0.00'}
+                                                    {/* Format balance based on selected display currency */}
+                                                    {formatAmount(wallet?.balance ?? 0)}
                                                 </p>
+                                                 {/* Show base currency if different */}
+                                                {wallet?.currency && displayCurrency !== wallet.currency && (
+                                                    <p className="text-xs opacity-70 mt-1">
+                                                        (Base: {getCurrencySymbol(wallet.currency)} {(wallet?.balance ?? 0).toFixed(2)})
+                                                    </p>
+                                                )}
                                              </div>
                                              <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
                                                  <QrCode className="h-5 w-5" />
@@ -1002,7 +1139,8 @@ export default function ProfilePage() {
                                                              "font-semibold text-xs whitespace-nowrap",
                                                              txn.amount >= 0 ? "text-green-600" : "text-red-600"
                                                          )}>
-                                                             {txn.amount >= 0 ? '+' : ''}{wallet?.currency || 'ZMW'} {txn.amount.toFixed(2)}
+                                                             {/* Format transaction amount */}
+                                                             {txn.amount >= 0 ? '+' : ''}{formatAmount(Math.abs(txn.amount))}
                                                          </span>
                                                      </div>
                                                  ))}
@@ -1052,7 +1190,7 @@ export default function ProfilePage() {
                                     <Card className="mb-4 border-dashed border-accent">
                                         <CardHeader className="pb-3">
                                             <CardTitle className="text-base flex items-center gap-2">
-                                                <CreditCard className="h-4 w-4 text-accent"/> Carpso Card
+                                                <Landmark className="h-4 w-4 text-accent"/> Carpso Card
                                                 <Badge variant="outline" className="border-accent text-accent">Coming Soon</Badge>
                                             </CardTitle>
                                         </CardHeader>
@@ -1347,7 +1485,8 @@ export default function ProfilePage() {
                                                         <span>{new Date(entry.startTime).toLocaleString()}</span>
                                                     </div>
                                                 </div>
-                                                <span className="font-semibold text-sm">${entry.cost.toFixed(2)}</span>
+                                                {/* Format history cost */}
+                                                <span className="font-semibold text-sm">{formatAmount(entry.cost)}</span>
                                             </Card>
                                         ))}
                                     </div>

@@ -27,7 +27,7 @@ interface SendMoneyModalProps {
   onClose: () => void;
   userId: string;
   currentBalance: number;
-  currency: string;
+  currency: string; // Base currency (ZMW)
   onSuccess: () => void; // Callback to refresh data
 }
 
@@ -41,7 +41,7 @@ export default function SendMoneyModal({
     onClose,
     userId,
     currentBalance,
-    currency,
+    currency, // Base currency (ZMW)
     onSuccess
 }: SendMoneyModalProps) {
   const { isOnline } = useContext(AppStateContext)!; // Get online status
@@ -101,11 +101,11 @@ export default function SendMoneyModal({
                  <h2>Money Sent Receipt</h2>
                  <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
                  <hr />
-                 <p><strong>Amount Sent:</strong> ${transaction.currency} ${Math.abs(transaction.amount).toFixed(2)}</p>
+                 <p><strong>Amount Sent:</strong> K ${Math.abs(transaction.amount).toFixed(2)}</p> {/* Use K symbol */}
                  <p><strong>To:</strong> ${transaction.relatedUserId}</p>
                  ${transaction.note ? `<p><strong>Note:</strong> ${transaction.note}</p>` : ''}
                  <hr />
-                 <p><strong>Your New Balance:</strong> ${transaction.currency} ${transaction.newBalance.toFixed(2)}</p>
+                 <p><strong>Your New Balance:</strong> K ${transaction.newBalance.toFixed(2)}</p> {/* Use K symbol */}
                  <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
                  <hr />
                  <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
@@ -152,7 +152,7 @@ export default function SendMoneyModal({
       }
 
       if (amount > currentBalance) {
-          toast({ title: "Insufficient Balance", description: `You only have ${currency} ${currentBalance.toFixed(2)} available.`, variant: "destructive" });
+          toast({ title: "Insufficient Balance", description: `You only have K ${currentBalance.toFixed(2)} available.`, variant: "destructive" }); // Use K symbol
           return;
       }
 
@@ -166,7 +166,7 @@ export default function SendMoneyModal({
       const transactionForReceipt = {
            ...transaction,
            newBalance,
-           currency,
+           currency: 'ZMW', // Assuming base currency is ZMW
            note: note, // Include note for receipt
       };
       setLastTransaction(transactionForReceipt);
@@ -176,7 +176,7 @@ export default function SendMoneyModal({
           description: (
                <div className="flex flex-col gap-2">
                   <span>
-                     {currency} {amount.toFixed(2)} sent to {recipientIdentifier}. New balance: {currency} {newBalance.toFixed(2)}
+                     K {amount.toFixed(2)} sent to {recipientIdentifier}. New balance: K {newBalance.toFixed(2)} {/* Use K symbol */}
                   </span>
                   <Button
                       variant="secondary"
@@ -209,7 +209,7 @@ export default function SendMoneyModal({
             <ArrowUpRight className="h-5 w-5 text-primary" /> Send Money
           </DialogTitle>
           <DialogDescription>
-             Send funds from your Carpso wallet. Balance: {currency} {currentBalance.toFixed(2)}.
+             Send funds from your Carpso wallet. Balance: K {currentBalance.toFixed(2)}. {/* Use K symbol */}
              {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
@@ -271,7 +271,7 @@ export default function SendMoneyModal({
 
            {/* Amount Input */}
            <div className="space-y-1">
-               <Label htmlFor="amount">Amount ({currency})</Label>
+               <Label htmlFor="amount">Amount (K)</Label> {/* Use K symbol */}
                <Input
                     id="amount"
                     type="number"
@@ -307,7 +307,7 @@ export default function SendMoneyModal({
           </Button>
           <Button onClick={handleSubmit} disabled={isLoading || !isOnline || amount === '' || amount <= 0 || amount > currentBalance || (recipientType === 'user' && !selectedUserId) || (recipientType === 'phone' && !recipientPhone)}>
              {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Send {currency} {amount || 0}
+            Send K {amount || 0} {/* Use K symbol */}
           </Button>
         </DialogFooter>
       </DialogContent>

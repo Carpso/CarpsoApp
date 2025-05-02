@@ -33,11 +33,11 @@ interface TopUpModalProps {
   onClose: () => void;
   userId: string;
   currentBalance: number;
-  currency: string;
+  currency: string; // Base currency (ZMW)
   onSuccess: () => void; // Callback to refresh data
 }
 
-const PRESET_AMOUNTS = [5, 10, 20, 50, 100];
+const PRESET_AMOUNTS_ZMW = [50, 100, 200, 500, 1000]; // Adjusted presets for ZMW
 // Expanded Payment Methods for POS context
 const PAYMENT_METHODS = [
     { value: 'mobile_money_mtn', label: 'MTN Mobile Money', icon: MtnLogo },
@@ -45,7 +45,6 @@ const PAYMENT_METHODS = [
     { value: 'mobile_money_zamtel', label: 'Zamtel Kwacha', icon: ZamtelLogo },
     { value: 'card_visa_contactless', label: 'Visa (Tap to Pay)', icon: Nfc }, // Tap-to-Pay
     { value: 'card_visa_chip', label: 'Visa (Chip/Swipe)', icon: CreditCard }, // Chip/Swipe
-    // { value: 'fingerprint_auth', label: 'Fingerprint (POS Only)', icon: Fingerprint }, // Fingerprint - Requires native POS integration
 ];
 
 
@@ -54,7 +53,7 @@ export default function TopUpModal({
     onClose,
     userId,
     currentBalance,
-    currency,
+    currency, // Base currency (should be ZMW)
     onSuccess
 }: TopUpModalProps) {
   const { isOnline } = useContext(AppStateContext)!;
@@ -110,10 +109,10 @@ export default function TopUpModal({
                 <h2>Top-Up Receipt</h2>
                 <p><strong>Date:</strong> ${new Date(transaction.timestamp).toLocaleString()}</p>
                 <hr />
-                <p><strong>Amount:</strong> ${transaction.currency} ${transaction.amount.toFixed(2)}</p>
+                <p><strong>Amount:</strong> K ${transaction.amount.toFixed(2)}</p> {/* Use K symbol */}
                 <p><strong>Method:</strong> ${transaction.paymentMethodLabel}</p>
                 <hr />
-                <p><strong>New Balance:</strong> ${transaction.currency} ${transaction.newBalance.toFixed(2)}</p>
+                <p><strong>New Balance:</strong> K ${transaction.newBalance.toFixed(2)}</p> {/* Use K symbol */}
                 <p><strong>Transaction ID:</strong> ${transaction.id.substring(0, 8)}...</p>
                 <hr />
                 <p style="text-align:center; font-size: 0.8em;">Thank you for using Carpso!</p>
@@ -180,7 +179,7 @@ export default function TopUpModal({
        const transactionForReceipt = {
            ...transaction,
            newBalance, // Add new balance for receipt context
-           currency,
+           currency: 'ZMW', // Assuming base currency is ZMW
            paymentMethodLabel: methodLabel,
        };
        setLastTransaction(transactionForReceipt);
@@ -191,7 +190,7 @@ export default function TopUpModal({
           description: (
              <div className="flex flex-col gap-2">
                  <span>
-                    {currency} {amount.toFixed(2)} added via {methodLabel}. New balance: {currency} {newBalance.toFixed(2)}
+                    K {amount.toFixed(2)} added via {methodLabel}. New balance: K {newBalance.toFixed(2)} {/* Use K symbol */}
                  </span>
                  {/* Add Print Button to Toast */}
                  <Button
@@ -228,7 +227,7 @@ export default function TopUpModal({
 
   // Determine if the button should show POS interaction text
    const isPosInteractionMethod = selectedMethod.includes('card_') || selectedMethod.includes('fingerprint');
-   const buttonText = isPosInteractionMethod ? `Initiate POS Payment` : `Proceed to Top Up ${currency} ${amount || 0}`;
+   const buttonText = isPosInteractionMethod ? `Initiate POS Payment` : `Proceed to Top Up K ${amount || 0}`; // Use K symbol
 
 
   return (
@@ -239,7 +238,7 @@ export default function TopUpModal({
             <PlusCircle className="h-5 w-5 text-primary" /> Top Up Wallet
           </DialogTitle>
           <DialogDescription>
-             Current Balance: {currency} {currentBalance.toFixed(2)}. Add funds to your Carpso wallet.
+             Current Balance: K {currentBalance.toFixed(2)}. Add funds to your Carpso wallet. {/* Use K symbol */}
               {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
@@ -247,9 +246,9 @@ export default function TopUpModal({
         <div className="grid gap-4 py-4">
            {/* Amount Selection */}
             <div className="space-y-2">
-               <Label>Amount ({currency})</Label>
+               <Label>Amount (K)</Label> {/* Use K symbol */}
                <div className="flex flex-wrap gap-2">
-                  {PRESET_AMOUNTS.map(preset => (
+                  {PRESET_AMOUNTS_ZMW.map(preset => (
                       <Button
                           key={preset}
                           variant={amount === preset && !customAmountSelected ? 'default' : 'outline'}
@@ -289,13 +288,12 @@ export default function TopUpModal({
                                 className={cn(
                                     "flex items-center space-x-3 p-3 border rounded-md cursor-pointer hover:bg-muted/50 transition-colors",
                                     selectedMethod === method.value && "border-primary ring-1 ring-primary bg-muted/50",
-                                    (isLoading || !!posStatus || !isOnline || isPosOnly /* Disable POS only methods in web view */) && "opacity-50 cursor-not-allowed"
+                                    (isLoading || !!posStatus || !isOnline) && "opacity-50 cursor-not-allowed" // Simplified disable logic
                                 )}
                              >
-                                <RadioGroupItem value={method.value} id={method.value} disabled={isLoading || !!posStatus || !isOnline || isPosOnly} />
+                                <RadioGroupItem value={method.value} id={method.value} disabled={isLoading || !!posStatus || !isOnline} /> {/* Simplified disable logic */}
                                 <Icon className="h-5 w-5 text-muted-foreground" />
                                 <span className="font-medium">{method.label}</span>
-                                {/* {isPosOnly && <span className="text-xs text-muted-foreground ml-auto">(POS Only)</span>} */}
                              </Label>
                          );
                      })}
