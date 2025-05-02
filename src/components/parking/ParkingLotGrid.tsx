@@ -26,7 +26,7 @@ import {
     DialogFooter as DialogSubFooter,
 } from "@/components/ui/dialog";
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw, Printer, Download as DownloadIcon, Share2, Users, BellPlus, Timer, UserCheck, CheckCircle } from 'lucide-react'; // Added queue icons (Users, BellPlus), Timer
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw, Printer, Download as DownloadIcon, Share2, Users, BellPlus, Timer, UserCheck, CheckCircle, Ban } from 'lucide-react'; // Added queue icons (Users, BellPlus), Timer, Ban
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
@@ -91,6 +91,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const [isCostLoading, setIsCostLoading] = useState(false);
   const [lastFetchTimestamp, setLastFetchTimestamp] = useState<number | null>(null);
   const [manualRefreshTrigger, setManualRefreshTrigger] = useState(0); // For manual refresh
+  const [isRefreshing, setIsRefreshing] = useState(false); // State for manual refresh loading
   const isVisible = useVisibilityChange(); // Track tab visibility
   const [lastReservationDetails, setLastReservationDetails] = useState<ReservationDetails | null>(null); // Store last reservation details
   const [showTicketModal, setShowTicketModal] = useState(false); // State for ticket modal
@@ -105,7 +106,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const { toast } = useToast();
 
   // Check if user is Premium
-  const isPremiumUser = userRole === 'Premium';
+  const isPremiumUser = userRole === 'PremiumUser' || userRole === 'Premium'; // Adjusted check for potential role variations
 
   // Fetch user's gamification status (including extensions used)
   const fetchUserGamificationData = useCallback(async () => {
@@ -174,6 +175,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
         }
       } finally {
          setIsLoading(false);
+         setIsRefreshing(false); // Ensure refresh indicator stops
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.id, location.name, location.capacity, toast, isOnline]); // Added isOnline dependency
@@ -281,9 +283,11 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
  // --- Effect for Manual Refresh Trigger ---
  useEffect(() => {
      if (manualRefreshTrigger > 0 && isOnline) {
+         setIsRefreshing(true); // Indicate refresh is starting
          fetchSpotStatuses(true); // Pass true to indicate manual refresh
          fetchUserQueueData(); // Refresh queue data too
          fetchUserGamificationData(); // Refresh gamification data too
+         // isRefreshing will be set to false within fetchSpotStatuses finally block
      }
  // Only depend on the trigger value
  // eslint-disable-next-line react-hooks/exhaustive-deps
