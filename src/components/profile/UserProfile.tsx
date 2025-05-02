@@ -1,3 +1,4 @@
+
 // src/components/profile/UserProfile.tsx
 'use client';
 
@@ -14,10 +15,10 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink } from 'lucide-react'; // Added Printer, UsersRound, Copy, Ticket, ExternalLink
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins } from 'lucide-react'; // Added Coins
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
-import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode, awardPoints, redeemPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions, redeemPoints
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
 import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency, getPaymentMethods, updatePaymentMethods, PaymentMethod } from '@/services/wallet-service'; // Import wallet service, added currency functions, payment methods
@@ -32,6 +33,9 @@ import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as Dia
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
 import { convertToCSV, getParkingRecords, ParkingRecord } from '@/services/pricing-service'; // Import parking records functions
 import PaymentMethodModal from '@/components/profile/PaymentMethodModal'; // Import PaymentMethodModal
+
+// Define Point to Kwacha Conversion Rate
+const POINTS_TO_KWACHA_RATE = 0.10; // Example: 1 point = K 0.10
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
@@ -113,6 +117,30 @@ const setCachedData = <T>(key: string, data: T) => {
     }
 };
 
+// --- Daily Login Check ---
+const checkAndAwardDailyLoginPoints = async (userId: string): Promise<number | null> => {
+    if (typeof window === 'undefined') return null;
+    const lastLoginKey = `lastLoginTimestamp_${userId}`;
+    const lastLoginTimestamp = localStorage.getItem(lastLoginKey);
+    const today = new Date().toDateString(); // Get date part only
+
+    if (!lastLoginTimestamp || new Date(parseInt(lastLoginTimestamp)).toDateString() !== today) {
+        // First login today or first login ever
+        try {
+            const pointsAwarded = 5; // Example: 5 points for daily login
+            const newTotal = await awardPoints(userId, pointsAwarded, 'Daily Login Bonus'); // Pass description
+            localStorage.setItem(lastLoginKey, Date.now().toString());
+            console.log(`Awarded ${pointsAwarded} daily login points to user ${userId}.`);
+            return newTotal; // Return new total points
+        } catch (error) {
+            console.error("Failed to award daily login points:", error);
+            return null;
+        }
+    }
+    return null; // Already logged in today
+};
+
+
 // Mock Data Fetching Functions (Replace with real API calls)
 const fetchUserDetails = async (userId: string, existingName?: string | null, existingAvatar?: string | null, existingRole?: string | null): Promise<UserDetails> => {
     await new Promise(resolve => setTimeout(resolve, 700));
@@ -157,15 +185,6 @@ const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     setCachedData(CACHE_KEYS.vehicles(userId), vehicles);
     return vehicles;
 };
-
-// --- Gamification Data (Mock) ---
-// Moved to user-service.ts
-
-// --- Wallet Data (Mock) ---
-// Moved to wallet-service.ts
-
-// --- Bookmarks Data (Mock) ---
-// Moved to user-service.ts
 
 // --- Payment Methods Fetch (using wallet-service mock) ---
 const fetchPaymentMethods = async (userId: string): Promise<PaymentMethod[]> => {
@@ -237,7 +256,7 @@ const updateUserDetails = async (userId: string, updates: Partial<UserDetails>):
      console.log("Simulating user details update:", userId, updates);
      // In a real app, update the backend data source
      // This mock doesn't persist changes across sessions in memory, but caches
-     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User', preferredPaymentMethod: undefined };
+     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User', preferredPaymentMethod: undefined, notificationPreferences: { promotions: false, updates: false } };
      const updatedDetails: UserDetails = {
          ...currentDetails,
          name: updates.name || currentDetails.name,
@@ -364,6 +383,8 @@ export default function ProfilePage() {
     const [isPayForOtherModalOpen, setIsPayForOtherModalOpen] = useState(false); // Added state
     const [isTransferPointsModalOpen, setIsTransferPointsModalOpen] = useState(false); // Added state
     const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false); // State for payment method modal
+    const [isRedeemPointsModalOpen, setIsRedeemPointsModalOpen] = useState(false); // State for redeeming points
+    const [pointsToRedeem, setPointsToRedeem] = useState<number | ''>(''); // State for points redemption amount
 
     // Promo Code State
     const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -473,13 +494,30 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
+            // --- Daily Login Check ---
+            const dailyLoginResult = await checkAndAwardDailyLoginPoints(userId);
+            if (dailyLoginResult !== null) {
+                 // If points were awarded, show a subtle toast
+                 toast({
+                     title: "Daily Login Bonus!",
+                     description: `+5 points added. Keep it up!`,
+                     duration: 3000,
+                 });
+                 // We need to refetch gamification data or update it locally
+                 // Let's trigger a specific refresh for gamification after the main load
+                 // Or update the state directly if the function returns the new total
+                 // setGamification(prev => ({ ...(prev!), points: dailyLoginResult }));
+            }
+             // --- End Daily Login Check ---
+
+
             const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, referralsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
                 fetchVehicles(userId),
                 fetchPaymentMethods(userId), // Fetch payment methods
-                fetchUserGamification(userId),
+                fetchUserGamification(userId), // Fetch potentially updated gamification data
                 fetchPointsTransactions(userId, 5), // Fetch points transactions
                 fetchReferralHistory(userId), // Fetch referral history
                 fetchUserWallet(userId),
@@ -492,7 +530,7 @@ export default function ProfilePage() {
             setParkingHistory(history);
             setVehicles(vehiclesData);
             setPaymentMethods(paymentMethodsData); // Set payment methods
-            setGamification(gamificationData);
+            setGamification(gamificationData); // Set the potentially updated gamification data
             setPointsTransactions(pointsTxnsData); // Set points transactions
             setReferralHistory(referralsData); // Set referral history
             setWallet(walletData);
@@ -743,6 +781,7 @@ export default function ProfilePage() {
              transactionId: t.id,
              type: t.type,
              points: t.points,
+             description: t.description, // Include description from awardPoints
              senderId: t.senderId,
              recipientId: t.recipientId,
              timestamp: t.timestamp,
@@ -1033,7 +1072,20 @@ export default function ProfilePage() {
     // --- End Payment Method Management ---
 
      // --- Tawk.to Chat Integration ---
-     // Removed handleOpenChat function, using direct link now.
+     const handleOpenChat = () => {
+         if (typeof window !== 'undefined' && (window as any).Tawk_API && (window as any).Tawk_API.maximize) {
+            (window as any).Tawk_API.maximize();
+         } else if (typeof window !== 'undefined' && (window as any).Tawk_API) {
+              // Fallback if maximize isn't available? Maybe toggle or show?
+              (window as any).Tawk_API.showWidget?.();
+              (window as any).Tawk_API.openChat?.();
+              toast({ title: "Opening Chat...", description: "Attempting to open the chat widget.", variant: "default" });
+         }
+         else {
+             // Fallback or error message if Tawk API isn't available
+             toast({ title: "Chat Unavailable", description: "Live chat support is currently unavailable. Please try again later or use WhatsApp.", variant: "default" });
+         }
+     };
      // --- End Tawk.to Chat Integration ---
 
      // --- Referral Code Copy ---
@@ -1079,6 +1131,47 @@ export default function ProfilePage() {
       };
       // --- End Promo Code Apply ---
 
+      // --- Points Redemption ---
+      const handleRedeemPoints = async () => {
+           if (!userId || !isOnline) {
+               if (!isOnline) toast({ title: "Offline", description: "Cannot redeem points while offline.", variant: "destructive" });
+               return;
+           }
+            if (pointsToRedeem === '' || pointsToRedeem <= 0) {
+                toast({ title: "Invalid Amount", description: "Please enter a valid number of points to redeem.", variant: "destructive" });
+                return;
+            }
+            if (pointsToRedeem > (gamification?.points || 0)) {
+                 toast({ title: "Insufficient Points", description: `You only have ${gamification?.points || 0} points.`, variant: "destructive" });
+                 return;
+            }
+
+            setIsSavingProfile(true); // Reuse saving state as loading indicator
+            try {
+                 const redemptionResult = await redeemPoints(userId, pointsToRedeem);
+                 if (redemptionResult) {
+                     const { redeemedAmount, newPointsBalance, newWalletBalance, transaction } = redemptionResult;
+                     toast({
+                         title: "Points Redeemed!",
+                         description: `${pointsToRedeem} points redeemed for K ${redeemedAmount.toFixed(2)} wallet credit.`,
+                     });
+                     // Refresh both gamification and wallet data
+                     await refreshGamificationData();
+                     await refreshWalletData();
+                     setIsRedeemPointsModalOpen(false); // Close modal on success
+                     setPointsToRedeem(''); // Reset input
+                 } else {
+                     throw new Error("Points redemption failed.");
+                 }
+            } catch (error: any) {
+                 console.error("Error redeeming points:", error);
+                 toast({ title: "Redemption Failed", description: error.message, variant: "destructive" });
+            } finally {
+                 setIsSavingProfile(false);
+            }
+      };
+     // --- End Points Redemption ---
+
 
     const handleLogout = () => {
         logout();
@@ -1093,6 +1186,7 @@ export default function ProfilePage() {
             case 'receive': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
             case 'payment': return <DollarSign className="h-4 w-4 text-red-600" />;
             case 'payment_other': return <Users className="h-4 w-4 text-purple-600" />; // Icon for paying for others
+            case 'points_redemption': return <Coins className="h-4 w-4 text-yellow-500" />; // Icon for points redemption
             default: return <WalletIcon className="h-4 w-4 text-muted-foreground" />;
         }
     };
@@ -1101,6 +1195,8 @@ export default function ProfilePage() {
         switch(type) {
             case 'sent': return <ArrowUpRight className="h-4 w-4 text-orange-600" />;
             case 'received': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
+            case 'earned': return <PlusCircle className="h-4 w-4 text-green-600" />; // Added 'earned' type
+            case 'redeemed': return <DollarSign className="h-4 w-4 text-red-600" />; // Added 'redeemed' type
             default: return <Sparkles className="h-4 w-4 text-yellow-500" />;
         }
     };
@@ -1131,6 +1227,8 @@ export default function ProfilePage() {
     const isPremium = currentTier === 'Premium';
      const preferredMethod = paymentMethods.find(pm => pm.id === userDetails?.preferredPaymentMethod); // Find preferred method details
     const receivePaymentQrValue = userId ? `carpso_pay:${userId}` : 'carpso_pay:unknown_user'; // QR Code value
+    const currentPointsValue = gamification?.points ?? 0;
+    const pointsKwachaValue = (currentPointsValue * POINTS_TO_KWACHA_RATE).toFixed(2); // Calculate Kwacha equivalent
 
     // Render loading or empty state if not authenticated or data is loading
     if (isLoading && !userDetails) { // Show skeleton only on initial full load without cached data
@@ -1641,12 +1739,18 @@ export default function ProfilePage() {
                                 <>
                                     {/* Points and Carpool */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <Card className="flex items-center justify-between p-4">
-                                            <div className="flex items-center gap-3">
-                                                <SparklesIcon className="h-6 w-6 text-primary" />
-                                                <span className="font-medium">Points Balance</span>
+                                        <Card className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <Coins className="h-5 w-5 text-primary" />
+                                                    <span className="font-medium">Points Balance</span>
+                                                </div>
+                                                 <Button variant="link" size="sm" className="text-xs h-auto p-0" onClick={() => setIsRedeemPointsModalOpen(true)} disabled={!isOnline || currentPointsValue <= 0}>
+                                                     Redeem
+                                                 </Button>
                                             </div>
-                                            <span className="text-2xl font-bold text-primary">{gamification?.points ?? 0}</span>
+                                             <p className="text-2xl font-bold text-primary">{currentPointsValue}</p>
+                                             <p className="text-xs text-muted-foreground">(≈ K {pointsKwachaValue})</p>
                                         </Card>
                                         <Card className="flex items-center justify-between p-4">
                                              <div className="space-y-0.5">
@@ -1722,16 +1826,22 @@ export default function ProfilePage() {
                                                              {getPointsTransactionIcon(txn.type)}
                                                              <div className="flex-1 truncate">
                                                                   <p className="text-xs font-medium truncate">
-                                                                     {txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` : txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` : 'System Update'}
+                                                                      {txn.description || (
+                                                                          txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` :
+                                                                          txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` :
+                                                                          txn.type === 'earned' ? 'Points Earned' :
+                                                                          txn.type === 'redeemed' ? 'Points Redeemed' :
+                                                                          'System Update'
+                                                                      )}
                                                                  </p>
                                                                  <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
                                                              </div>
                                                          </div>
                                                          <span className={cn(
                                                              "font-semibold text-xs whitespace-nowrap",
-                                                             txn.type === 'received' ? "text-green-600" : txn.type === 'sent' ? "text-red-600" : "text-primary"
+                                                             (txn.type === 'received' || txn.type === 'earned') ? "text-green-600" : (txn.type === 'sent' || txn.type === 'redeemed') ? "text-red-600" : "text-primary"
                                                          )}>
-                                                             {txn.type === 'received' ? '+' : txn.type === 'sent' ? '-' : ''}{txn.points} points
+                                                             {(txn.type === 'received' || txn.type === 'earned') ? '+' : (txn.type === 'sent' || txn.type === 'redeemed') ? '-' : ''}{txn.points} points
                                                          </span>
                                                      </div>
                                                  ))}
@@ -1872,13 +1982,21 @@ export default function ProfilePage() {
                          <section className="mb-6">
                              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  {/* WhatsApp Button */}
+                                  {/* Live Chat Button */}
+                                   <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
+                                       <MessageSquare className="mr-3 h-5 w-5 text-blue-600" />
+                                       <div>
+                                           <p className="font-medium">Live Chat</p>
+                                           <p className="text-xs text-muted-foreground">Get help via Tawk.to.</p>
+                                       </div>
+                                   </Button>
+                                   {/* WhatsApp Button */}
                                    <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
                                        <a href={WHATSAPP_CHAT_LINK_1} target="_blank" rel="noopener noreferrer">
-                                          <MessageSquare className="mr-3 h-5 w-5 text-green-600" />
+                                          <MessageSquare className="mr-3 h-5 w-5 text-green-600" /> {/* Can reuse icon or use specific WhatsApp icon */}
                                           <div>
                                              <p className="font-medium">WhatsApp Chat</p>
-                                             <p className="text-xs text-muted-foreground">Get help via WhatsApp (+260 95...).</p>
+                                             <p className="text-xs text-muted-foreground">Via WhatsApp (+260 95...).</p>
                                           </div>
                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
                                        </a>
@@ -1975,6 +2093,52 @@ export default function ProfilePage() {
                   preferredMethodId={editPreferredPaymentMethod} // Pass the editable preferred ID
                   onSave={handleSavePaymentMethods}
               />
+
+             {/* Redeem Points Modal */}
+              <Dialog open={isRedeemPointsModalOpen} onOpenChange={setIsRedeemPointsModalOpen}>
+                 <DialogContent className="sm:max-w-md">
+                     <DialogHeaderSub>
+                         <DialogTitleSub>Redeem Points</DialogTitleSub>
+                         <DialogDescriptionSub>
+                             Convert your points into wallet credit (K {POINTS_TO_KWACHA_RATE.toFixed(2)} per point).
+                             Available Points: {currentPointsValue}.
+                         </DialogDescriptionSub>
+                     </DialogHeaderSub>
+                     <div className="grid gap-4 py-4">
+                         <div className="space-y-1">
+                             <Label htmlFor="redeem-points">Points to Redeem</Label>
+                             <Input
+                                 id="redeem-points"
+                                 type="number"
+                                 value={pointsToRedeem}
+                                 onChange={(e) => setPointsToRedeem(e.target.value === '' ? '' : Number(e.target.value))}
+                                 placeholder="0"
+                                 min="1"
+                                 max={currentPointsValue}
+                                 disabled={isSavingProfile || !isOnline}
+                             />
+                             {pointsToRedeem !== '' && pointsToRedeem > 0 && (
+                                 <p className="text-sm text-muted-foreground mt-1">
+                                     ≈ K {(pointsToRedeem * POINTS_TO_KWACHA_RATE).toFixed(2)} Wallet Credit
+                                 </p>
+                             )}
+                             {pointsToRedeem !== '' && pointsToRedeem > currentPointsValue && (
+                                  <p className="text-xs text-destructive mt-1">Amount exceeds available points.</p>
+                             )}
+                         </div>
+                     </div>
+                     <DialogFooter>
+                          <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingProfile}>Cancel</Button></DialogClose>
+                          <Button
+                             onClick={handleRedeemPoints}
+                             disabled={isSavingProfile || !isOnline || pointsToRedeem === '' || pointsToRedeem <= 0 || pointsToRedeem > currentPointsValue}
+                         >
+                             {isSavingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                             Redeem {pointsToRedeem || 0} Points
+                         </Button>
+                     </DialogFooter>
+                 </DialogContent>
+              </Dialog>
 
 
              {/* Add/Edit Bookmark Modal */}
@@ -2105,3 +2269,4 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
+

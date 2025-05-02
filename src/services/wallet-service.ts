@@ -1,3 +1,4 @@
+
 // src/services/wallet-service.ts
 
 /**
@@ -5,7 +6,7 @@
  */
 export interface WalletTransaction {
   id: string;
-  type: 'top-up' | 'send' | 'receive' | 'payment' | 'payment_other'; // Added payment_other
+  type: 'top-up' | 'send' | 'receive' | 'payment' | 'payment_other' | 'points_redemption'; // Added payment_other and points_redemption
   amount: number; // Positive for received/top-up, negative for sent/payment
   description: string; // e.g., "Sent to user_xyz", "Top up via Visa **** 1234", "Payment at Partner Cafe"
   timestamp: string;
@@ -48,6 +49,7 @@ let userTransactions: Record<string, WalletTransaction[]> = {
         { id: 'txn_2', type: 'payment', amount: -150.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
         { id: 'txn_3', type: 'send', amount: -100.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
          { id: 'txn_4', type: 'receive', amount: 55.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
+         { id: 'txn_7', type: 'points_redemption', amount: 15.50, description: 'Credit from redeeming 155 points', paymentMethodUsed: 'points', timestamp: new Date(Date.now() - 30*60000).toISOString() }, // Example redemption
     ],
      'user_def456': [
          { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },

@@ -1,13 +1,13 @@
 
-'use client'; // Add 'use client' for useEffect
+'use client'; // Required for useEffect and useState
 
-// import type { Metadata } from 'next'; // Removed, Metadata should be in Server Components if possible
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/layout/Header';
 import { Toaster } from "@/components/ui/toaster";
 import AppStateProvider from '@/context/AppStateProvider'; // Import the provider
-import React, { useEffect } from 'react'; // Import useEffect
+import React, { useEffect, useState } from 'react'; // Import useEffect, useState
+import { useToast } from '@/hooks/use-toast'; // Import useToast
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -30,72 +30,83 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { toast } = useToast();
+  const [chatError, setChatError] = useState<string | null>(null); // State for chat errors
 
   useEffect(() => {
     // --- Tawk.to Chat Widget ---
-    // IMPORTANT: Replace 'YOUR_PROPERTY_ID' and 'YOUR_WIDGET_ID' with your actual Tawk.to IDs
-    // Get these from your Tawk.to dashboard: Admin -> Chat Widget
-    const tawkPropertyId = process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID || 'YOUR_PROPERTY_ID';
-    const tawkWidgetId = process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID || 'YOUR_WIDGET_ID';
+    // IMPORTANT: Ensure NEXT_PUBLIC_TAWKTO_PROPERTY_ID and NEXT_PUBLIC_TAWKTO_WIDGET_ID
+    //            are set in your .env file for the chat to work.
+    const tawkPropertyId = process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID;
+    const tawkWidgetId = process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID;
+    const isConfigured = tawkPropertyId && tawkWidgetId && tawkPropertyId !== 'YOUR_PROPERTY_ID' && tawkWidgetId !== 'YOUR_WIDGET_ID';
 
-    if (typeof window !== 'undefined' && (tawkPropertyId === 'YOUR_PROPERTY_ID' || tawkWidgetId === 'YOUR_WIDGET_ID')) {
-        console.warn('Tawk.to environment variables not set or running server-side initially. Chat widget will not load yet.');
-        // Don't return immediately, let the effect run once on client
+    setChatError(null); // Clear previous errors on effect run
+
+    if (typeof window !== 'undefined' && !isConfigured) {
+      console.warn('Tawk.to environment variables (NEXT_PUBLIC_TAWKTO_PROPERTY_ID, NEXT_PUBLIC_TAWKTO_WIDGET_ID) are not set correctly. Live chat will be disabled.');
+      setChatError('Live chat is currently unavailable (Configuration missing).');
+      // Optionally show a toast to the user if config is missing (might be annoying)
+      // toast({ title: "Chat Unavailable", description: "Live chat configuration is missing.", variant: "default" });
     }
 
     // Ensure we run this only once on the client after mount
-    if (typeof window !== 'undefined') {
-        // Prevent duplicate script injection
-        if (document.getElementById('tawkto-script')) {
-            return;
+    if (typeof window !== 'undefined' && isConfigured) {
+      // Prevent duplicate script injection
+      if (document.getElementById('tawkto-script')) {
+        console.log("Tawk.to script already exists.");
+        // Check if API exists, sometimes needed if script loaded but API didn't init
+        if (!(window as any).Tawk_API) {
+             console.warn("Tawk.to script found, but API not initialized. Attempting re-init logic (may cause issues).");
+              // Potentially try re-running init logic, but Tawk.to usually handles this.
+              // Re-adding the script is generally discouraged.
+              setChatError("Chat failed to initialize properly. Try refreshing.");
+        } else {
+             console.log("Tawk.to API is available.");
         }
-        // Only proceed if IDs are valid
-        if (tawkPropertyId !== 'YOUR_PROPERTY_ID' && tawkWidgetId !== 'YOUR_WIDGET_ID') {
-            // Check if Tawk_API exists, if so, don't re-inject
-            if (!(window as any).Tawk_API) {
-                (window as any).Tawk_API = (window as any).Tawk_API || {};
-                (window as any).Tawk_LoadStart = new Date();
+        return;
+      }
 
-                const s1 = document.createElement("script");
-                const s0 = document.getElementsByTagName("script")[0];
-                s1.async = true;
-                s1.src = `https://embed.tawk.to/${tawkPropertyId}/${tawkWidgetId}`;
-                s1.charset = 'UTF-8';
-                s1.setAttribute('crossorigin', '*');
-                s1.id = 'tawkto-script'; // Add ID to check for existing script
-                s0?.parentNode?.insertBefore(s1, s0);
-                console.log("Tawk.to script injected.");
+      // Only proceed if IDs are valid and API doesn't exist yet
+      if (!(window as any).Tawk_API) {
+        (window as any).Tawk_API = (window as any).Tawk_API || {};
+        (window as any).Tawk_LoadStart = new Date();
 
-                 // Optional: You can use Tawk_API for customization after load
-                 // Tawk_API.onLoad = function(){
-                 //     console.log("Tawk.to Widget Loaded");
-                 //     // Tawk_API.maximize(); // Example: Maximize widget on load
-                 // };
+        const s1 = document.createElement("script");
+        const s0 = document.getElementsByTagName("script")[0];
+        s1.async = true;
+        s1.src = `https://embed.tawk.to/${tawkPropertyId}/${tawkWidgetId}`;
+        s1.charset = 'UTF-8';
+        s1.setAttribute('crossorigin', '*');
+        s1.id = 'tawkto-script'; // Add ID to check for existing script
+
+        s1.onload = () => {
+            console.log("Tawk.to script loaded successfully.");
+            // Verify API is available after load
+            if (!(window as any).Tawk_API?.onLoad) {
+                 console.error("Tawk.to script loaded, but API failed to initialize.");
+                 setChatError("Chat failed to initialize. Try refreshing.");
             }
-        }
+        };
+        s1.onerror = (error) => {
+            console.error("Error loading Tawk.to script:", error);
+            setChatError("Failed to load live chat script.");
+            toast({ title: "Chat Error", description: "Could not load the live chat widget.", variant: "destructive" });
+        };
+
+        s0?.parentNode?.insertBefore(s1, s0);
+        console.log("Tawk.to script injected.");
+      }
     }
 
+    // Cleanup function is generally not needed for Tawk.to standard embed
+    // return () => { ... };
 
-     // Cleanup function (optional, Tawk.to usually handles itself well)
-     // return () => {
-     //   const script = document.getElementById('tawkto-script');
-     //   if (script) {
-     //     script.remove();
-     //   }
-     //   // Clean up global Tawk variables if necessary
-     //   delete (window as any).Tawk_API;
-     //   delete (window as any).Tawk_LoadStart;
-     //   // Remove the widget elements if needed
-     //   const widgetElements = document.querySelectorAll('[id^="tawk-"]');
-     //   widgetElements.forEach(el => el.remove());
-     //   console.log("Tawk.to script and elements cleaned up.");
-     // };
-
-  }, []); // Empty dependency array ensures this runs only once on mount
-
+  }, [toast]); // Add toast to dependency array
 
   return (
-    <html lang="en" className="light">{/* Force light theme for now - Removed extra space */}
+    // No whitespace before <html>
+    <html lang="en" className="light">
       <head>
         {/* Moved meta tags and title to head for proper HTML structure */}
         <meta charSet="utf-8"/>
@@ -114,7 +125,8 @@ export default function RootLayout({
             </div>
             <Toaster />
          </AppStateProvider>
-          {/* Tawk.to script will be injected here by the useEffect hook */}
+          {/* Tawk.to script will be injected here by the useEffect hook
+              The widget itself will be positioned by Tawk.to */}
       </body>
     </html>
   );

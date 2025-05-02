@@ -1,3 +1,4 @@
+
 // src/services/user-service.ts
 
 /**
@@ -36,15 +37,16 @@ export interface UserBookmark {
 }
 
 /**
- * Represents a points transfer transaction.
+ * Represents a points transfer or earning/redemption transaction.
  */
 export interface PointsTransaction {
     id: string;
     timestamp: string;
-    senderId: string;
-    recipientId: string;
-    points: number;
-    type: 'sent' | 'received';
+    senderId: string; // 'system' for earned/redeemed
+    recipientId: string; // 'system' for redeemed
+    points: number; // Positive for earned/received, negative for sent/redeemed
+    type: 'sent' | 'received' | 'earned' | 'redeemed'; // Added earned/redeemed types
+    description?: string; // e.g., 'Daily Login Bonus', 'Referral Bonus', 'Redeemed for Wallet Credit'
 }
 
 /**
@@ -89,7 +91,7 @@ export interface Referral {
 let userGamificationData: Record<string, UserGamification> = {
     // Example data for a user (keys would be actual user IDs)
     'user_abc123': {
-        points: 150,
+        points: 155, // Increased points
         badges: [
             { id: 'badge_first_booking', name: 'First Booking', description: 'Completed your first parking reservation.', iconName: 'Sparkles', earnedDate: '2024-07-28' },
             { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Flag', earnedDate: '2024-07-29' }, // Changed icon to Flag
@@ -127,7 +129,8 @@ let userBookmarks: Record<string, UserBookmark[]> = {
 // Mock store for points transactions (optional, could be part of gamification history)
 let pointsTransactions: Record<string, PointsTransaction[]> = {
      'user_abc123': [
-         { id: 'pts_txn_ref1', timestamp: new Date(Date.now() - 5*86400000).toISOString(), senderId: 'system', recipientId: 'user_abc123', points: 50, type: 'received' } // Example referral bonus
+         { id: 'pts_txn_ref1', timestamp: new Date(Date.now() - 5*86400000).toISOString(), senderId: 'system', recipientId: 'user_abc123', points: 50, type: 'earned', description: 'Referral Bonus' }, // Example referral bonus
+          { id: 'pts_txn_daily1', timestamp: new Date(Date.now() - 2*86400000).toISOString(), senderId: 'system', recipientId: 'user_abc123', points: 5, type: 'earned', description: 'Daily Login Bonus' }, // Example daily login
      ],
      'user_def456': [],
 };
@@ -213,17 +216,32 @@ export async function resetParkingExtensions(userId: string): Promise<boolean> {
 }
 
 /**
- * Awards points to a user.
+ * Awards points to a user and records the transaction.
  * @param userId The ID of the user.
  * @param pointsToAdd The number of points to add.
+ * @param description Optional description for the transaction.
  * @returns A promise resolving to the updated total points.
  */
-export async function awardPoints(userId: string, pointsToAdd: number): Promise<number> {
+export async function awardPoints(userId: string, pointsToAdd: number, description?: string): Promise<number> {
     await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
     const data = await getUserGamification(userId); // Ensure data exists
     data.points += pointsToAdd;
     userGamificationData[userId] = data; // Update mock store
-    console.log(`Awarded ${pointsToAdd} points to user ${userId}. New total: ${data.points}`);
+
+    // Record transaction
+    const earnTx: PointsTransaction = {
+        id: `pts_txn_earn_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        senderId: 'system',
+        recipientId: userId,
+        points: pointsToAdd,
+        type: 'earned',
+        description: description || 'Points earned',
+    };
+    if (!pointsTransactions[userId]) pointsTransactions[userId] = [];
+    pointsTransactions[userId].push(earnTx);
+
+    console.log(`Awarded ${pointsToAdd} points to user ${userId}. Description: ${description || 'N/A'}. New total: ${data.points}`);
     return data.points;
 }
 
@@ -327,8 +345,24 @@ export async function transferPoints(
     // Record the transaction (optional)
     const timestamp = new Date().toISOString();
     const transactionId = `pts_txn_${Date.now()}`;
-    const senderTx: PointsTransaction = { id: transactionId + '_s', timestamp, senderId, recipientId, points: pointsToTransfer, type: 'sent' };
-    const recipientTx: PointsTransaction = { id: transactionId + '_r', timestamp, senderId, recipientId, points: pointsToTransfer, type: 'received' };
+    const senderTx: PointsTransaction = {
+        id: transactionId + '_s',
+        timestamp,
+        senderId,
+        recipientId,
+        points: -pointsToTransfer, // Negative for sender
+        type: 'sent',
+        description: `Sent to ${recipientData.referralCode || recipientId.substring(0,8)}...` // Use referral code if available
+    };
+    const recipientTx: PointsTransaction = {
+        id: transactionId + '_r',
+        timestamp,
+        senderId,
+        recipientId,
+        points: pointsToTransfer,
+        type: 'received',
+        description: `Received from ${senderData.referralCode || senderId.substring(0,8)}...`
+    };
 
     if (!pointsTransactions[senderId]) pointsTransactions[senderId] = [];
     if (!pointsTransactions[recipientId]) pointsTransactions[recipientId] = [];
@@ -355,6 +389,84 @@ export async function getPointsTransactions(userId: string, limit: number = 10):
     const transactions = pointsTransactions[userId] || [];
     // Sort by timestamp descending and take limit
     return transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+}
+
+/**
+ * Simulates redeeming points for wallet credit.
+ * @param userId The ID of the user redeeming points.
+ * @param pointsToRedeem The number of points to redeem.
+ * @param conversionRate The rate at which points convert to wallet currency (e.g., 0.10 ZMW per point).
+ * @returns A promise resolving to details of the redemption or null if failed.
+ * @throws Error if user not found, insufficient points, or wallet update fails.
+ */
+export async function redeemPoints(
+    userId: string,
+    pointsToRedeem: number,
+    conversionRate: number = 0.10 // Default to K0.10 per point
+): Promise<{ redeemedAmount: number; newPointsBalance: number; newWalletBalance: number; transaction: PointsTransaction } | null> {
+    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate delay
+
+    if (pointsToRedeem <= 0) {
+        throw new Error("Points to redeem must be positive.");
+    }
+
+    const gamificationData = await getUserGamification(userId);
+    if (gamificationData.points < pointsToRedeem) {
+        throw new Error(`Insufficient points. You only have ${gamificationData.points}.`);
+    }
+
+    // Ensure wallet exists
+    if (!userWallets[userId]) {
+         userWallets[userId] = { balance: 0, currency: 'ZMW' };
+    }
+    if (!userTransactions[userId]) {
+        userTransactions[userId] = [];
+    }
+     if (!pointsTransactions[userId]) {
+        pointsTransactions[userId] = [];
+     }
+
+    const redeemedAmount = pointsToRedeem * conversionRate;
+
+    // Update points
+    gamificationData.points -= pointsToRedeem;
+    userGamificationData[userId] = gamificationData;
+
+    // Update wallet balance
+    userWallets[userId].balance += redeemedAmount;
+
+    // Record points transaction
+    const timestamp = new Date().toISOString();
+    const pointsTx: PointsTransaction = {
+        id: `pts_txn_redeem_${Date.now()}`,
+        timestamp,
+        senderId: userId, // User 'sends' points to system
+        recipientId: 'system', // System 'receives' points
+        points: -pointsToRedeem, // Negative for redemption
+        type: 'redeemed',
+        description: `Redeemed for K ${redeemedAmount.toFixed(2)} wallet credit`,
+    };
+    pointsTransactions[userId].push(pointsTx);
+
+    // Record wallet transaction
+     const walletTx: WalletTransaction = {
+         id: `txn_redeem_${Date.now()}`,
+         type: 'points_redemption', // Use a specific type if needed
+         amount: redeemedAmount, // Positive amount added to wallet
+         description: `Credit from redeeming ${pointsToRedeem} points`,
+         timestamp,
+         paymentMethodUsed: 'points', // Indicate source
+     };
+     userTransactions[userId].push(walletTx);
+
+    console.log(`User ${userId} redeemed ${pointsToRedeem} points for K ${redeemedAmount.toFixed(2)}. New points: ${gamificationData.points}. New wallet balance: ${userWallets[userId].balance}.`);
+
+    return {
+        redeemedAmount,
+        newPointsBalance: gamificationData.points,
+        newWalletBalance: userWallets[userId].balance,
+        transaction: pointsTx, // Return the points transaction for potential receipt
+    };
 }
 
 
@@ -627,7 +739,7 @@ export async function applyReferralCode(referredUserId: string, referralCode: st
     console.log(`Recorded referral: ${referringUserId} referred ${referredUserId}`);
 
     // Optional: Give the new user an initial bonus for using a code
-    await awardPoints(referredUserId, 25); // Example: 25 points for signing up with code
+    await awardPoints(referredUserId, 25, "Signup Referral Bonus"); // Example: 25 points for signing up with code
 
     return true;
 }
@@ -645,7 +757,7 @@ export async function processReferralBonus(referredUserId: string): Promise<void
         const bonusPoints = 50; // Example bonus amount
 
         // Award points to referrer
-        await awardPoints(referringUserId, bonusPoints);
+        await awardPoints(referringUserId, bonusPoints, `Bonus for referring ${referral.referredUserName || referredUserId}`);
         // Award badge to referrer
         await awardBadge(referringUserId, 'badge_referrer');
 
@@ -677,7 +789,7 @@ export async function applyPromoCode(promoCode: string, userId: string, context?
     if (codeUpper === 'WELCOME10') {
         // Award points directly (example)
         const points = 10;
-        await awardPoints(userId, points);
+        await awardPoints(userId, points, "Promo Code: WELCOME10");
         return { success: true, message: `Promo code applied! ${points} bonus points added to your account.`, pointsAwarded: points };
     } else if (codeUpper === 'PARKFREE5') {
         // Apply discount to next parking (example, needs integration with cost calculation)
@@ -691,4 +803,3 @@ export async function applyPromoCode(promoCode: string, userId: string, context?
 
     return { success: false, message: "Invalid or expired promo code." };
 }
-
