@@ -59,12 +59,15 @@ const now = Date.now();
 const futureDate = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
 const pastDate = (days: number) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
 
-const sampleParkingLots: ParkingLot[] = [
-  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Anytown', capacity: 50, latitude: 34.0522, longitude: -118.2437, services: ['EV Charging', 'Mobile Money Agent', 'Wifi'], ownerUserId: 'usr_1', subscriptionStatus: 'active' }, // usr_1 owns this, active subscription
-  { id: 'lot_B', name: 'Airport Lot B', address: '456 Airport Rd, Anytown', capacity: 150, latitude: 34.0550, longitude: -118.2500, services: ['Restroom', 'EV Charging'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: futureDate(15) }, // usr_2 owns this, on trial
-  { id: 'lot_C', name: 'Mall Parking Deck', address: '789 Retail Ave, Anytown', capacity: 200, latitude: 34.0500, longitude: -118.2400, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: pastDate(5) }, // usr_5 owns this, trial expired
-  { id: 'lot_D', name: 'University Campus Lot', address: '1 College Way, Anytown', capacity: 80, latitude: 34.0580, longitude: -118.2450, ownerUserId: 'usr_2', subscriptionStatus: 'inactive' }, // usr_2 also owns this, inactive
+let sampleParkingLots: ParkingLot[] = [
+  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active' }, // Added Restroom
+  { id: 'lot_B', name: 'Airport Lot B (KKIA)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: futureDate(15) }, // Removed EV Charging, Added Wifi
+  { id: 'lot_C', name: 'East Park Mall Deck', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: pastDate(5) }, // Added EV Charging
+  { id: 'lot_D', name: 'Levy Junction Upper Level', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active' }, // Changed status to active, added Valet, Wifi
+  { id: 'lot_E', name: 'Arcades Park & Shop', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active'}, // New Lot
+  { id: 'lot_F', name: 'UTH Parking Zone 1', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive' }, // New Lot - Inactive
 ];
+
 
 /**
  * Asynchronously retrieves a list of available parking lots.
@@ -157,8 +160,8 @@ export async function getAvailableParkingLots(userRole: string = 'User', userId?
       // Owners see all lots they own, regardless of subscription status
       return fetchedLots.filter(lot => lot.ownerUserId === userId);
   } else {
-      // Regular users only see lots that are 'active' or in 'trial'
-      return fetchedLots.filter(lot => lot.subscriptionStatus === 'active' || lot.subscriptionStatus === 'trial');
+      // Regular users only see lots that are 'active' or in 'trial' (and not expired)
+      return fetchedLots.filter(lot => lot.subscriptionStatus === 'active' || (lot.subscriptionStatus === 'trial' && (!lot.trialEndDate || new Date(lot.trialEndDate) >= new Date())));
   }
 }
 
@@ -201,8 +204,12 @@ export async function updateParkingLotServices(lotId: string, services: ParkingL
         // Update cache if online
         if (typeof window !== 'undefined' && navigator.onLine) {
             const cacheKey = 'cachedParkingLots';
-            localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
-             localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+             try {
+                localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
+                localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+             } catch (e) {
+                 console.error("Failed to update cache after service update:", e);
+             }
         }
         return true;
     }
@@ -220,8 +227,12 @@ export async function updateLotSubscriptionStatus(lotId: string, status: Parking
         // Update cache if online
         if (typeof window !== 'undefined' && navigator.onLine) {
             const cacheKey = 'cachedParkingLots';
-            localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
-            localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+             try {
+                 localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
+                 localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+             } catch (e) {
+                 console.error("Failed to update cache after subscription update:", e);
+             }
         }
         return true;
     }
