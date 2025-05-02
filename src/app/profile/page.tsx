@@ -13,15 +13,17 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2, WifiOff
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles } from 'lucide-react'; // Added Bookmark icons, Edit2, Trash2, WifiOff, UserPlus, Sparkles
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
-import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark } from '@/services/user-service'; // Import bookmark types and functions
+import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
 import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction } from '@/services/wallet-service'; // Import wallet service
 import TopUpModal from '@/components/wallet/TopUpModal'; // Import TopUpModal
 import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendMoneyModal
+import PayForOtherModal from '@/components/wallet/PayForOtherModal'; // Import PayForOtherModal
+import TransferPointsModal from '@/components/gamification/TransferPointsModal'; // Import TransferPointsModal
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Import Table components
 import { cn } from '@/lib/utils'; // Import cn utility
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
@@ -76,6 +78,7 @@ const CACHE_KEYS = {
     parkingHistory: (userId: string) => `cachedParkingHistory_${userId}`,
     vehicles: (userId: string) => `cachedVehicles_${userId}`,
     gamification: (userId: string) => `cachedGamification_${userId}`,
+    pointsTxns: (userId: string) => `cachedPointsTxns_${userId}`, // Added points transactions cache
     wallet: (userId: string) => `cachedUserWallet_${userId}`,
     walletTxns: (userId: string) => `cachedUserWalletTxns_${userId}`,
     bookmarks: (userId: string) => `cachedUserBookmarks_${userId}`,
@@ -169,6 +172,13 @@ const fetchUserGamification = async (userId: string): Promise<UserGamification> 
     setCachedData(CACHE_KEYS.gamification(userId), gamification);
     return gamification;
 }
+// --- Modified Points Transactions Fetch to Cache ---
+const fetchPointsTransactions = async (userId: string, limit: number = 5): Promise<PointsTransaction[]> => {
+    await new Promise(resolve => setTimeout(resolve, 350));
+    const transactions = (pointsTransactions[userId] || []).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+    setCachedData(CACHE_KEYS.pointsTxns(userId), transactions); // Cache recent txns
+    return transactions;
+}
 // --- Modified Wallet Fetch to Cache ---
 const fetchUserWallet = async (userId: string): Promise<Wallet> => {
      await new Promise(resolve => setTimeout(resolve, 200));
@@ -197,15 +207,15 @@ const updateUserDetails = async (userId: string, updates: Partial<UserDetails>):
      console.log("Simulating user details update:", userId, updates);
      // In a real app, update the backend data source
      // This mock doesn't persist changes across sessions in memory, but caches
-     const updatedDetails = {
-         name: updates.name || 'User',
-         email: updates.email || 'user@example.com',
-         phone: updates.phone || '+260 999 999 999',
-         avatarUrl: updates.avatarUrl,
-         memberSince: '2024-01-01', // Keep original
-         role: 'User', // Keep original role
-         preferredPaymentMethod: updates.preferredPaymentMethod,
-         notificationPreferences: updates.notificationPreferences,
+     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User' };
+     const updatedDetails: UserDetails = {
+         ...currentDetails,
+         name: updates.name || currentDetails.name,
+         email: updates.email || currentDetails.email,
+         phone: updates.phone || currentDetails.phone,
+         avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : currentDetails.avatarUrl, // Allow setting null/empty avatar
+         preferredPaymentMethod: updates.preferredPaymentMethod || currentDetails.preferredPaymentMethod,
+         notificationPreferences: updates.notificationPreferences || currentDetails.notificationPreferences,
      };
      setCachedData(CACHE_KEYS.userDetails(userId), updatedDetails);
      return updatedDetails;
@@ -256,10 +266,12 @@ export default function ProfilePage() {
     const [gamification, setGamification] = useState<UserGamification | null>(null);
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
+    const [pointsTransactions, setPointsTransactions] = useState<PointsTransaction[]>([]); // Added state for points txns
     const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]); // State for bookmarks
 
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
+    const [isLoadingGamification, setIsLoadingGamification] = useState(true); // Added gamification loading state
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
     const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
@@ -281,6 +293,8 @@ export default function ProfilePage() {
 
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
     const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false);
+    const [isPayForOtherModalOpen, setIsPayForOtherModalOpen] = useState(false); // Added state
+    const [isTransferPointsModalOpen, setIsTransferPointsModalOpen] = useState(false); // Added state
 
     // Bookmark Modal State
     const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
@@ -304,6 +318,7 @@ export default function ProfilePage() {
 
         setIsLoading(true);
         setIsLoadingWallet(true);
+        setIsLoadingGamification(true); // Set gamification loading
         setIsLoadingVehicles(true);
         setIsLoadingBookmarks(true);
         setErrorLoading(null);
@@ -320,12 +335,13 @@ export default function ProfilePage() {
         const hasCachedHistory = loadFromCache(CACHE_KEYS.parkingHistory, setParkingHistory);
         const hasCachedVehicles = loadFromCache(CACHE_KEYS.vehicles, setVehicles);
         const hasCachedGamification = loadFromCache(CACHE_KEYS.gamification, setGamification);
+        const hasCachedPointsTxns = loadFromCache(CACHE_KEYS.pointsTxns, setPointsTransactions); // Load points txns cache
         const hasCachedWallet = loadFromCache(CACHE_KEYS.wallet, setWallet);
         const hasCachedTxns = loadFromCache(CACHE_KEYS.walletTxns, setWalletTransactions);
         const hasCachedBookmarks = loadFromCache(CACHE_KEYS.bookmarks, setBookmarks);
 
         // Immediately initialize edit states from cached/global state
-        const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName, avatarUrl: userAvatarUrl, memberSince: '', role: userRole || 'User' };
+        const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName || '', avatarUrl: userAvatarUrl || '', memberSince: '', role: userRole || 'User', phone: '', email: '', notificationPreferences: { promotions: false, updates: false } };
         setEditName(initialDetails?.name || '');
         setEditAvatarUrl(initialDetails?.avatarUrl || '');
         setEditPhone(initialDetails?.phone || '');
@@ -333,10 +349,11 @@ export default function ProfilePage() {
         setEditVehicles(getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId)) || []);
         setEditNotificationPrefs(initialDetails?.notificationPreferences || { promotions: false, updates: false });
 
-        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedWallet && hasCachedTxns && hasCachedBookmarks) {
+        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedPointsTxns && hasCachedWallet && hasCachedTxns && hasCachedBookmarks) {
             console.log("Offline: Using cached profile data.");
             setIsLoading(false);
             setIsLoadingWallet(false);
+            setIsLoadingGamification(false); // Update gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
@@ -344,13 +361,14 @@ export default function ProfilePage() {
             return; // Stop if offline and all data loaded from cache
         }
 
-        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks)) {
+        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks)) {
             console.warn("Offline: Missing some cached profile data.");
             setErrorLoading("Offline: Some profile data is unavailable.");
             // Keep loading spinners for missing sections? Or show cached data + error for missing?
             // Let's stop master loading, individual loaders will handle their state.
             setIsLoading(false);
             if (!hasCachedWallet) setIsLoadingWallet(false);
+            if (!hasCachedGamification) setIsLoadingGamification(false); // Update gamification loading
             if (!hasCachedVehicles) setIsLoadingVehicles(false);
             if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
              const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
@@ -362,12 +380,13 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
-            const [details, billing, history, vehiclesData, gamificationData, walletData, transactionsData, bookmarksData] = await Promise.all([
+            const [details, billing, history, vehiclesData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
                 fetchVehicles(userId),
                 fetchUserGamification(userId),
+                fetchPointsTransactions(userId, 5), // Fetch points transactions
                 fetchUserWallet(userId),
                 fetchUserWalletTransactions(userId, 5),
                 fetchUserBookmarks(userId),
@@ -377,6 +396,7 @@ export default function ProfilePage() {
             setParkingHistory(history);
             setVehicles(vehiclesData);
             setGamification(gamificationData);
+            setPointsTransactions(pointsTxnsData); // Set points transactions
             setWallet(walletData);
             setWalletTransactions(transactionsData);
             setBookmarks(bookmarksData);
@@ -399,12 +419,14 @@ export default function ProfilePage() {
             if (!hasCachedHistory) setParkingHistory(null);
             if (!hasCachedVehicles) setVehicles([]);
             if (!hasCachedGamification) setGamification(null);
+            if (!hasCachedPointsTxns) setPointsTransactions([]); // Reset points txns on error
             if (!hasCachedWallet) setWallet(null);
             if (!hasCachedTxns) setWalletTransactions([]);
             if (!hasCachedBookmarks) setBookmarks([]);
         } finally {
             setIsLoading(false);
             setIsLoadingWallet(false);
+            setIsLoadingGamification(false); // Update gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
         }
@@ -431,6 +453,29 @@ export default function ProfilePage() {
              toast({ title: "Wallet Update Error", description: "Could not refresh wallet balance/transactions.", variant: "destructive" });
         } finally {
              setIsLoadingWallet(false);
+        }
+    }, [userId, toast, isOnline]);
+
+    // Refresh gamification data (Online only) - Added refresh function
+    const refreshGamificationData = useCallback(async () => {
+        if (!userId || !isOnline) {
+            if (!isOnline) toast({ title: "Offline", description: "Points actions require an internet connection.", variant: "destructive" });
+            return;
+        }
+        setIsLoadingGamification(true);
+        try {
+            const [gamificationData, pointsTxnsData] = await Promise.all([
+                fetchUserGamification(userId),
+                fetchPointsTransactions(userId, 5),
+            ]);
+            setGamification(gamificationData);
+            setPointsTransactions(pointsTxnsData);
+            setLastUpdated(Date.now());
+        } catch (error) {
+            console.error("Failed to refresh gamification data:", error);
+            toast({ title: "Points Update Error", description: "Could not refresh points balance/history.", variant: "destructive" });
+        } finally {
+            setIsLoadingGamification(false);
         }
     }, [userId, toast, isOnline]);
 
@@ -461,6 +506,7 @@ export default function ProfilePage() {
             // Clear all state if not authenticated
             setIsLoading(false);
             setIsLoadingWallet(false);
+            setIsLoadingGamification(false); // Clear gamification loading
             setIsLoadingVehicles(false);
             setIsLoadingBookmarks(false);
             setUserDetails(null);
@@ -468,6 +514,7 @@ export default function ProfilePage() {
             setParkingHistory(null);
             setVehicles([]);
             setGamification(null);
+            setPointsTransactions([]); // Clear points txns
             setWallet(null);
             setWalletTransactions([]);
             setBookmarks([]);
@@ -500,7 +547,7 @@ export default function ProfilePage() {
     };
      const handleDownloadHistory = () => {
          const completed = parkingHistory?.filter(h => h.status === 'Completed') || [];
-         console.log("Download history (parking & wallet):", { parking: completed, wallet: walletTransactions });
+         console.log("Download history (parking, wallet, points):", { parking: completed, wallet: walletTransactions, points: pointsTransactions });
          toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
          // TODO: Implement CSV/PDF generation
      };
@@ -538,7 +585,7 @@ export default function ProfilePage() {
         }
         // Add more validation for email, phone, plates etc.
         const primaryVehicles = editVehicles.filter(v => v.isPrimary).length;
-         if (primaryVehicles !== 1) {
+         if (primaryVehicles !== 1 && editVehicles.length > 0) { // Allow saving with zero vehicles initially
              toast({ title: "Vehicle Error", description: "Please select exactly one primary vehicle.", variant: "destructive" });
              return;
          }
@@ -605,12 +652,12 @@ export default function ProfilePage() {
         setEditVehicles(prev => [...prev, { id: `new_${Date.now()}`, make: '', model: '', plateNumber: '', isPrimary: prev.length === 0 }]);
      };
      const handleRemoveVehicle = (id: string) => {
-          // Prevent removing the last vehicle or the primary if it's the only one
-          if (editVehicles.length <= 1) {
-               toast({ title: "Cannot Remove", description: "You must have at least one vehicle.", variant: "destructive" });
+          // Prevent removing the last vehicle if it's primary
+          const vehicleToRemove = editVehicles.find(v => v.id === id);
+          if (editVehicles.length === 1 && vehicleToRemove?.isPrimary) {
+               toast({ title: "Cannot Remove", description: "You must have at least one vehicle. Add another before removing.", variant: "destructive" });
                return;
           }
-         const vehicleToRemove = editVehicles.find(v => v.id === id);
          if (vehicleToRemove?.isPrimary) {
               toast({ title: "Cannot Remove", description: "Cannot remove the primary vehicle. Set another as primary first.", variant: "destructive" });
               return;
@@ -727,7 +774,16 @@ export default function ProfilePage() {
             case 'send': return <ArrowUpRight className="h-4 w-4 text-orange-600" />;
             case 'receive': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
             case 'payment': return <DollarSign className="h-4 w-4 text-red-600" />;
+            case 'payment_other': return <Users className="h-4 w-4 text-purple-600" />; // Icon for paying for others
             default: return <WalletIcon className="h-4 w-4 text-muted-foreground" />;
+        }
+    };
+
+    const getPointsTransactionIcon = (type: PointsTransaction['type']) => {
+        switch(type) {
+            case 'sent': return <ArrowUpRight className="h-4 w-4 text-orange-600" />;
+            case 'received': return <ArrowDownLeft className="h-4 w-4 text-blue-600" />;
+            default: return <Sparkles className="h-4 w-4 text-yellow-500" />;
         }
     };
 
@@ -897,7 +953,7 @@ export default function ProfilePage() {
                                      {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
                                 </Button>
                              </div>
-                              {isLoadingWallet && !wallet ? <Skeleton className="h-40 w-full"/> : (
+                              {isLoadingWallet && !wallet ? <Skeleton className="h-44 w-full"/> : (
                                  <>
                                      <Card className="p-4 mb-4 bg-gradient-to-br from-primary/80 to-primary text-primary-foreground rounded-lg shadow-md">
                                          <div className="flex justify-between items-start">
@@ -912,18 +968,21 @@ export default function ProfilePage() {
                                                  <span className="sr-only">Show QR Code</span>
                                              </Button>
                                          </div>
-                                         <div className="mt-4 flex gap-2">
+                                         <div className="mt-4 flex flex-wrap gap-2"> {/* Use flex-wrap */}
                                               <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={!isOnline}>
                                                  <PlusCircle className="mr-1.5 h-4 w-4" /> Top Up
                                               </Button>
                                               <Button variant="secondary" size="sm" onClick={() => setIsSendMoneyModalOpen(true)} disabled={!isOnline || (wallet?.balance ?? 0) <= 0}>
                                                  <ArrowUpRight className="mr-1.5 h-4 w-4" /> Send
                                               </Button>
+                                              <Button variant="secondary" size="sm" onClick={() => setIsPayForOtherModalOpen(true)} disabled={!isOnline || (wallet?.balance ?? 0) <= 0}>
+                                                  <UserPlus className="mr-1.5 h-4 w-4" /> Pay for Other
+                                              </Button>
                                          </div>
                                      </Card>
 
                                     <div>
-                                         <p className="text-sm font-medium mb-2">Recent Transactions</p>
+                                         <p className="text-sm font-medium mb-2">Recent Wallet Transactions</p>
                                          {walletTransactions.length > 0 ? (
                                              <div className="space-y-2">
                                                  {walletTransactions.map(txn => (
@@ -1140,10 +1199,15 @@ export default function ProfilePage() {
 
                         {/* Gamification Section */}
                         <section className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Badges</h3>
-                             {isLoading && !gamification ? <Skeleton className="h-36 w-full"/> : (
+                             <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Points</h3>
+                                <Button variant="ghost" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
+                                    {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Refresh
+                                </Button>
+                             </div>
+                             {isLoadingGamification && !gamification ? <Skeleton className="h-48 w-full"/> : (
                                 <>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                         <Card className="flex items-center justify-between p-4">
                                             <div className="flex items-center gap-3">
                                                 <SparklesIcon className="h-6 w-6 text-primary" />
@@ -1160,6 +1224,41 @@ export default function ProfilePage() {
                                             </div>
                                             <Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool || !isOnline} />
                                         </Card>
+                                    </div>
+                                    <Button
+                                        variant="outline" size="sm" className="w-full mb-4"
+                                        onClick={() => setIsTransferPointsModalOpen(true)}
+                                        disabled={!isOnline || (gamification?.points ?? 0) <= 0}
+                                    >
+                                        <Gift className="mr-2 h-4 w-4" /> Transfer Points to Friend
+                                    </Button>
+                                     <div className="mt-4">
+                                        <p className="text-sm font-medium mb-2">Recent Points Activity:</p>
+                                         {pointsTransactions.length > 0 ? (
+                                             <div className="space-y-2">
+                                                 {pointsTransactions.map(txn => (
+                                                     <div key={txn.id} className="flex items-center justify-between p-2 border rounded-md text-sm bg-background hover:bg-muted/50">
+                                                         <div className="flex items-center gap-2 overflow-hidden">
+                                                             {getPointsTransactionIcon(txn.type)}
+                                                             <div className="flex-1 truncate">
+                                                                  <p className="text-xs font-medium truncate">
+                                                                     {txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` : `Received from ${txn.senderId.substring(0,8)}...`}
+                                                                 </p>
+                                                                 <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
+                                                             </div>
+                                                         </div>
+                                                         <span className={cn(
+                                                             "font-semibold text-xs whitespace-nowrap",
+                                                             txn.type === 'received' ? "text-green-600" : "text-red-600"
+                                                         )}>
+                                                             {txn.type === 'received' ? '+' : '-'}{txn.points} points
+                                                         </span>
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                         ) : (
+                                             <p className="text-sm text-muted-foreground text-center py-3">No recent points activity.</p>
+                                         )}
                                     </div>
                                      <div className="mt-4">
                                         <p className="text-sm font-medium mb-2">Earned Badges:</p>
@@ -1274,13 +1373,13 @@ export default function ProfilePage() {
                     setTimeout(() => setReportingReservation(null), 300);
                 }}
                 reservation={reportingReservation}
-                userId={userId}
+                userId={userId || ''} // Pass userId or empty string
             />
              {/* Top Up Modal */}
             <TopUpModal
                 isOpen={isTopUpModalOpen}
                 onClose={() => setIsTopUpModalOpen(false)}
-                userId={userId}
+                userId={userId || ''} // Pass userId or empty string
                 currentBalance={wallet?.balance ?? 0}
                 currency={wallet?.currency ?? 'ZMW'}
                 onSuccess={refreshWalletData} // Refresh data on success
@@ -1289,11 +1388,29 @@ export default function ProfilePage() {
             <SendMoneyModal
                 isOpen={isSendMoneyModalOpen}
                 onClose={() => setIsSendMoneyModalOpen(false)}
-                userId={userId}
+                userId={userId || ''} // Pass userId or empty string
                 currentBalance={wallet?.balance ?? 0}
                 currency={wallet?.currency ?? 'ZMW'}
                 onSuccess={refreshWalletData} // Refresh data on success
             />
+             {/* Pay for Other Modal */}
+             <PayForOtherModal
+                isOpen={isPayForOtherModalOpen}
+                onClose={() => setIsPayForOtherModalOpen(false)}
+                payerId={userId || ''} // Pass userId or empty string
+                payerBalance={wallet?.balance ?? 0}
+                currency={wallet?.currency ?? 'ZMW'}
+                onSuccess={refreshWalletData} // Refresh payer's wallet data
+            />
+             {/* Transfer Points Modal */}
+             <TransferPointsModal
+                isOpen={isTransferPointsModalOpen}
+                onClose={() => setIsTransferPointsModalOpen(false)}
+                senderId={userId || ''} // Pass userId or empty string
+                currentPoints={gamification?.points ?? 0}
+                onSuccess={refreshGamificationData} // Refresh sender's points data
+            />
+
 
              {/* Add/Edit Bookmark Modal */}
              <Dialog open={isBookmarkModalOpen} onOpenChange={handleBookmarkModalClose}>
@@ -1353,7 +1470,7 @@ const ProfileSkeleton = () => (
          {/* Wallet Skeleton */}
          <div className="space-y-4">
             <Skeleton className="h-6 w-1/4 mb-3" />
-            <Skeleton className="h-32 w-full mb-4 rounded-lg" /> {/* Balance card */}
+            <Skeleton className="h-36 w-full mb-4 rounded-lg" /> {/* Balance card + buttons */}
             <Skeleton className="h-5 w-1/3 mb-2"/> {/* Transactions Title */}
             <Skeleton className="h-10 w-full rounded-md"/>
             <Skeleton className="h-10 w-full rounded-md"/>
@@ -1390,7 +1507,10 @@ const ProfileSkeleton = () => (
                 <Skeleton className="h-20 w-full rounded-md" />
                 <Skeleton className="h-20 w-full rounded-md" />
             </div>
-            <Skeleton className="h-5 w-1/4 mt-4" />
+             <Skeleton className="h-9 w-full mt-2 rounded-md"/> {/* Transfer Button */}
+            <Skeleton className="h-5 w-1/4 mt-4" /> {/* History Title */}
+             <Skeleton className="h-10 w-full rounded-md"/> {/* History Item */}
+            <Skeleton className="h-5 w-1/4 mt-4" /> {/* Badges Title */}
             <div className="flex gap-2"> <Skeleton className="h-8 w-20 rounded-full"/> <Skeleton className="h-8 w-24 rounded-full"/></div>
         </div>
          <Separator />
@@ -1409,3 +1529,5 @@ const ProfileSkeleton = () => (
         </div>
     </div>
 );
+
+    

@@ -12,6 +12,7 @@ export interface WalletTransaction {
   relatedUserId?: string; // For send/receive or payment_other
   partnerId?: string; // For payments
   parkingRecordId?: string; // Optional link to parking record for payments
+  paymentMethodUsed?: string; // Record the specific method (e.g., 'card_visa_contactless', 'mobile_money_mtn')
 }
 
 /**
@@ -30,7 +31,7 @@ let userWallets: Record<string, Wallet> = {
 };
 let userTransactions: Record<string, WalletTransaction[]> = {
     'user_abc123': [
-        { id: 'txn_1', type: 'top-up', amount: 50.00, description: 'Top up via Mobile Money', timestamp: new Date(Date.now() - 86400000).toISOString() },
+        { id: 'txn_1', type: 'top-up', amount: 50.00, description: 'Top up via Mobile Money MTN', paymentMethodUsed: 'mobile_money_mtn', timestamp: new Date(Date.now() - 86400000).toISOString() },
         { id: 'txn_2', type: 'payment', amount: -15.00, description: 'Payment at Downtown Garage Cafe', partnerId: 'partner_cafe_1', timestamp: new Date(Date.now() - 3600000).toISOString() },
         { id: 'txn_3', type: 'send', amount: -10.00, description: 'Sent to user_def456', relatedUserId: 'user_def456', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
          { id: 'txn_4', type: 'receive', amount: 5.50, description: 'Received from user_ghi789', relatedUserId: 'user_ghi789', timestamp: new Date(Date.now() - 2 * 3600000).toISOString() },
@@ -73,10 +74,10 @@ export async function getWalletTransactions(userId: string, limit: number = 10):
  * Simulates topping up a user's wallet.
  * @param userId The ID of the user.
  * @param amount The amount to add.
- * @param method Description of the top-up method.
+ * @param paymentMethodValue The specific payment method value used (e.g., 'mobile_money_mtn', 'card_visa_contactless').
  * @returns A promise resolving to the new wallet balance.
  */
-export async function topUpWallet(userId: string, amount: number, method: string): Promise<number> {
+export async function topUpWallet(userId: string, amount: number, paymentMethodValue: string): Promise<number> {
     await new Promise(resolve => setTimeout(resolve, 600)); // Simulate delay
     if (amount <= 0) throw new Error("Top-up amount must be positive.");
 
@@ -87,20 +88,32 @@ export async function topUpWallet(userId: string, amount: number, method: string
         userTransactions[userId] = [];
     }
 
+    // --- POS Integration Point ---
+    // If paymentMethodValue indicates a POS method (card, fingerprint),
+    // the actual payment authorization should have happened *before* calling this function.
+    // This function primarily records the successful transaction after POS confirms.
+    // If it's a mobile money method, this might trigger a USSD push or API call to the provider.
+    // For this simulation, we assume payment is already authorized if it reaches here.
+    console.log(`Recording top-up for ${userId} via method ${paymentMethodValue}. Payment assumed authorized.`);
+
+
     userWallets[userId].balance += amount;
 
     const newTxn: WalletTransaction = {
         id: `txn_${Date.now()}`,
         type: 'top-up',
         amount: amount,
-        description: `Top up via ${method}`,
+        // Make description more specific based on method value
+        description: `Top up via ${paymentMethodValue.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
+        paymentMethodUsed: paymentMethodValue, // Store the specific method used
         timestamp: new Date().toISOString(),
     };
     userTransactions[userId].push(newTxn);
 
-    console.log(`Topped up ${userId} by ${amount}. New balance: ${userWallets[userId].balance}`);
+    console.log(`Recorded top-up for ${userId} by ${amount}. New balance: ${userWallets[userId].balance}`);
     return userWallets[userId].balance;
 }
+
 
 /**
  * Simulates sending money from one user to another.
@@ -123,7 +136,7 @@ export async function sendMoney(senderId: string, recipientIdentifier: string, a
     }
      if (!userTransactions[senderId]) {
         userTransactions[senderId] = [];
-    }
+     }
 
     // Deduct from sender
     userWallets[senderId].balance -= amount;
@@ -275,3 +288,5 @@ export async function getMockUsersForTransfer(): Promise<{ id: string, name: str
          name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
      }));
 }
+
+    
