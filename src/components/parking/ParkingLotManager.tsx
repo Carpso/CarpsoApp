@@ -488,71 +488,81 @@ export default function ParkingLotManager() {
    const fetchLocationsData = useCallback(async (forceRefresh = false) => {
      setIsLoadingLocations(true);
      setError(null);
-     try {
-         let fetchedLocations: ParkingLot[] | null = null;
-         const cacheKey = 'cachedParkingLots';
-         const cacheTimestampKey = 'cachedParkingLotsTimestamp';
-         const maxCacheAge = 60 * 60 * 1000; // 1 hour in milliseconds
+     let fetchedLocations: ParkingLot[] | null = null;
+     const cacheKey = 'cachedParkingLots';
+     const cacheTimestampKey = 'cachedParkingLotsTimestamp';
+     const maxCacheAge = 60 * 60 * 1000; // 1 hour in milliseconds
 
-         // Try loading from cache first unless forceRefresh is true
-         if (!forceRefresh && typeof window !== 'undefined') {
-             const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
-             const cachedData = localStorage.getItem(cacheKey);
-             if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
-                  try {
-                     fetchedLocations = JSON.parse(cachedData);
-                     console.log("Using valid cached parking lots.");
-                  } catch {
-                      console.error("Failed to parse cached locations");
-                      localStorage.removeItem(cacheKey);
-                      localStorage.removeItem(cacheTimestampKey);
-                  }
-             }
+     // Try loading from cache first unless forceRefresh is true
+     if (!forceRefresh && typeof window !== 'undefined') {
+         const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
+         const cachedData = localStorage.getItem(cacheKey);
+         if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
+              try {
+                 fetchedLocations = JSON.parse(cachedData);
+                 console.log("Using valid cached parking lots.");
+              } catch {
+                  console.error("Failed to parse cached locations");
+                  localStorage.removeItem(cacheKey);
+                  localStorage.removeItem(cacheTimestampKey);
+              }
          }
-
-         // If no valid cache or forcing refresh, and online, fetch fresh data
-         if ((!fetchedLocations || forceRefresh) && isOnline) {
-             try {
-                 console.log("Fetching fresh parking lots...");
-                 fetchedLocations = await getAvailableParkingLots();
-                 // Cache the fresh data if on client
-                 if (typeof window !== 'undefined') {
-                     try {
-                         localStorage.setItem(cacheKey, JSON.stringify(fetchedLocations));
-                         localStorage.setItem(cacheTimestampKey, Date.now().toString());
-                         console.log("Cached fresh parking lots.");
-                     } catch (e) {
-                         console.error("Failed to cache parking lots:", e);
-                     }
-                 }
-             } catch (fetchError) {
-                 console.error("Failed to fetch fresh parking locations:", fetchError);
-                 // If fetch fails but we had cached data from earlier, keep it
-                 if (!fetchedLocations) {
-                     setError("Could not load parking locations. Please check connection.");
-                 } else {
-                      console.warn("Online fetch failed, continuing with previously cached data.");
-                 }
-             }
-         } else if (!fetchedLocations && !isOnline) {
-             // Offline and no valid cache
-             setError("Offline: Could not load parking data.");
-         }
-
-         if (fetchedLocations) {
-             setLocations(fetchedLocations);
-             // Keep previous selection if it's still valid, otherwise clear
-             setSelectedLocationId(prevId => fetchedLocations!.some(loc => loc.id === prevId) ? prevId : null);
-         }
-
-     } catch (err) {
-       console.error("Error processing parking locations:", err);
-       setError("An unexpected error occurred while loading locations.");
-     } finally {
-       setIsLoadingLocations(false);
-       setIsRefreshing(false); // Stop refresh indicator
      }
-   }, [isOnline]); // Depend on isOnline
+
+     // If no valid cache or forcing refresh, and online, fetch fresh data
+     if ((!fetchedLocations || forceRefresh) && isOnline) {
+         try {
+             console.log("Fetching fresh parking lots...");
+             const freshData = await getAvailableParkingLots();
+             // Update cache if on client
+             if (typeof window !== 'undefined') {
+                 try {
+                     localStorage.setItem(cacheKey, JSON.stringify(freshData));
+                     localStorage.setItem(cacheTimestampKey, Date.now().toString());
+                     console.log("Cached fresh parking lots.");
+                 } catch (e) {
+                     console.error("Failed to cache parking lots:", e);
+                 }
+             }
+              // Only update state if data is different to potentially avoid loop
+              if (JSON.stringify(freshData) !== JSON.stringify(locations)) {
+                 setLocations(freshData);
+              }
+              fetchedLocations = freshData; // Use fresh data
+         } catch (fetchError) {
+             console.error("Failed to fetch fresh parking locations:", fetchError);
+             // If fetch fails but we had cached data from earlier, keep it
+             if (!fetchedLocations) {
+                 setError("Could not load parking locations. Please check connection.");
+             } else {
+                  console.warn("Online fetch failed, continuing with previously cached data.");
+                   // Only update state if data is different
+                   if (JSON.stringify(fetchedLocations) !== JSON.stringify(locations)) {
+                        setLocations(fetchedLocations);
+                   }
+             }
+         }
+     } else if (fetchedLocations) {
+         // Using cache (either online and cache is fresh, or offline with valid cache)
+          // Only update state if data is different
+          if (JSON.stringify(fetchedLocations) !== JSON.stringify(locations)) {
+                setLocations(fetchedLocations);
+          }
+     } else if (!isOnline) {
+         // Offline and no valid cache
+         setError("Offline: Could not load parking data.");
+          setLocations([]); // Clear locations if offline and no cache
+     }
+
+     // Update selected location ID based on fetched/cached data
+     if (fetchedLocations) {
+        setSelectedLocationId(prevId => fetchedLocations!.some(loc => loc.id === prevId) ? prevId : null);
+     }
+
+     setIsLoadingLocations(false);
+     setIsRefreshing(false); // Stop refresh indicator
+
+   }, [isOnline, locations]); // Depend on isOnline and locations (to compare for changes)
 
    // Manual refresh handler
    const handleManualRefresh = () => {
@@ -568,7 +578,8 @@ export default function ParkingLotManager() {
 
   useEffect(() => {
     fetchLocationsData();
-  }, [fetchLocationsData]); // Run fetchLocationsData on mount and when it changes (due to isOnline)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]); // Run only when online status changes
 
     // Fetch bookmarks when user logs in or initially (respects offline)
     useEffect(() => {
@@ -697,6 +708,7 @@ export default function ParkingLotManager() {
   const getVoiceButtonIcon = () => {
         // Return placeholder or static icon before client-side hydration
         if (!isClient) {
+             // Render a simple, static placeholder icon during SSR
              return <MicOff key="ssr-mic" className="h-5 w-5 text-muted-foreground opacity-50" />;
         }
         // Rest of the logic runs only on the client
@@ -974,4 +986,3 @@ interface ParkingHistoryEntry {
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
 }
-
