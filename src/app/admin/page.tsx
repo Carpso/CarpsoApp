@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,7 +29,8 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
-
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'; // Import Recharts components
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'; // Import ShadCN chart components
 
 // Sample user data - replace with actual authentication and user management
 const sampleUsers = [
@@ -40,13 +41,52 @@ const sampleUsers = [
   { id: 'usr_5', name: 'Eve Adams', email: 'eve@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_C'] }, // Owns C
 ];
 
-// Sample Analytics Data (Structure - will be filtered)
-const sampleAnalyticsData: Record<string, { revenue: number; avgOccupancy: number; activeReservations: number }> = {
-    'lot_A': { revenue: 543.21, avgOccupancy: 80, activeReservations: 5 },
-    'lot_B': { revenue: 1234.56, avgOccupancy: 75, activeReservations: 15 },
-    'lot_C': { revenue: 987.65, avgOccupancy: 90, activeReservations: 10 },
-    'lot_D': { revenue: 321.98, avgOccupancy: 60, activeReservations: 3 },
-    'all': { revenue: 3087.40, avgOccupancy: 76, activeReservations: 33 }, // Aggregate
+// Enhanced Sample Analytics Data (Structure - will be filtered)
+const sampleAnalyticsData: Record<string, {
+    revenue: number;
+    avgOccupancy: number;
+    activeReservations: number;
+    peakHours: { hour: string; occupancy: number }[]; // Added for chart
+    dailyRevenue: { day: string; revenue: number }[]; // Added for chart
+    userSignups?: { day: string; signups: number }[]; // Admin only
+}> = {
+    'lot_A': {
+        revenue: 543.21, avgOccupancy: 80, activeReservations: 5,
+        peakHours: [ { hour: '09:00', occupancy: 70 }, { hour: '12:00', occupancy: 85 }, { hour: '17:00', occupancy: 90 }, { hour: '20:00', occupancy: 50 } ],
+        dailyRevenue: [ { day: 'Mon', revenue: 60 }, { day: 'Tue', revenue: 75 }, { day: 'Wed', revenue: 80 }, { day: 'Thu', revenue: 90 }, { day: 'Fri', revenue: 110 }, { day: 'Sat', revenue: 78 }, { day: 'Sun', revenue: 50 } ],
+    },
+    'lot_B': {
+        revenue: 1234.56, avgOccupancy: 75, activeReservations: 15,
+        peakHours: [ { hour: '07:00', occupancy: 60 }, { hour: '11:00', occupancy: 80 }, { hour: '16:00', occupancy: 85 }, { hour: '19:00', occupancy: 65 } ],
+        dailyRevenue: [ { day: 'Mon', revenue: 150 }, { day: 'Tue', revenue: 160 }, { day: 'Wed', revenue: 175 }, { day: 'Thu', revenue: 180 }, { day: 'Fri', revenue: 200 }, { day: 'Sat', revenue: 190 }, { day: 'Sun', revenue: 179.56 } ],
+    },
+    'lot_C': {
+        revenue: 987.65, avgOccupancy: 90, activeReservations: 10,
+         peakHours: [ { hour: '10:00', occupancy: 80 }, { hour: '13:00', occupancy: 95 }, { hour: '18:00', occupancy: 98 }, { hour: '21:00', occupancy: 70 } ],
+         dailyRevenue: [ { day: 'Mon', revenue: 100 }, { day: 'Tue', revenue: 110 }, { day: 'Wed', revenue: 120 }, { day: 'Thu', revenue: 130 }, { day: 'Fri', revenue: 150 }, { day: 'Sat', revenue: 197.65 }, { day: 'Sun', revenue: 180 } ],
+    },
+    'lot_D': {
+        revenue: 321.98, avgOccupancy: 60, activeReservations: 3,
+         peakHours: [ { hour: '08:00', occupancy: 50 }, { hour: '13:00', occupancy: 70 }, { hour: '16:00', occupancy: 65 }, { hour: '18:00', occupancy: 55 } ],
+         dailyRevenue: [ { day: 'Mon', revenue: 40 }, { day: 'Tue', revenue: 45 }, { day: 'Wed', revenue: 50 }, { day: 'Thu', revenue: 55 }, { day: 'Fri', revenue: 60 }, { day: 'Sat', revenue: 41.98 }, { day: 'Sun', revenue: 30 } ],
+    },
+    'all': { // Aggregate - Simple sum for revenue/res, avg for occupancy (could be more complex)
+        revenue: 3087.40, avgOccupancy: 76, activeReservations: 33,
+         // Peak hours aggregation is complex, maybe show overall trend line
+         peakHours: [ { hour: '09:00', occupancy: 65 }, { hour: '12:00', occupancy: 82 }, { hour: '17:00', occupancy: 85 }, { hour: '20:00', occupancy: 60 } ],
+         // Sum daily revenues
+         dailyRevenue: [
+              { day: 'Mon', revenue: 350 }, { day: 'Tue', revenue: 390 }, { day: 'Wed', revenue: 425 }, { day: 'Thu', revenue: 455 }, { day: 'Fri', revenue: 520 }, { day: 'Sat', revenue: 507.63 }, { day: 'Sun', revenue: 439.56 }
+         ],
+         userSignups: [ { day: 'Mon', signups: 5 }, { day: 'Tue', signups: 8 }, { day: 'Wed', signups: 6 }, { day: 'Thu', signups: 10 }, { day: 'Fri', signups: 12 }, { day: 'Sat', signups: 7 }, { day: 'Sun', signups: 4 } ],
+    },
+};
+
+// Recharts Config for Analytics
+const chartConfigBase = {
+  revenue: { label: "Revenue (ZMW)", color: "hsl(var(--chart-1))" },
+  occupancy: { label: "Occupancy (%)", color: "hsl(var(--chart-2))" },
+  signups: { label: "Signups", color: "hsl(var(--chart-3))" },
 };
 
 // Available services that can be added/managed
@@ -221,9 +261,10 @@ export default function AdminDashboardPage() {
     ? (isAdmin ? sampleUsers : []) // Only Admin sees all users
     : sampleUsers.filter(user => (isAdmin || isParkingLotOwner) && (user.associatedLots.includes(selectedLotId) || user.associatedLots.includes('*')));
 
+   // Use enhanced analytics data
    const displayedAnalytics = selectedLotId === 'all'
-    ? (isAdmin ? sampleAnalyticsData['all'] : { revenue: 0, avgOccupancy: 0, activeReservations: 0 }) // Only Admin sees all analytics
-    : sampleAnalyticsData[selectedLotId] || { revenue: 0, avgOccupancy: 0, activeReservations: 0 };
+    ? (isAdmin ? sampleAnalyticsData['all'] : { revenue: 0, avgOccupancy: 0, activeReservations: 0, peakHours: [], dailyRevenue: [], userSignups: [] }) // Only Admin sees all analytics
+    : sampleAnalyticsData[selectedLotId] || { revenue: 0, avgOccupancy: 0, activeReservations: 0, peakHours: [], dailyRevenue: [], userSignups: [] }; // Default for owner/empty
 
    const displayedPricingRules = pricingRules; // Use state directly, as it's filtered during fetch/scope change
 
@@ -263,14 +304,23 @@ export default function AdminDashboardPage() {
         downloadCSV(getDisplayLots(), `carpso-parking-lots.csv`);
     };
     const handleDownloadAnalytics = () => {
-         // For single object analytics, convert to array of objects
-        const dataToDownload = selectedLotId === 'all' && isAdmin
-                               ? [{ scope: 'All Locations', ...displayedAnalytics }]
-                               : selectedLot
-                                 ? [{ scope: selectedLot.name, ...displayedAnalytics }]
-                                 : [];
-        const scope = selectedLot ? selectedLot.name : 'all-locations';
-        downloadCSV(dataToDownload, `carpso-analytics-${scope}.csv`);
+         // Prepare data for download, potentially flatten nested data for CSV
+        const dataToDownload: Record<string, any>[] = [];
+        const scope = selectedLot ? selectedLot.name : 'All Locations';
+
+        if (selectedLotId === 'all' && isAdmin) {
+            dataToDownload.push({ scope: scope, revenue: displayedAnalytics.revenue, avgOccupancy: displayedAnalytics.avgOccupancy, activeReservations: displayedAnalytics.activeReservations });
+            // Add daily revenue and signups if needed
+            // displayedAnalytics.dailyRevenue?.forEach(d => dataToDownload.push({ scope: scope, metric: 'Daily Revenue', day: d.day, value: d.revenue }));
+            // displayedAnalytics.userSignups?.forEach(d => dataToDownload.push({ scope: scope, metric: 'User Signups', day: d.day, value: d.signups }));
+        } else if (selectedLot) {
+            dataToDownload.push({ scope: scope, revenue: displayedAnalytics.revenue, avgOccupancy: displayedAnalytics.avgOccupancy, activeReservations: displayedAnalytics.activeReservations });
+            // Add daily revenue if needed
+            // displayedAnalytics.dailyRevenue?.forEach(d => dataToDownload.push({ scope: scope, metric: 'Daily Revenue', day: d.day, value: d.revenue }));
+        }
+
+        const filenameScope = selectedLot ? selectedLot.name : 'all-locations';
+        downloadCSV(dataToDownload, `carpso-analytics-${filenameScope}.csv`);
     };
     const handleDownloadAds = () => {
         const scope = selectedLot ? selectedLot.name : 'all-locations';
@@ -347,7 +397,7 @@ export default function AdminDashboardPage() {
         setIsAdModalOpen(true);
     };
     const handleAdFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setCurrentAd(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value }));
+    const handleAdSelectChange = (name: keyof Advertisement, value: string) => setCurrentAd(prev => ({ ...prev, [name]: value });
     const handleSaveAd = async () => {
         if (!currentAd.title || !currentAd.description) { toast({ title: "Missing Info", description: "Title and description required.", variant: "destructive" }); return; }
          const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
@@ -416,10 +466,10 @@ export default function AdminDashboardPage() {
         const { name, value, type } = e.target;
         setCurrentRule(prev => ({ ...prev, [name]: type === 'number' ? (value === '' ? undefined : Number(value)) : value }));
     };
-    const handleRuleSelectChange = (name: keyof PricingRule, value: string | string[]) => setCurrentRule(prev => ({ ...prev, [name]: value }));
+    const handleRuleSelectChange = (name: keyof PricingRule, value: string | string[]) => setCurrentRule(prev => ({ ...prev, [name]: value });
     const handleRuleTimeConditionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), [name]: value } as any }));
+        setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), [name]: value } as any });
     };
     const handleRuleDaysOfWeekChange = (selectedDays: string[]) => setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), daysOfWeek: selectedDays as any } }));
     const handleRuleUserTiersChange = (selectedTiers: string[]) => setCurrentRule(prev => ({ ...prev, userTierCondition: selectedTiers as ('Basic' | 'Premium')[] }));
@@ -601,7 +651,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="container py-8 px-4 md:px-6 lg:px-8">
-      <Card className="w-full max-w-6xl mx-auto">
+      <Card className="w-full max-w-7xl mx-auto"> {/* Increased max-width */}
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
              <div>
@@ -622,7 +672,7 @@ export default function AdminDashboardPage() {
                   : errorLoadingLots ? ( <p className="text-sm text-destructive">{errorLoadingLots}</p> )
                   : (
                     <Select value={selectedLotId} onValueChange={(value) => setSelectedLotId(value)} disabled={!isAdmin && !isParkingLotOwner}>
-                        <SelectTrigger><SelectValue placeholder="Select location scope..." /></SelectTrigger>
+                        <SelectTrigger aria-label="Select location scope"><SelectValue placeholder="Select location scope..." /></SelectTrigger>
                         <SelectContent>
                             {isAdmin && <SelectItem value="all">All Locations</SelectItem>}
                             {getDisplayLots().map((lot) => (
@@ -761,10 +811,23 @@ export default function AdminDashboardPage() {
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                              {allAvailableServices.map((service) => {
                                 const isChecked = selectedLot.services?.includes(service) ?? false;
+                                const checkboxId = `service-${service}-${selectedLot.id}`; // Unique ID per lot context
                                 return (
                                    <div key={service} className="flex items-center space-x-3 p-3 border rounded-md bg-background hover:bg-accent/10 transition-colors">
-                                       <Checkbox id={`service-${service}`} checked={isChecked} onCheckedChange={(checked) => handleServiceToggle(service, !!checked)} disabled={isUpdatingServices || (!isAdmin && !isParkingLotOwner)} />
-                                       <label htmlFor={`service-${service}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center cursor-pointer">{getServiceIcon(service)} {service}</label>
+                                       <Checkbox
+                                           id={checkboxId}
+                                           checked={isChecked}
+                                           onCheckedChange={(checked) => handleServiceToggle(service, !!checked)}
+                                           disabled={isUpdatingServices || (!isAdmin && !isParkingLotOwner)}
+                                           aria-labelledby={`${checkboxId}-label`} // Associate checkbox with label
+                                       />
+                                       <label
+                                            id={`${checkboxId}-label`} // Match aria-labelledby
+                                            htmlFor={checkboxId}
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center cursor-pointer"
+                                        >
+                                           {getServiceIcon(service)} {service}
+                                       </label>
                                        {isUpdatingServices && isChecked !== (selectedLot.services?.includes(service) ?? false) && ( <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" /> )}
                                    </div> );
                              })}
@@ -930,17 +993,57 @@ export default function AdminDashboardPage() {
                  <CardContent>
                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                        <>
-                           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                               <Card><CardHeader><CardTitle className="text-lg">${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader></Card>
-                                <Card><CardHeader><CardTitle className="text-lg">{displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader></Card>
-                                <Card><CardHeader><CardTitle className="text-lg">{displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader></Card>
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                               <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><DollarSign className="h-5 w-5 text-green-600"/> ${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader></Card>
+                                <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> {displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader></Card>
+                                <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><CalendarClock className="h-5 w-5 text-orange-600"/> {displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader></Card>
                            </div>
                             {selectedLotId === 'all' && isAdmin && (
-                                 <Card className="mt-6">
-                                    <CardHeader><CardTitle>Average Revenue Across All Lots</CardTitle><CardDescription>Average revenue per lot today.</CardDescription></CardHeader>
-                                    <CardContent><p className="text-2xl font-bold">${averageRevenue.toFixed(2)}</p></CardContent>
+                                 <Card className="mb-6">
+                                    <CardHeader><CardTitle className="text-lg flex items-center gap-2"><UsersRound className="h-5 w-5 text-purple-600"/> User Signups (Last 7 Days)</CardTitle></CardHeader>
+                                    <CardContent className="h-[250px] w-full">
+                                         <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={displayedAnalytics.userSignups}>
+                                                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                                                 <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                                                 <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                                                 <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                                                 <Bar dataKey="signups" fill="var(--color-signups)" radius={4} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </CardContent>
                                  </Card> )}
-                           <p className="text-muted-foreground mt-6 text-center">More detailed charts and reports coming soon.</p>
+                            {/* Daily Revenue Chart */}
+                             <Card className="mb-6">
+                                <CardHeader><CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-5 w-5 text-green-600"/> Daily Revenue (Last 7 Days)</CardTitle></CardHeader>
+                                <CardContent className="h-[250px] w-full">
+                                    <ChartContainer config={chartConfigBase} className="h-full w-full">
+                                         <LineChart data={displayedAnalytics.dailyRevenue} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                                             <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                                             <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `$${value}`} />
+                                             <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                                             <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} dot={false} />
+                                        </LineChart>
+                                    </ChartContainer>
+                                </CardContent>
+                             </Card>
+                             {/* Peak Hours Chart */}
+                            <Card className="mb-6">
+                                <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> Peak Hour Occupancy</CardTitle></CardHeader>
+                                <CardContent className="h-[250px] w-full">
+                                     <ChartContainer config={chartConfigBase} className="h-full w-full">
+                                         <BarChart data={displayedAnalytics.peakHours} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                                             <XAxis dataKey="hour" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                                             <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `${value}%`} domain={[0, 100]} />
+                                             <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                                             <Bar dataKey="occupancy" fill="var(--color-occupancy)" radius={4} />
+                                        </BarChart>
+                                    </ChartContainer>
+                                </CardContent>
+                             </Card>
+                           <p className="text-muted-foreground mt-6 text-center text-xs">More detailed analytics coming soon.</p>
                        </>
                     ) : ( <p className="text-muted-foreground text-center py-4">Analytics are available for specific lots or by Admins for all locations.</p> )}
                  </CardContent>
@@ -969,6 +1072,20 @@ export default function AdminDashboardPage() {
                                   <div> <p className="font-medium">Payment Gateway Integration</p> <p className="text-sm text-muted-foreground">Connect to Stripe, Mobile Money, etc.</p> </div>
                                   <Button size="sm" variant="outline">Configure</Button>
                                </div> )}
+                            {/* Chat Support Integration Placeholder */}
+                            {isAdmin && (
+                                <div className="flex items-center justify-between p-4 border rounded-md">
+                                    <div> <p className="font-medium">Chat Support Integration</p> <p className="text-sm text-muted-foreground">Connect live chat service (e.g., Intercom, Tawk.to).</p> </div>
+                                    <Button size="sm" variant="outline" disabled>Configure (Coming Soon)</Button>
+                                </div>
+                            )}
+                            {/* External App Integration Placeholder */}
+                             {isAdmin && (
+                                <div className="flex items-center justify-between p-4 border rounded-md">
+                                    <div> <p className="font-medium">External App Integration</p> <p className="text-sm text-muted-foreground">Manage connections with Waze, Google Maps etc.</p> </div>
+                                    <Button size="sm" variant="outline" disabled>Manage (Coming Soon)</Button>
+                                </div>
+                            )}
                         </div>
                      ) : ( <p className="text-muted-foreground text-center py-4">Settings are available for specific lots or globally by Admins.</p> )}
                  </CardContent>
@@ -1085,3 +1202,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
