@@ -110,13 +110,13 @@ export default function ExplorePage() {
              location: ad.targetLotName || 'All Locations', // Use added name
              date: ad.endDate ? `Until ${new Date(ad.endDate).toLocaleDateString()}` : 'Ongoing',
              description: ad.description,
-             image: ad.imageUrl || `https://picsum.photos/seed/ad_${ad.id.substring(0,4)}/300/150`, // Use provided or placeholder image
+             image: ad.imageUrl || `https://picsum.photos/seed/ad_${ad.id.substring(0,4)}/400/200`, // Use provided or placeholder image
              hint: ad.associatedService ? `parking promotion ${ad.associatedService.toLowerCase().replace(' ', '-')}` : 'parking promotion business', // Hint based on service or generic
              isAd: true, // Flag to potentially style differently
              associatedService: ad.associatedService, // Pass service type
              href: "#", // Placeholder link for ads
         })),
-        ...mockEvents.map(event => ({ ...event, isAd: false })), // Keep mock events for now
+        ...mockEvents.map(event => ({ ...event, isAd: false, image: event.image || `https://picsum.photos/seed/event${event.id}/400/200`, hint: event.hint || 'parking event discount' })), // Add defaults for mock events
     ];
 
   return (
@@ -133,9 +133,9 @@ export default function ExplorePage() {
         </h2>
         {isLoadingAds ? (
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 <Skeleton className="h-60 w-full rounded-lg" />
-                 <Skeleton className="h-60 w-full rounded-lg" />
-                 <Skeleton className="h-60 w-full rounded-lg" />
+                 <Skeleton className="h-64 w-full rounded-lg" />
+                 <Skeleton className="h-64 w-full rounded-lg" />
+                 <Skeleton className="h-64 w-full rounded-lg" />
              </div>
         ) : errorLoadingAds ? (
             <div className="text-center py-10 text-destructive bg-destructive/10 rounded-md">
@@ -331,4 +331,3 @@ export default function ExplorePage() {
     </div>
   );
 }
-```
