@@ -1,7 +1,7 @@
 // src/components/parking/ParkingLotGrid.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useContext, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
 import type { ParkingLot } from '@/services/parking-lot';
 import { getParkingSpotStatus } from '@/services/parking-sensor';
@@ -37,6 +37,8 @@ import { Alert, AlertTitle, AlertDescription as AlertDialogDescriptionSub } from
 import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
 import ParkingTicket from '@/components/common/ParkingTicket'; // Import the new Ticket component
 import html2canvas from 'html2canvas'; // For downloading ticket as image
+import { formatDistanceToNowStrict } from 'date-fns'; // For relative time
+import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
 
 interface ParkingLotGridProps {
   location: ParkingLot;
@@ -52,8 +54,20 @@ interface ReservationDetails {
     userId: string | null;
 }
 
-const REFRESH_INTERVAL_MS = 60000; // 60 seconds - Reduced background refresh frequency
-const FOCUSED_REFRESH_INTERVAL_MS = 15000; // 15 seconds - More frequent when tab is active
+// Interfaces used in this component (potentially move to a types file)
+interface ParkingHistoryEntry {
+  id: string;
+  spotId: string;
+  locationName: string;
+  locationId: string;
+  startTime: string;
+  endTime: string;
+  cost: number;
+  status: 'Completed' | 'Active' | 'Upcoming';
+}
+
+const REFRESH_INTERVAL_MS = 15000; // 15 seconds - Keeping it relatively frequent while tab is active
+const BACKGROUND_REFRESH_INTERVAL_MS = 60000; // 60 seconds - Less frequent when tab is inactive
 
 export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'Basic' }: ParkingLotGridProps) {
   const { userId, isOnline } = useContext(AppStateContext)!; // Get userId and isOnline from context
@@ -179,7 +193,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
         // Fetch immediately when starting interval (or when tab becomes visible)
         fetchSpotStatuses();
 
-        const intervalDuration = isVisible ? FOCUSED_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+        const intervalDuration = isVisible ? REFRESH_INTERVAL_MS : BACKGROUND_REFRESH_INTERVAL_MS;
         console.log(`Setting refresh interval to ${intervalDuration / 1000}s (Visible: ${isVisible})`);
         intervalId = setInterval(fetchSpotStatuses, intervalDuration);
       } else {
@@ -230,7 +244,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                       clearInterval(predictionInterval);
                       setPredictionInterval(null);
                  }
-             }, FOCUSED_REFRESH_INTERVAL_MS); // Use faster refresh for dialog
+             }, REFRESH_INTERVAL_MS); // Use faster refresh for dialog
              setPredictionInterval(intervalId); // Store the interval ID
          } else {
              // Handle offline case for dialog - clear prediction/cost
@@ -245,20 +259,38 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           // Allow viewing live location even if offline (might show cached image or error)
           setLiveLocationSpotId(spot.spotId);
           setShowLiveLocation(true);
+          let occupiedMessage = `Spot ${spot.spotId} is currently occupied.`;
+           // Check if reservation end time is available and valid
+           if (spot.reservationEndTime) {
+               try {
+                   const endDate = new Date(spot.reservationEndTime);
+                   const now = new Date();
+                   if (endDate > now) {
+                        occupiedMessage += ` Expected to be free in ${formatDistanceToNowStrict(endDate)}.`;
+                   } else {
+                       occupiedMessage += ` Reservation time has passed; spot may be available soon.`;
+                   }
+               } catch (e) {
+                   // Ignore parsing errors
+               }
+           }
+           occupiedMessage += ` Click again to view live location.`;
+
+
          // Modify toast for occupied spot when offline
          if (!isOnline) {
               toast({
                  title: "Spot Status (Offline)",
-                 description: `Cached data shows ${spot.spotId} occupied. Live view might be unavailable.`,
+                 description: `Cached data shows ${spot.spotId} occupied. ${spot.reservationEndTime ? 'Expected end time may be outdated.' : ''} Live view might be unavailable.`,
                  variant: "default", // Use default style, not error
                  duration: 4000,
               });
          } else {
             toast({
                 title: "Spot Occupied",
-                description: `Spot ${spot.spotId} is currently occupied. Click again to view live location.`, // Updated description
+                description: occupiedMessage,
                 variant: "default",
-                duration: 4000,
+                duration: 5000, // Slightly longer duration
             });
          }
      }
@@ -321,7 +353,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                          <Eye className="mr-2 h-4 w-4" /> Live View
                      </Button>
                       {/* Share Button (requires Web Share API) */}
-                      {navigator.share && (
+                      {typeof navigator !== 'undefined' && navigator.share && (
                          <Button variant="outline" size="sm" onClick={() => handleShareTicket(reservationDetails)}>
                             <Share2 className="mr-2 h-4 w-4" /> Share Details
                          </Button>
@@ -437,7 +469,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
     };
 
     const handleShareTicket = async (details: ReservationDetails | null) => {
-        if (!details || !navigator.share) {
+        if (!details || typeof navigator === 'undefined' || !navigator.share) {
             toast({ title: "Sharing Not Supported", description: "Your browser doesn't support sharing.", variant: "default" });
             return;
         }
@@ -636,6 +668,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                             locationName={lastReservationDetails.locationName}
                             reservationTime={lastReservationDetails.reservationTime}
                             qrCodeValue={`CARPSO-${lastReservationDetails.spotId}-${lastReservationDetails.locationId}-${new Date(lastReservationDetails.reservationTime).getTime()}`}
+                            userId={lastReservationDetails.userId} // Pass userId for display
                         />
                     )}
                 </div>
@@ -643,7 +676,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                     <Button variant="outline" onClick={handleDownloadTicket} disabled={!lastReservationDetails}>
                         <DownloadIcon className="mr-2 h-4 w-4" /> Download
                     </Button>
-                     {navigator.share && (
+                     {typeof navigator !== 'undefined' && navigator.share && (
                         <Button variant="outline" onClick={() => handleShareTicket(lastReservationDetails)}>
                              <Share2 className="mr-2 h-4 w-4" /> Share
                         </Button>
