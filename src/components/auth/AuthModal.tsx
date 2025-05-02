@@ -41,6 +41,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [name, setName] = useState(''); // Added for sign up
   // Removed mobileMoneyNumber from state as it's not used for signup anymore
   const [licensePlate, setLicensePlate] = useState(''); // Primary license plate for sign up/sign in
+  const [ownerPhoneNumber, setOwnerPhoneNumber] = useState(''); // Added for sign up
   const [hasMultipleCars, setHasMultipleCars] = useState(false); // State for multiple cars toggle
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
@@ -60,8 +61,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   // --- MOCK AUTH FUNCTIONS (Replace with real backend calls) ---
 
   // Mock Sign In: Returns basic user info
-  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
-    console.log(`Simulating sign in with ${method}:`, { email, phone, /*mobileMoneyNumber,*/ licensePlate, otpPhone });
+  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp' | 'biometric'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
+    console.log(`Simulating sign in with ${method}:`, { email, phone, licensePlate, otpPhone });
     setIsLoading(true);
     let userFound = false;
     let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined;
@@ -149,6 +150,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
          // For now, simulate failure for these as primary sign-in methods
          userFound = false;
          toast({ title: "Sign In Method Unavailable", description: "RFID and Mobile Money sign-in are not primary methods. Please link them in your profile.", variant: "default" });
+    } else if (method === 'biometric') {
+         await new Promise(resolve => setTimeout(resolve, 900));
+         // Simulate biometric success
+         userFound = true;
+         const userId = `user_bio_${Math.random().toString(36).substring(7)}`;
+         simulatedUser = {
+             id: userId,
+             name: `Biometric User`,
+             avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
+             role: 'User'
+         };
     }
 
 
@@ -157,16 +169,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     if (userFound && simulatedUser) {
         return { success: true, user: simulatedUser };
     } else {
-        if (!['licensePlate', 'otp', 'google', 'facebook', 'apple', 'rfid', 'mobileMoney'].includes(method)) { // Avoid double toast
+        // Avoid double toast if already handled (e.g., OTP, license plate, RFID, Mobile Money)
+        if (!['otp', 'licensePlate', 'rfid', 'mobileMoney'].includes(method)) {
             toast({ title: "Sign In Failed", description: "Invalid credentials or user not found.", variant: "destructive" });
         }
         return { success: false };
     }
   };
 
-   // Mock Sign Up: Simplified Input - Email only for now, handles Admin role with code
-   const mockSignUp = async (method: 'email'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
-      console.log(`Simulating sign up with ${method}:`, { name, email, licensePlate, hasMultipleCars, selectedRole });
+   // Mock Sign Up: Handles Admin role with code
+   const mockSignUp = async (method: 'email' | 'phone' | 'mobileMoney'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => {
+      console.log(`Simulating sign up with ${method}:`, { name, email, phone, licensePlate, ownerPhoneNumber, hasMultipleCars, selectedRole });
       setIsLoading(true);
       let finalRole = selectedRole;
 
@@ -206,11 +219,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
           const userId = `user_${Math.random().toString(36).substring(7)}`;
           simulatedUser = {
               id: userId,
-              name: name || email.split('@')[0] || `User ${userId.substring(0, 4)}`,
+              name: name || email?.split('@')[0] || `User ${userId.substring(0, 4)}`,
               avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
               role: finalRole // Assign the determined role
           };
-          console.log(`Simulated saving essential signup data for user ${userId} with role ${finalRole}:`, { licensePlate, hasMultipleCars });
+          console.log(`Simulated saving essential signup data for user ${userId} with role ${finalRole}:`, { licensePlate, ownerPhoneNumber, hasMultipleCars });
       }
       setIsLoading(false);
 
@@ -242,7 +255,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   // --- END MOCK AUTH FUNCTIONS ---
 
 
-  const handleSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp') => {
+  const handleSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp' | 'biometric') => {
     const result = await mockSignIn(method);
     if (result.success && result.user) {
       toast({ title: "Sign In Successful", description: `Welcome back, ${result.user.name}!` });
@@ -251,10 +264,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     }
   };
 
-   const handleSignUp = async (method: 'email') => { // Only email signup now
+   const handleSignUp = async (method: 'email' | 'phone' | 'mobileMoney') => {
      if (!name) { toast({ title: "Missing Information", description: "Please enter your full name.", variant: "destructive" }); return; }
      if (!licensePlate) { toast({ title: "Missing Information", description: "Please enter your primary vehicle's license plate.", variant: "destructive" }); return; }
+     if (!ownerPhoneNumber) { toast({ title: "Missing Information", description: "Please enter the owner's phone number.", variant: "destructive" }); return; }
+
      if (method === 'email' && (!email || !password)) { toast({ title: "Missing Information", description: "Please enter your email address and create a password.", variant: "destructive" }); return; }
+     if (method === 'phone' && !phone) { toast({ title: "Missing Information", description: "Please enter your phone number for verification.", variant: "destructive"}); return; }
+     // Mobile money signup might require number + PIN or OTP, handled by provider interaction
+
       if (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false)) {
           toast({ title: "Admin Verification Failed", description: "Please enter a valid admin authorization code.", variant: "destructive" });
           return;
@@ -306,7 +324,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
           await handleSignIn('rfid');
       } else {
           setRfidStatus('error');
-          console.error("RFID scan failed or timed out.");
+          // console.error("RFID scan failed or timed out."); // Removed console.error
           toast({title: "RFID Scan Failed", description: "No RFID tag detected. Please try again.", variant: "destructive"});
           setIsLoading(false);
       }
@@ -355,6 +373,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             setPhone('');
             // setMobileMoneyNumber(''); // Removed
             setLicensePlate('');
+            setOwnerPhoneNumber(''); // Reset owner phone
             setHasMultipleCars(false); // Reset toggle
             setRfidStatus('idle');
             setOtpSent(false); // Reset OTP state
@@ -476,10 +495,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                </Button>
                {rfidStatus === 'scanning' && <p className="text-xs text-center text-muted-foreground">Hold your RFID tag near the reader...</p>}
 
-               {/* Biometric Sign In (Placeholder) */}
-               <Button disabled={true} variant="outline" className="w-full opacity-50 cursor-not-allowed">
-                 <Fingerprint className="mr-2 h-4 w-4" /> Sign In with Biometrics (Coming Soon)
-               </Button>
+               {/* Biometric Sign In */}
+                <Button onClick={() => handleSignIn('biometric')} disabled={isLoading || otpSent} variant="outline" className="w-full">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />} Sign In with Biometrics
+                </Button>
 
                 {/* Mobile Money Sign In (Placeholder - less common for sign-in) */}
                 <Button disabled={true} variant="outline" className="w-full opacity-50 cursor-not-allowed">
@@ -488,7 +507,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             </div>
           </TabsContent>
 
-          {/* Sign Up Tab - Simplified */}
+          {/* Sign Up Tab */}
            <TabsContent value="signup">
              <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
 
@@ -514,6 +533,13 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                           <div className="text-xs text-destructive flex items-center gap-1"><CircleAlert className="h-3 w-3"/> Error checking plate.</div>
                      )}
                  </div>
+
+                  {/* Owner Phone Number */}
+                  <div className="space-y-2">
+                      <Label htmlFor="signup-owner-phone">Owner's Phone Number*</Label>
+                      <Input id="signup-owner-phone" type="tel" placeholder="+260 XXX XXX XXX" value={ownerPhoneNumber} onChange={e => setOwnerPhoneNumber(e.target.value)} disabled={isLoading} required />
+                  </div>
+
 
                   {/* Multiple Cars Toggle */}
                   <div className="flex items-center space-x-2 pt-2">
@@ -569,30 +595,56 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                  </div>
 
 
-                 {/* Email/Password Sign Up */}
-                 <div className="space-y-2 pt-4 border-t">
-                    <Label htmlFor="signup-email">Email Address*</Label>
-                    <Input id="signup-email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} required/>
-                    <Label htmlFor="signup-password">Create Password*</Label>
-                    <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} required/>
-                    <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !email || !password || (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false))} className="w-full">
-                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
-                    </Button>
-                 </div>
+                 {/* Preferred Signup Method Selection */}
+                  <div className="space-y-2 pt-4 border-t">
+                      <Label>Preferred Sign Up Method*</Label>
 
-                  {/* Social Sign Up Options (Simplified) */}
+                      {/* Email/Password Signup */}
+                      <div className="space-y-2 border rounded-md p-3">
+                          <Label htmlFor="signup-email">Email Address*</Label>
+                          <Input id="signup-email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} required/>
+                          <Label htmlFor="signup-password">Create Password*</Label>
+                          <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} required/>
+                          <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !ownerPhoneNumber || !email || !password || (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false))} className="w-full">
+                              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
+                          </Button>
+                      </div>
+
+                      {/* Phone Number Signup */}
+                       <div className="space-y-2 border rounded-md p-3">
+                           <Label htmlFor="signup-phone">Phone Number*</Label>
+                           <Input id="signup-phone" type="tel" placeholder="+260 XXX XXX XXX" value={phone} onChange={e => setPhone(e.target.value)} disabled={isLoading} required/>
+                           {/* TODO: Add OTP verification flow for phone signup */}
+                           <Button onClick={() => handleSignUp('phone')} disabled={isLoading || !name || !licensePlate || !ownerPhoneNumber || !phone || (selectedRole === 'Admin' && (!adminAuthCode || isAdminCodeVerified === false))} className="w-full" variant="outline">
+                               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />} Sign Up with Phone (Verify OTP)
+                           </Button>
+                       </div>
+
+                      {/* Mobile Money Signup Placeholder */}
+                       <div className="border rounded-md p-3 opacity-50 cursor-not-allowed">
+                           <Label htmlFor="signup-mobile-money">Mobile Money*</Label>
+                           <Input id="signup-mobile-money" type="tel" placeholder="Enter Mobile Money Number" disabled={true} />
+                           <Button disabled={true} className="w-full mt-2" variant="outline">
+                               <Smartphone className="mr-2 h-4 w-4" /> Sign Up with Mobile Money (Coming Soon)
+                           </Button>
+                       </div>
+
+
+                  </div>
+
+                  {/* Social Sign Up Options (Simplified - usually leads to sign-in flow) */}
                  <div className="relative my-4">
                      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                     <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or sign up with</span></div>
+                     <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or connect with</span></div>
                  </div>
                   <div className="grid grid-cols-3 gap-2">
-                      <Button onClick={() => handleSignIn('google')} disabled={isLoading} variant="outline" size="icon" aria-label="Sign up with Google">
+                      <Button onClick={() => handleSignIn('google')} disabled={isLoading} variant="outline" size="icon" aria-label="Connect with Google">
                           <GoogleIcon />
                       </Button>
-                      <Button onClick={() => handleSignIn('facebook')} disabled={isLoading} variant="outline" size="icon" aria-label="Sign up with Facebook">
+                      <Button onClick={() => handleSignIn('facebook')} disabled={isLoading} variant="outline" size="icon" aria-label="Connect with Facebook">
                           <FacebookIcon />
                       </Button>
-                      <Button onClick={() => handleSignIn('apple')} disabled={isLoading} variant="outline" size="icon" aria-label="Sign up with Apple">
+                      <Button onClick={() => handleSignIn('apple')} disabled={isLoading} variant="outline" size="icon" aria-label="Connect with Apple">
                           <AppleIcon />
                       </Button>
                   </div>
