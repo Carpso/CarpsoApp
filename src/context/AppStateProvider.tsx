@@ -26,13 +26,33 @@ interface AppStateProviderProps {
 }
 
 const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
-  const [userState, setUserState] = useState<UserState>({
-    isAuthenticated: false,
-    userId: null,
-    userName: null,
-    userAvatarUrl: null,
-    userRole: null,
+  const [userState, setUserState] = useState<UserState>(() => {
+      // Initialize state from localStorage if available (client-side only)
+      if (typeof window !== 'undefined') {
+          const storedUser = localStorage.getItem('carpsoUser');
+          if (storedUser) {
+              try {
+                   const parsedUser = JSON.parse(storedUser) as UserState;
+                   // Basic validation
+                   if (parsedUser.isAuthenticated && parsedUser.userId) {
+                       return parsedUser;
+                   }
+              } catch (e) {
+                   console.error("Failed to parse stored user state:", e);
+                   localStorage.removeItem('carpsoUser'); // Clear invalid state
+              }
+          }
+      }
+      // Default initial state
+      return {
+         isAuthenticated: false,
+         userId: null,
+         userName: null,
+         userAvatarUrl: null,
+         userRole: null,
+     };
   });
+
   const [isOnline, setIsOnline] = useState(true); // Default to true, check on mount
 
    // Effect to check initial online status and add listeners
@@ -58,25 +78,33 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
 
   const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => { // Use UserRole type
     // In a real app, you'd verify credentials/token before setting state
-    setUserState({
-      isAuthenticated: true,
-      userId: userId,
-      userName: name,
-      userAvatarUrl: avatarUrl || null,
-      userRole: role || 'User', // Default to 'User' role if not provided
-    });
-    // Persist login state (e.g., localStorage, session) if needed
+     const newState: UserState = {
+       isAuthenticated: true,
+       userId: userId,
+       userName: name,
+       userAvatarUrl: avatarUrl || null,
+       userRole: role || 'User', // Default to 'User' role if not provided
+     };
+    setUserState(newState);
+    // Persist login state (e.g., localStorage)
+     if (typeof window !== 'undefined') {
+         localStorage.setItem('carpsoUser', JSON.stringify(newState));
+     }
   }, []);
 
   const logout = useCallback(() => {
-    setUserState({
-      isAuthenticated: false,
-      userId: null,
-      userName: null,
-      userAvatarUrl: null,
-      userRole: null,
-    });
-    // Clear persisted login state if needed
+      const loggedOutState: UserState = {
+        isAuthenticated: false,
+        userId: null,
+        userName: null,
+        userAvatarUrl: null,
+        userRole: null,
+      };
+    setUserState(loggedOutState);
+    // Clear persisted login state
+     if (typeof window !== 'undefined') {
+         localStorage.removeItem('carpsoUser');
+     }
     // Clear cached data on logout
     if (typeof window !== 'undefined') {
         // Clear user-specific cache keys
@@ -91,6 +119,7 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
                 key.startsWith('cachedUserWallet_') ||
                 key.startsWith('cachedUserWalletTxns_') ||
                 key.startsWith('cachedUserBookmarks_') ||
+                key.startsWith('userPreferences_') || // Clear user preferences
                 key.endsWith('_timestamp')) { // Also remove timestamps
                 localStorage.removeItem(key);
             }
@@ -101,17 +130,23 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
          localStorage.removeItem('cachedExchangeRates');
          localStorage.removeItem('cachedExchangeRates_timestamp');
          localStorage.removeItem('pinnedCarLocation'); // Clear pinned car
-         console.log("Cleared user-specific cache on logout.");
+         console.log("Cleared user-specific cache and preferences on logout.");
     }
   }, []);
 
    const updateUserProfile = useCallback((name: string, avatarUrl?: string | null) => {
-       setUserState(prevState => ({
-           ...prevState,
-           userName: name,
-           userAvatarUrl: avatarUrl !== undefined ? avatarUrl : prevState.userAvatarUrl, // Update avatar only if provided
-       }));
-       // Update persisted state if needed
+       setUserState(prevState => {
+            const newState = {
+               ...prevState,
+               userName: name,
+               userAvatarUrl: avatarUrl !== undefined ? avatarUrl : prevState.userAvatarUrl, // Update avatar only if provided
+           };
+            // Update persisted state if needed
+            if (typeof window !== 'undefined' && newState.isAuthenticated) {
+                localStorage.setItem('carpsoUser', JSON.stringify(newState));
+            }
+           return newState;
+       });
    }, []);
 
   return (

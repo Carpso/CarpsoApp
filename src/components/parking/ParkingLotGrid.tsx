@@ -26,7 +26,7 @@ import {
     DialogFooter as DialogSubFooter,
 } from "@/components/ui/dialog";
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw, Printer, Download as DownloadIcon, Share2 } from 'lucide-react'; // Added RefreshCcw, Printer, DownloadIcon, Share2
+import { Loader2, Info, Eye, BrainCircuit, AlertTriangle, DollarSign, Clock, Car, WifiOff, RefreshCcw, Printer, Download as DownloadIcon, Share2, Users, BellPlus, Timer, UserCheck, CheckCircle } from 'lucide-react'; // Added queue icons (Users, BellPlus), Timer
 import { predictParkingAvailability, PredictParkingAvailabilityOutput } from '@/ai/flows/predict-parking-availability';
 import TimedReservationSlider from './TimedReservationSlider'; // Import the new component
 import { Button } from '@/components/ui/button'; // Import Button
@@ -39,6 +39,10 @@ import ParkingTicket from '@/components/common/ParkingTicket'; // Import the new
 import html2canvas from 'html2canvas'; // For downloading ticket as image
 import { formatDistanceToNowStrict } from 'date-fns'; // For relative time
 import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
+import { joinQueue, leaveQueue, getUserQueueStatus, getQueueLength } from '@/services/queue-service'; // Import queue service functions
+import { getUserGamification, incrementParkingExtensions, UserGamification } from '@/services/user-service'; // Import gamification service functions
+
+const MAX_PARKING_EXTENSIONS_BASIC = 2; // Example limit for basic users
 
 interface ParkingLotGridProps {
   location: ParkingLot;
@@ -64,13 +68,14 @@ interface ParkingHistoryEntry {
   endTime: string;
   cost: number;
   status: 'Completed' | 'Active' | 'Upcoming';
+  extensionCount?: number; // Track extensions for history
 }
 
 const REFRESH_INTERVAL_MS = 15000; // 15 seconds - Keeping it relatively frequent while tab is active
 const BACKGROUND_REFRESH_INTERVAL_MS = 60000; // 60 seconds - Less frequent when tab is inactive
 
 export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'Basic' }: ParkingLotGridProps) {
-  const { userId, isOnline } = useContext(AppStateContext)!; // Get userId and isOnline from context
+  const { userId, isOnline, userRole } = useContext(AppStateContext)!; // Get userId, isOnline, userRole from context
   const [spots, setSpots] = useState<ParkingSpotStatus[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpotStatus | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -90,21 +95,49 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const [lastReservationDetails, setLastReservationDetails] = useState<ReservationDetails | null>(null); // Store last reservation details
   const [showTicketModal, setShowTicketModal] = useState(false); // State for ticket modal
   const ticketRef = useRef<HTMLDivElement>(null); // Ref for the ticket component for download
+  const [userQueueData, setUserQueueData] = useState<{ spotId: string; position: number }[]>([]); // User's queue positions
+  const [isQueueLoading, setIsQueueLoading] = useState(false);
+  const [userGamification, setUserGamification] = useState<UserGamification | null>(null); // User gamification status
+  const [isExtending, setIsExtending] = useState(false); // State for extension action
+  const [spotQueueLengths, setSpotQueueLengths] = useState<Record<string, number>>({}); // Store queue lengths per spot
+  const [isLoadingQueueLengths, setIsLoadingQueueLengths] = useState(false);
 
   const { toast } = useToast();
+
+  // Check if user is Premium
+  const isPremiumUser = userRole === 'Premium';
+
+  // Fetch user's gamification status (including extensions used)
+  const fetchUserGamificationData = useCallback(async () => {
+      if (!userId || !isOnline) {
+          setUserGamification(null);
+          return;
+      }
+      try {
+          const data = await getUserGamification(userId);
+          setUserGamification(data);
+      } catch (error) {
+          console.error("Failed to fetch user gamification data:", error);
+          // Optional: show toast if needed
+      }
+  }, [userId, isOnline]);
 
   // Fetch spot status (respecting online status and visibility)
   const fetchSpotStatuses = useCallback(async (isManualRefresh = false) => {
       // Only set loading true on initial load, location change, or manual refresh
       if (isManualRefresh || spots.length === 0 || (spots.length > 0 && !spots[0]?.spotId.startsWith(location.id))) {
           setIsLoading(true);
+          setIsLoadingQueueLengths(true); // Reset queue length loading too
       }
 
       // If offline, don't attempt to fetch fresh data
       if (!isOnline) {
           console.log("Offline: Skipping spot status fetch for", location.name);
            // Keep existing data or stop loading if offline and no data initially
-            if (spots.length === 0) setIsLoading(false);
+            if (spots.length === 0) {
+                 setIsLoading(false);
+                 setIsLoadingQueueLengths(false);
+            }
            return;
       }
 
@@ -115,10 +148,21 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           getParkingSpotStatus(`${location.id}-S${i + 1}`) // Example Spot ID format using location ID
         );
         const spotStatuses = await Promise.all(spotPromises);
+
+         // Fetch queue lengths for all spots in parallel
+         const queueLengthPromises = spotStatuses.map(spot => getQueueLength(spot.spotId));
+         const queueLengths = await Promise.all(queueLengthPromises);
+         const newQueueLengths: Record<string, number> = {};
+         spotStatuses.forEach((spot, index) => {
+             newQueueLengths[spot.spotId] = queueLengths[index];
+         });
+         setSpotQueueLengths(newQueueLengths);
+         setIsLoadingQueueLengths(false);
+
         setSpots(spotStatuses);
         setLastFetchTimestamp(Date.now()); // Record timestamp of successful fetch
       } catch (error) {
-        console.error("Failed to fetch parking spot statuses:", error);
+        console.error("Failed to fetch parking spot statuses or queue lengths:", error);
         // Don't show error toast if offline, the main manager component handles the offline notification
         if (isOnline) {
             toast({
@@ -133,6 +177,24 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.id, location.name, location.capacity, toast, isOnline]); // Added isOnline dependency
+
+  // Fetch user's current queue status
+  const fetchUserQueueData = useCallback(async () => {
+      if (!userId || !isOnline) {
+          setUserQueueData([]);
+          return;
+      }
+      setIsQueueLoading(true);
+      try {
+          const queueData = await getUserQueueStatus(userId);
+          setUserQueueData(queueData);
+      } catch (error) {
+          console.error("Failed to fetch user queue status:", error);
+           if (isOnline) toast({ title: "Queue Status Error", description: "Could not fetch your queue positions.", variant: "default" });
+      } finally {
+          setIsQueueLoading(false);
+      }
+  }, [userId, isOnline, toast]);
 
   // Fetch prediction and cost (only if online)
   const fetchPredictionAndCost = useCallback(async (spot: ParkingSpotStatus) => {
@@ -192,10 +254,16 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
       if (isOnline) {
         // Fetch immediately when starting interval (or when tab becomes visible)
         fetchSpotStatuses();
+        fetchUserQueueData(); // Also fetch queue status periodically
+        fetchUserGamificationData(); // Also fetch gamification status periodically
 
         const intervalDuration = isVisible ? REFRESH_INTERVAL_MS : BACKGROUND_REFRESH_INTERVAL_MS;
         console.log(`Setting refresh interval to ${intervalDuration / 1000}s (Visible: ${isVisible})`);
-        intervalId = setInterval(fetchSpotStatuses, intervalDuration);
+        intervalId = setInterval(() => {
+             fetchSpotStatuses();
+             fetchUserQueueData();
+             fetchUserGamificationData();
+        }, intervalDuration);
       } else {
           console.log("Offline, clearing refresh interval.");
       }
@@ -207,13 +275,15 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [fetchSpotStatuses, isOnline, isVisible]); // Re-run effect if fetch function, online status, or visibility changes
+  }, [fetchSpotStatuses, fetchUserQueueData, fetchUserGamificationData, isOnline, isVisible]); // Re-run effect if fetch function, online status, or visibility changes
 
 
  // --- Effect for Manual Refresh Trigger ---
  useEffect(() => {
-     if (manualRefreshTrigger > 0) {
+     if (manualRefreshTrigger > 0 && isOnline) {
          fetchSpotStatuses(true); // Pass true to indicate manual refresh
+         fetchUserQueueData(); // Refresh queue data too
+         fetchUserGamificationData(); // Refresh gamification data too
      }
  // Only depend on the trigger value
  // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,6 +291,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
 
  const handleSelectSpot = async (spot: ParkingSpotStatus) => {
+     // If the spot is available, open the reservation dialog
      if (!spot.isOccupied) {
          setSelectedSpot(spot);
          setIsDialogOpen(true);
@@ -230,9 +301,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
              fetchPredictionAndCost(spot);
 
              // Clear existing interval if it exists
-             if (predictionInterval) {
-                 clearInterval(predictionInterval);
-             }
+             if (predictionInterval) clearInterval(predictionInterval);
 
              // Set up interval for periodic updates (only if online and dialog open)
              const intervalId = setInterval(() => {
@@ -256,9 +325,9 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          }
 
      } else {
-          // Allow viewing live location even if offline (might show cached image or error)
-          setLiveLocationSpotId(spot.spotId);
-          setShowLiveLocation(true);
+          // If the spot is occupied, show info toast and live view/queue options
+          setLiveLocationSpotId(spot.spotId); // Set for potential live view
+
           let occupiedMessage = `Spot ${spot.spotId} is currently occupied.`;
            // Check if reservation end time is available and valid
            if (spot.reservationEndTime) {
@@ -270,31 +339,172 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                    } else {
                        occupiedMessage += ` Reservation time has passed; spot may be available soon.`;
                    }
-               } catch (e) {
-                   // Ignore parsing errors
-               }
+               } catch (e) { /* Ignore parsing errors */ }
            }
-           occupiedMessage += ` Click again to view live location.`;
 
+           const isInQueue = userQueueData.some(q => q.spotId === spot.spotId);
+           const queueLength = spotQueueLengths[spot.spotId] || 0;
 
-         // Modify toast for occupied spot when offline
-         if (!isOnline) {
-              toast({
-                 title: "Spot Status (Offline)",
-                 description: `Cached data shows ${spot.spotId} occupied. ${spot.reservationEndTime ? 'Expected end time may be outdated.' : ''} Live view might be unavailable.`,
-                 variant: "default", // Use default style, not error
-                 duration: 4000,
-              });
-         } else {
-            toast({
-                title: "Spot Occupied",
-                description: occupiedMessage,
-                variant: "default",
-                duration: 5000, // Slightly longer duration
-            });
-         }
+           // Modify toast for occupied spot
+           toast({
+               title: `Spot ${spot.spotId} Occupied`,
+               description: (
+                   <div>
+                       <p>{occupiedMessage}</p>
+                       <p className="text-xs mt-1">
+                           Queue Length: {queueLength} {queueLength === 1 ? 'user' : 'users'}.
+                       </p>
+                   </div>
+               ),
+               variant: "default",
+               duration: 8000, // Longer duration
+                action: (
+                 <div className="flex flex-col gap-2 mt-2">
+                     {/* Live View Button */}
+                     <Button variant="outline" size="sm" onClick={() => {
+                         setLiveLocationSpotId(spot.spotId);
+                         setShowLiveLocation(true);
+                     }}>
+                         <Eye className="mr-2 h-4 w-4" /> Live View
+                     </Button>
+                      {/* Join/Leave Queue Button */}
+                     {userId && isOnline && ( // Only show queue options if logged in and online
+                         isInQueue ? (
+                             <Button
+                                 variant="secondary"
+                                 size="sm"
+                                 onClick={() => handleLeaveQueueClick(spot.spotId)}
+                                 disabled={isQueueLoading}
+                             >
+                                 {isQueueLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Users className="mr-2 h-4 w-4"/>} Leave Queue
+                             </Button>
+                         ) : (
+                             <Button
+                                 variant="default" // Primary action to join
+                                 size="sm"
+                                 onClick={() => handleJoinQueueClick(spot.spotId)}
+                                 disabled={isQueueLoading}
+                             >
+                                 {isQueueLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <BellPlus className="mr-2 h-4 w-4"/>} Join Queue
+                             </Button>
+                         )
+                     )}
+                     {!userId && isOnline && (
+                         <Button variant="link" size="sm" onClick={() => { /* TODO: Trigger auth modal */ }}>Sign in to join queue</Button>
+                     )}
+                 </div>
+             ),
+           });
      }
  };
+
+    // --- Queue Actions ---
+    const handleJoinQueueClick = async (spotId: string) => {
+        if (!userId || !isOnline) return; // Should already be checked, but safety first
+        setIsQueueLoading(true);
+        try {
+            const position = await joinQueue(userId, spotId);
+            if (position !== null) {
+                toast({ title: "Queue Joined", description: `You are position ${position} in the queue for spot ${spotId}. We'll notify you!` });
+                await fetchUserQueueData(); // Refresh user's queue list
+                await fetchSpotStatuses(); // Refresh spot status (to get updated queue length for badge)
+            } else {
+                 toast({ title: "Already in Queue", description: `You are already waiting for spot ${spotId}.`, variant: "default" });
+            }
+        } catch (error) {
+             console.error("Failed to join queue:", error);
+             toast({ title: "Error Joining Queue", variant: "destructive" });
+        } finally {
+             setIsQueueLoading(false);
+        }
+    };
+
+    const handleLeaveQueueClick = async (spotId: string) => {
+        if (!userId || !isOnline) return;
+        setIsQueueLoading(true);
+        try {
+            const success = await leaveQueue(userId, spotId);
+            if (success) {
+                toast({ title: "Queue Left", description: `You are no longer waiting for spot ${spotId}.` });
+                await fetchUserQueueData(); // Refresh user's queue list
+                await fetchSpotStatuses(); // Refresh spot status (to get updated queue length for badge)
+            } else {
+                 toast({ title: "Not in Queue", description: `You weren't in the queue for spot ${spotId}.`, variant: "default" });
+            }
+        } catch (error) {
+             console.error("Failed to leave queue:", error);
+             toast({ title: "Error Leaving Queue", variant: "destructive" });
+        } finally {
+             setIsQueueLoading(false);
+        }
+    };
+    // --- End Queue Actions ---
+
+    // --- Parking Extension Logic ---
+    const handleExtendParking = async (currentReservation: ParkingHistoryEntry | null) => {
+        if (!currentReservation || !userId || !isOnline || !userGamification) return;
+
+        const extensionsUsed = userGamification.parkingExtensionsUsed || 0;
+        const canExtend = isPremiumUser || extensionsUsed < MAX_PARKING_EXTENSIONS_BASIC;
+
+        if (!canExtend) {
+            toast({ title: "Extension Limit Reached", description: `You have used your allowed parking extensions (${extensionsUsed}/${MAX_PARKING_EXTENSIONS_BASIC}). Upgrade to Premium for more.`, variant: "destructive", duration: 6000 });
+            return;
+        }
+
+        setIsExtending(true);
+        try {
+            // Simulate API call to extend parking session
+            // In a real app, this would update the reservationEndTime in the backend
+            // and potentially involve re-calculating cost or applying an extension fee.
+            await new Promise(resolve => setTimeout(resolve, 800));
+            console.log(`Simulating extension for reservation ${currentReservation.id}`);
+
+            // Increment the extension counter via the service
+            const newExtensionCount = await incrementParkingExtensions(userId);
+            // Update local gamification state immediately for UI feedback
+            setUserGamification(prev => ({ ...prev!, parkingExtensionsUsed: newExtensionCount }));
+
+            // Fetch updated spot status to reflect the new potential end time (simulated)
+            const updatedSpot = await getParkingSpotStatus(currentReservation.spotId);
+            setSpots(prevSpots =>
+              prevSpots.map(spot =>
+                spot.spotId === updatedSpot.spotId ? updatedSpot : spot
+              )
+            );
+
+            toast({
+                title: "Parking Extended!",
+                description: `Your parking for spot ${currentReservation.spotId} has been extended. Extensions used: ${newExtensionCount}/${isPremiumUser ? 'Unlimited' : MAX_PARKING_EXTENSIONS_BASIC}.`,
+                duration: 6000,
+            });
+
+            // Optionally update the history entry in local state if needed for display
+            // setParkingHistory(prev => prev.map(h => h.id === currentReservation.id ? { ...h, extensionCount: (h.extensionCount || 0) + 1 } : h));
+
+        } catch (error) {
+            console.error("Failed to extend parking:", error);
+            toast({ title: "Extension Failed", variant: "destructive" });
+        } finally {
+            setIsExtending(false);
+        }
+    };
+
+    // Find the active reservation for the current user in this specific lot (if any)
+    // This requires having parking history accessible, which might be better fetched in a parent or context.
+    // For now, we'll assume a placeholder function or that history is passed down.
+    const findActiveReservationForCurrentUser = (): ParkingHistoryEntry | null => {
+        // Placeholder: Replace with actual logic to find the active reservation
+        // based on userId and location.id from a broader state/context.
+        // Example structure (needs real data source):
+        // const userHistory = getUserParkingHistory(userId);
+        // return userHistory.find(h => h.locationId === location.id && h.status === 'Active');
+        return null; // Placeholder
+    }
+    const activeReservation = findActiveReservationForCurrentUser();
+    const extensionsUsed = userGamification?.parkingExtensionsUsed || 0;
+    const canExtendParking = isPremiumUser || extensionsUsed < MAX_PARKING_EXTENSIONS_BASIC;
+    // --- End Parking Extension Logic ---
 
 
   const handleReserveConfirm = async () => {
@@ -366,7 +576,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          // Optimistically update the spot status
          setSpots(prevSpots =>
            prevSpots.map(spot =>
-             spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true } : spot
+             spot.spotId === selectedSpot.spotId ? { ...spot, isOccupied: true, reservationEndTime: new Date(Date.now() + 60 * 60 * 1000).toISOString() } : spot // Simulate 1hr reservation
            )
          );
          onSpotReserved(selectedSpot.spotId, location.id); // Notify parent
@@ -436,6 +646,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   };
 
    const handleManualRefresh = () => {
+        if (!isOnline) {
+           toast({ title: "Offline", description: "Cannot refresh data while offline.", variant: "destructive"});
+           return;
+        }
        setManualRefreshTrigger(prev => prev + 1); // Increment trigger to run effect
    };
 
@@ -493,6 +707,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
   const availableSpots = spots.filter(spot => !spot.isOccupied).length;
   const totalSpots = location.capacity;
 
+  // Get queue position for the currently selected spot
+   const selectedSpotQueueInfo = userQueueData.find(q => q.spotId === selectedSpot?.spotId);
+   const selectedSpotQueueLength = spotQueueLengths[selectedSpot?.spotId ?? ''] || 0;
+
   return (
     <>
        <Card className="mb-8">
@@ -502,16 +720,17 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                      <CardTitle>Select an Available Spot at {location.name}</CardTitle>
                      <CardDescription>{location.address}</CardDescription>
                      <CardDescription>Click on a green spot (<Car className="inline h-4 w-4 text-green-800" />) to reserve.</CardDescription>
+                      <CardDescription className="text-xs">Click an occupied spot (<Ban className="inline h-3 w-3 text-destructive" />) for info & queue options.</CardDescription>
                  </div>
                  {/* Manual Refresh Button */}
                  <Button
                      variant="outline"
                      size="sm"
                      onClick={handleManualRefresh}
-                     disabled={isLoading || !isOnline} // Disable if loading or offline
+                     disabled={isLoading || isRefreshing || !isOnline} // Disable if loading or offline
                      className="w-full sm:w-auto"
                  >
-                     {isLoading && manualRefreshTrigger > 0 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+                     {isLoading || isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
                      Refresh Status
                  </Button>
              </div>
@@ -539,13 +758,19 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                  <p className="text-muted-foreground text-center">No spots available to display for this location.</p>
             ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                {spots.map((spot) => (
-                    <ParkingSpot
-                    key={spot.spotId}
-                    spot={spot}
-                    onSelect={() => handleSelectSpot(spot)}
-                    />
-                ))}
+                {spots.map((spot) => {
+                     const isInUserQueue = userQueueData.some(q => q.spotId === spot.spotId);
+                     const queueLengthForSpot = spotQueueLengths[spot.spotId] || 0;
+                     return (
+                        <ParkingSpot
+                            key={spot.spotId}
+                            spot={spot}
+                            onSelect={() => handleSelectSpot(spot)}
+                            isInUserQueue={isInUserQueue} // Pass queue status
+                            queueLength={queueLengthForSpot} // Pass queue length
+                        />
+                     );
+                })}
                 </div>
             )}
          </CardContent>
@@ -556,11 +781,46 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          </CardFooter>
        </Card>
 
+        {/* Parking Extension Button (if user has active reservation in this lot) */}
+         {activeReservation && isOnline && (
+             <Card className="mb-8 border-blue-500 bg-blue-500/5">
+                 <CardHeader>
+                     <CardTitle className="text-lg flex items-center gap-2">
+                         <Timer className="h-5 w-5 text-blue-600" /> Active Parking Session
+                     </CardTitle>
+                     <CardDescription>
+                         You are currently parked at Spot {activeReservation.spotId}.
+                         {/* Display simulated time remaining */}
+                         {activeReservation.endTime && new Date(activeReservation.endTime) > new Date() && (
+                             ` Time remaining: ${formatDistanceToNowStrict(new Date(activeReservation.endTime))}.`
+                         )}
+                     </CardDescription>
+                 </CardHeader>
+                 <CardContent>
+                      <Button
+                         onClick={() => handleExtendParking(activeReservation)}
+                         disabled={isExtending || !canExtendParking || !isOnline}
+                         className="w-full"
+                         variant="outline"
+                      >
+                         {isExtending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Clock className="mr-2 h-4 w-4" />}
+                         {canExtendParking
+                             ? `Extend Parking (${isPremiumUser ? 'Premium' : `${extensionsUsed}/${MAX_PARKING_EXTENSIONS_BASIC} used`})`
+                             : `Extension Limit Reached (${extensionsUsed}/${MAX_PARKING_EXTENSIONS_BASIC})`}
+                     </Button>
+                     {!isPremiumUser && !canExtendParking && (
+                         <p className="text-xs text-muted-foreground mt-2 text-center">Upgrade to Premium for more extensions.</p>
+                     )}
+                 </CardContent>
+             </Card>
+         )}
+
+
        {/* Reservation Confirmation Dialog */}
         <AlertDialog open={isDialogOpen} onOpenChange={handleDialogClose}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Reserve Parking Spot {selectedSpot?.spotId}?</AlertDialogTitle>
+              <AlertDialogTitle>Reserve Spot {selectedSpot?.spotId}?</AlertDialogTitle>
                <AlertDialogDescription>
                  You are reserving spot <span className="font-semibold">{selectedSpot?.spotId}</span> at {location.name}.
                </AlertDialogDescription>
@@ -578,9 +838,24 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                         </AlertDialogDescriptionSub>
                     </Alert>
                 )}
+                 {/* Queue Info */}
+                {isOnline && selectedSpotQueueLength > 0 && (
+                     <Alert variant="default" className="bg-blue-50 border-blue-200 text-blue-800">
+                        <Users className="h-4 w-4 text-blue-600" />
+                         <AlertTitle>Queue Information</AlertTitle>
+                         <AlertDialogDescriptionSub>
+                             {selectedSpotQueueInfo ? (
+                                 `You are currently position ${selectedSpotQueueInfo.position} in the queue for this spot.`
+                             ) : (
+                                 `${selectedSpotQueueLength} ${selectedSpotQueueLength === 1 ? 'user is' : 'users are'} currently waiting for this spot. You can join the queue from the main screen.`
+                             )}
+                         </AlertDialogDescriptionSub>
+                     </Alert>
+                )}
+
                 {/* Estimated Cost Display */}
                  <div className="text-sm border-t pt-3">
-                     <div className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</div> {/* Changed to div */}
+                     <div className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</div>
                      {isCostLoading && isOnline ? (
                         <div className="flex items-center gap-2 text-muted-foreground">
                             <Loader2 className="h-4 w-4 animate-spin" /> Calculating cost...
@@ -589,7 +864,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                           <p className="text-muted-foreground text-xs flex items-center gap-1"><WifiOff className="h-3 w-3" /> Unavailable offline</p>
                     ) : estimatedCost !== null ? (
                          <div className="space-y-1">
-                            <p>Rate: <span className="font-semibold">K {estimatedCost.toFixed(2)} / hour</span></p> {/* Use K symbol */}
+                            <p>Rate: <span className="font-semibold">K {estimatedCost.toFixed(2)} / hour</span></p>
                             <p className="text-xs text-muted-foreground">Based on: {costRule || 'Standard rate'}</p>
                          </div>
                     ) : (
@@ -598,7 +873,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                  </div>
                 {/* Prediction Display */}
                 <div className="text-sm border-t pt-3">
-                    <div className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</div> {/* Changed to div */}
+                    <div className="font-medium mb-1 flex items-center gap-1"><BrainCircuit className="h-4 w-4 text-primary" /> Availability Prediction:</div>
                     {isPredictionLoading && isOnline ? (
                        <div className="flex items-center gap-2 text-muted-foreground">
                            <Loader2 className="h-4 w-4 animate-spin" /> Loading prediction...
@@ -624,7 +899,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                      onConfirm={handleReserveConfirm}
                      onTimeout={handleReservationTimeout}
                      isConfirming={isReserving} // Pass reserving state
-                      disabled={isReserving || selectedSpot?.isOccupied || !isOnline} // Disable slider when reserving, spot occupied, OR OFFLINE
+                      disabled={isReserving || selectedSpot?.isOccupied || !isOnline || !!selectedSpotQueueInfo} // Disable if reserving, occupied, offline, OR if user is in queue for this spot
                      timeoutSeconds={60} // Set timeout to 60 seconds
                  />
              </div>
@@ -648,7 +923,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
            availableSources={{
                // Example: Lot A has IP cams, Lot C might have stills
                ipCameraUrl: location.id === 'lot_A' ? `https://picsum.photos/seed/${liveLocationSpotId}-ipcam/640/480?blur=1` : undefined,
-               stillImageUrl: location.id === 'lot_C' ? `https://picsum.photos/seed/${liveLocationSpotId}-altstill/640/480` : undefined, // Optional different still URL
+               // stillImageUrl removed
            }}
         />
 

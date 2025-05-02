@@ -3,7 +3,7 @@
 
 import type { ParkingSpotStatus } from '@/services/parking-sensor';
 import { cn } from '@/lib/utils';
-import { Car, Ban, Clock } from 'lucide-react'; // Added Clock
+import { Car, Ban, Clock, Users, BellPlus, UserCheck } from 'lucide-react'; // Added Users, BellPlus, UserCheck
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Tooltip,
@@ -12,13 +12,16 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatDistanceToNowStrict } from 'date-fns'; // For relative time
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
 interface ParkingSpotProps {
   spot: ParkingSpotStatus;
   onSelect: (spot: ParkingSpotStatus) => void; // Pass the full spot object
+  isInUserQueue?: boolean; // Optional: Is the current user in the queue for this spot?
+  queueLength?: number; // Optional: Current queue length for this spot
 }
 
-export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) {
+export default function ParkingSpot({ spot, onSelect, isInUserQueue = false, queueLength = 0 }: ParkingSpotProps) {
   const statusColor = spot.isOccupied ? 'bg-destructive/20 text-destructive' : 'bg-green-200 text-green-800';
   const hoverColor = !spot.isOccupied ? 'hover:bg-teal-100 hover:border-accent' : 'hover:bg-destructive/30'; // Add hover for occupied too
   const cursorStyle = 'cursor-pointer'; // Always allow clicking
@@ -46,13 +49,17 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) {
   }
   const endTimeDescription = getEndTimeDescription();
 
+  const tooltipText = spot.isOccupied
+    ? `Occupied ${endTimeDescription || ''}. Queue: ${queueLength}. ${isInUserQueue ? 'You are in queue.' : 'Click for info/queue.'}`
+    : 'Available. Click to reserve.';
+
   return (
     <TooltipProvider delayDuration={100}>
       <Tooltip>
         <TooltipTrigger asChild>
           <Card
             className={cn(
-              'transition-all duration-150 ease-in-out shadow-sm',
+              'transition-all duration-150 ease-in-out shadow-sm relative overflow-visible', // Added relative, overflow-visible
               statusColor,
               hoverColor,
               cursorStyle,
@@ -66,18 +73,34 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) {
             }}
             role="button" // Indicate interactivity
             tabIndex={0} // Make it focusable
-            aria-label={`Parking Spot ${spot.spotId} - ${spot.isOccupied ? `Occupied ${endTimeDescription || ''}` : 'Available'}. Click for details.`}
+            aria-label={`Parking Spot ${spot.spotId} - ${tooltipText}`}
           >
-            <CardContent className="flex flex-col items-center justify-center p-3 aspect-square">
+            {/* Queue Indicator Badges */}
+            {spot.isOccupied && (
+                <>
+                    {isInUserQueue && (
+                        <Badge variant="default" className="absolute -top-2 -left-2 text-[9px] px-1 py-0 h-4 z-10 bg-blue-600 hover:bg-blue-700">
+                            <UserCheck className="h-2 w-2 mr-0.5"/> Queued
+                        </Badge>
+                    )}
+                    {queueLength > 0 && !isInUserQueue && (
+                        <Badge variant="secondary" className="absolute -top-2 -right-2 text-[9px] px-1 py-0 h-4 z-10">
+                            <Users className="h-2 w-2 mr-0.5"/> {queueLength}
+                        </Badge>
+                    )}
+                </>
+            )}
+
+            <CardContent className="flex flex-col items-center justify-center p-2 aspect-square"> {/* Reduced padding */}
               {spot.isOccupied ? (
-                <Ban className="h-6 w-6 mb-1" />
+                <Ban className="h-5 w-5 mb-0.5" /> // Slightly smaller icon
               ) : (
-                <Car className="h-6 w-6 mb-1" />
+                <Car className="h-5 w-5 mb-0.5" /> // Slightly smaller icon
               )}
-              <span className="text-xs font-medium">{spot.spotId}</span>
+              <span className="text-[11px] font-medium">{spot.spotId}</span> {/* Slightly smaller text */}
                {spot.isOccupied && endTimeDescription && (
-                   <span className="text-[10px] text-muted-foreground leading-tight mt-0.5 flex items-center gap-0.5">
-                       <Clock className="h-2.5 w-2.5"/> {endTimeDescription.replace(/[()]/g, '')} {/* Remove parentheses for display */}
+                   <span className="text-[9px] text-muted-foreground leading-tight mt-0.5 flex items-center gap-0.5 text-center"> {/* Centered text */}
+                       <Clock className="h-2 w-2"/> {endTimeDescription.replace(/[()]/g, '')} {/* Remove parentheses for display */}
                    </span>
                )}
             </CardContent>
@@ -85,14 +108,15 @@ export default function ParkingSpot({ spot, onSelect }: ParkingSpotProps) {
         </TooltipTrigger>
         <TooltipContent>
            <p>Spot {spot.spotId}: {spot.isOccupied ? 'Occupied' : 'Available'}</p>
-           {!spot.isOccupied ? (
-              <p className="text-xs text-muted-foreground">Click to reserve</p>
-           ) : (
-               <>
-                   <p className="text-xs text-muted-foreground">Click to view live location</p>
-                   {endTimeDescription && <p className="text-xs text-muted-foreground mt-0.5">{endTimeDescription}</p>}
-               </>
-           )}
+            {spot.isOccupied && (
+                <>
+                    {endTimeDescription && <p className="text-xs text-muted-foreground mt-0.5">{endTimeDescription}</p>}
+                     <p className="text-xs text-muted-foreground mt-1">Queue: {queueLength} waiting</p>
+                     {isInUserQueue && <p className="text-xs text-blue-600 font-medium">You are in the queue.</p>}
+                     <p className="text-xs text-muted-foreground mt-1">Click for info/queue options</p>
+                </>
+            )}
+           {!spot.isOccupied && <p className="text-xs text-muted-foreground">Click to reserve</p>}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

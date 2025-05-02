@@ -18,6 +18,7 @@ export interface UserGamification {
   points: number;
   badges: UserBadge[];
   isCarpoolEligible: boolean; // Flag for carpooling discounts/features
+  parkingExtensionsUsed?: number; // Number of times parking has been extended in the current session/period (optional)
 }
 
 /**
@@ -47,7 +48,7 @@ export interface PointsTransaction {
 /**
  * Defines the possible user roles within the system.
  */
-export type UserRole = 'User' | 'Admin' | 'ParkingLotOwner' | 'ParkingAttendant'; // Added ParkingAttendant
+export type UserRole = 'User' | 'Admin' | 'ParkingLotOwner' | 'ParkingAttendant' | 'Premium'; // Added Premium role variant
 
 /**
  * Represents user details for attendant search results.
@@ -81,14 +82,18 @@ let userGamificationData: Record<string, UserGamification> = {
             { id: 'badge_reporter', name: 'Issue Reporter', description: 'Reported a parking spot issue.', iconName: 'Flag', earnedDate: '2024-07-29' }, // Changed icon to Flag
         ],
         isCarpoolEligible: false,
+        parkingExtensionsUsed: 1, // Example: used one extension
     },
-     'user_def456': { // Add another user for testing transfers
+     'user_def456': { // Example Premium user
         points: 50,
         badges: [],
         isCarpoolEligible: true,
+        parkingExtensionsUsed: 0, // Premium users might have a higher limit or unlimited (logic handled elsewhere)
     },
      // Add a sample attendant user's gamification data if needed
-     'attendant_001': { points: 10, badges: [], isCarpoolEligible: false },
+     'attendant_001': { points: 10, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 },
+     // Add a user explicitly marked as Premium role (for testing role checks)
+      'user_premium_test': { points: 1000, badges: [], isCarpoolEligible: true, parkingExtensionsUsed: 0 },
 };
 
 // Mock store for bookmarks
@@ -96,6 +101,9 @@ let userBookmarks: Record<string, UserBookmark[]> = {
     'user_abc123': [
         { id: 'bm_1', userId: 'user_abc123', label: 'Home', address: '10 Residential St, Anytown', latitude: 34.0600, longitude: -118.2300 },
         { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown', latitude: 34.0510, longitude: -118.2450 },
+    ],
+     'user_premium_test': [
+        { id: 'bm_3', userId: 'user_premium_test', label: 'Gym', address: '5 Fitness Way', latitude: 34.0550, longitude: -118.2550 },
     ],
 };
 
@@ -125,7 +133,42 @@ const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
 export async function getUserGamification(userId: string): Promise<UserGamification> {
     await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
     // Return existing data or default if user not found
-    return userGamificationData[userId] || { points: 0, badges: [], isCarpoolEligible: false };
+    const data = userGamificationData[userId] || { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
+    // Ensure parkingExtensionsUsed is initialized
+    if (data.parkingExtensionsUsed === undefined) {
+        data.parkingExtensionsUsed = 0;
+    }
+    return data;
+}
+
+/**
+ * Increments the parking extension counter for a user.
+ * In a real app, this might have limits based on subscription or time period.
+ * @param userId The ID of the user.
+ * @returns A promise resolving to the updated number of extensions used.
+ */
+export async function incrementParkingExtensions(userId: string): Promise<number> {
+    await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
+    if (!userGamificationData[userId]) {
+        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
+    }
+    userGamificationData[userId].parkingExtensionsUsed = (userGamificationData[userId].parkingExtensionsUsed || 0) + 1;
+    console.log(`Incremented parking extensions for user ${userId}. Total used: ${userGamificationData[userId].parkingExtensionsUsed}`);
+    return userGamificationData[userId].parkingExtensionsUsed!;
+}
+
+/**
+ * Resets the parking extension counter for a user (e.g., monthly or based on subscription).
+ * @param userId The ID of the user.
+ * @returns A promise resolving to true if successful.
+ */
+export async function resetParkingExtensions(userId: string): Promise<boolean> {
+    await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
+    if (userGamificationData[userId]) {
+        userGamificationData[userId].parkingExtensionsUsed = 0;
+        console.log(`Reset parking extensions for user ${userId}.`);
+    }
+    return true;
 }
 
 /**
@@ -137,7 +180,7 @@ export async function getUserGamification(userId: string): Promise<UserGamificat
 export async function awardPoints(userId: string, pointsToAdd: number): Promise<number> {
     await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
     if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false };
+        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
     }
     userGamificationData[userId].points += pointsToAdd;
     console.log(`Awarded ${pointsToAdd} points to user ${userId}. New total: ${userGamificationData[userId].points}`);
@@ -153,7 +196,7 @@ export async function awardPoints(userId: string, pointsToAdd: number): Promise<
 export async function awardBadge(userId: string, badgeId: string): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
     if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false };
+        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
     }
 
     const alreadyHasBadge = userGamificationData[userId].badges.some(b => b.id === badgeId);
@@ -185,7 +228,7 @@ export async function awardBadge(userId: string, badgeId: string): Promise<boole
 export async function updateCarpoolEligibility(userId: string, isEligible: boolean): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
     if (!userGamificationData[userId]) {
-        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false };
+        userGamificationData[userId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
     }
     userGamificationData[userId].isCarpoolEligible = isEligible;
     console.log(`Set carpool eligibility for user ${userId} to ${isEligible}.`);
@@ -227,7 +270,7 @@ export async function transferPoints(
     }
     if (!recipientData) {
          // Optionally create recipient if they don't exist in gamification yet
-         userGamificationData[recipientId] = { points: 0, badges: [], isCarpoolEligible: false };
+         userGamificationData[recipientId] = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0 };
          // throw new Error("Recipient not found.");
     }
 
@@ -407,13 +450,15 @@ export async function getMockUsersForTransfer(): Promise<{ id: string, name: str
 // Mock data for users and vehicles (replace with actual data source)
 const mockUserData = [
     { userId: 'user_abc123', userName: 'Alice Smith', phone: '0977123456', role: 'User' },
-    { userId: 'user_def456', userName: 'Bob Phiri', phone: '0966789012', role: 'User' },
+    { userId: 'user_def456', userName: 'Bob Phiri', phone: '0966789012', role: 'Premium' }, // Bob is Premium
     { userId: 'attendant_001', userName: 'Attendant One', phone: '0955555555', role: 'ParkingAttendant' },
+    { userId: 'user_premium_test', userName: 'Premium Tester', phone: '0977777777', role: 'Premium' },
 ];
 const mockVehicleData = [
     { userId: 'user_abc123', plate: 'ABC 123', make: 'Toyota', model: 'Corolla' },
     { userId: 'user_abc123', plate: 'XYZ 789', make: 'Nissan', model: 'Hardbody' },
     { userId: 'user_def456', plate: 'DEF 456', make: 'Honda', model: 'CRV' },
+    { userId: 'user_premium_test', plate: 'PREMIUM 1', make: 'BMW', model: 'X5' },
 ];
 
 /**
@@ -483,5 +528,3 @@ export async function searchUserOrVehicleByAttendant(query: string): Promise<Att
     console.log(`Attendant search results for "${query}":`, results);
     return results;
 }
-
-    
