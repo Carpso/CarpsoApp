@@ -16,7 +16,7 @@ interface BottomNavBarProps {
 }
 
 const navItemsBase = [
-  { href: '/', label: 'Carpso Map', icon: Home },
+  { href: '/', label: 'Home', icon: Home }, // Changed label to 'Home'
   { href: '/explore', label: 'Explore', icon: Compass },
 ];
 

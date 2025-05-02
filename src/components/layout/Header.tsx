@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Car, ShieldCheck, Menu, UserCircle, Compass } from 'lucide-react';
+import { Car, ShieldCheck, Menu, UserCircle, Compass, Home } from 'lucide-react'; // Added Home icon
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'; // Added SheetClose
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
@@ -37,7 +37,9 @@ export default function Header() {
             <nav className="flex flex-col space-y-1 px-2">
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
-                       <Link href="/">Carpso Map</Link>
+                       <Link href="/" className="flex items-center gap-1">
+                         <Home className="h-4 w-4" /> Home {/* Changed Text and Icon */}
+                       </Link>
                    </Button>
                 </SheetClose>
                 <SheetClose asChild>
@@ -93,8 +95,8 @@ export default function Header() {
 
          {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium flex-1">
-             <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60">
-              Carpso Map
+             <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+              <Home className="h-4 w-4" /> Home {/* Changed Text and Icon */}
             </Link>
             <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <Compass className="h-4 w-4" /> Explore
