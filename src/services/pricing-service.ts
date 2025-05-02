@@ -247,6 +247,8 @@ export async function savePricingRule(rule: PricingRule): Promise<PricingRule> {
         pricingRules[existingIndex] = ruleToSave;
         console.log("Updated pricing rule/pass:", ruleToSave);
     } else {
+        // Assign a new ID if it's a new rule without one (should normally be generated in modal)
+        if (!ruleToSave.ruleId) ruleToSave.ruleId = `rule_${Date.now()}`;
         pricingRules.push(ruleToSave);
         console.log("Added pricing rule/pass:", ruleToSave);
     }
@@ -352,8 +354,10 @@ interface ParkingRecord {
 }
 
 let parkingRecords: ParkingRecord[] = [
-     { recordId: 'rec_1', userId: 'user_abc123', userName: 'Alice Banda (Simulated)', lotId: 'lot_A', lotName: 'Downtown Garage', spotId: 'lot_A-S5', startTime: new Date(Date.now() - 2 * 86400000).toISOString(), endTime: new Date(Date.now() - (2 * 86400000 - 90 * 60000)).toISOString(), durationMinutes: 90, cost: 3.50, status: 'Completed', paymentMethod: 'Wallet', appliedPricingRule: 'Downtown Weekday Peak (8am-6pm)' },
-     { recordId: 'rec_2', userId: 'user_abc123', userName: 'Alice Banda (Simulated)', lotId: 'lot_B', lotName: 'Airport Lot B', spotId: 'lot_B-S22', startTime: new Date(Date.now() - 5 * 86400000).toISOString(), endTime: new Date(Date.now() - (5 * 86400000 - 120 * 60000)).toISOString(), durationMinutes: 120, cost: 5.00, status: 'Completed', paymentMethod: 'Card', appliedPricingRule: 'Standard Hourly Rate' },
+     { recordId: 'rec_1', userId: 'user_abc123', userName: 'Alice Smith (Simulated)', lotId: 'lot_A', lotName: 'Downtown Garage', spotId: 'lot_A-S5', startTime: new Date(Date.now() - 2 * 86400000).toISOString(), endTime: new Date(Date.now() - (2 * 86400000 - 90 * 60000)).toISOString(), durationMinutes: 90, cost: 3.50, status: 'Completed', paymentMethod: 'Wallet', appliedPricingRule: 'Downtown Weekday Peak (8am-6pm)' },
+     { recordId: 'rec_2', userId: 'user_def456', userName: 'Bob Johnson (Simulated)', lotId: 'lot_B', lotName: 'Airport Lot B', spotId: 'lot_B-S22', startTime: new Date(Date.now() - 5 * 86400000).toISOString(), endTime: new Date(Date.now() - (5 * 86400000 - 120 * 60000)).toISOString(), durationMinutes: 120, cost: 5.00, status: 'Completed', paymentMethod: 'Card', appliedPricingRule: 'Standard Hourly Rate' },
+     { recordId: 'rec_3', userId: 'user_abc123', userName: 'Alice Smith (Simulated)', lotId: 'lot_A', lotName: 'Downtown Garage', spotId: 'lot_A-S10', startTime: new Date(Date.now() - 86400000).toISOString(), endTime: new Date(Date.now() - (86400000 - 60 * 60000)).toISOString(), durationMinutes: 60, cost: 2.50, status: 'Completed', paymentMethod: 'Wallet', appliedPricingRule: 'Standard Hourly Rate' },
+     { recordId: 'rec_4', userId: 'user_ghi789', userName: 'Charlie Zulu (Simulated)', lotId: 'lot_C', lotName: 'Mall Parking Deck', spotId: 'lot_C-P10', startTime: new Date(Date.now() - 3 * 86400000).toISOString(), endTime: new Date(Date.now() - (3 * 86400000 - 180 * 60000)).toISOString(), durationMinutes: 180, cost: 7.50, status: 'Completed', paymentMethod: 'MobileMoney', appliedPricingRule: 'Standard Hourly Rate' },
       // Add more sample records...
 ];
 
@@ -368,14 +372,18 @@ export async function getParkingRecords(filters?: { userId?: string; lotId?: str
     if (filters?.userId) {
         results = results.filter(rec => rec.userId === filters.userId);
     }
-    if (filters?.lotId && filters.lotId !== 'all') { // Handle 'all' scope
+    // If lotId is provided and not 'all', filter by it. If 'all', show all accessible records (logic based on caller's role needed here or in component).
+    if (filters?.lotId && filters.lotId !== 'all') {
         results = results.filter(rec => rec.lotId === filters.lotId);
     }
     if (filters?.startDate) {
          results = results.filter(rec => new Date(rec.startTime) >= new Date(filters.startDate!));
     }
      if (filters?.endDate) {
-         results = results.filter(rec => new Date(rec.startTime) <= new Date(filters.endDate!)); // Filter by start time within range
+         // Adjust filter to include records STARTING before or ON the end date
+         const end = new Date(filters.endDate);
+         end.setHours(23, 59, 59, 999); // Set to end of the day
+         results = results.filter(rec => new Date(rec.startTime) <= end);
      }
     return results.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 }
@@ -442,11 +450,19 @@ export function convertToCSV<T extends object>(data: T[]): string {
     const csvRows = [
         headers.join(','), // Header row
         ...data.map(row =>
-            headers.map(fieldName =>
-                JSON.stringify(row[fieldName as keyof T] ?? '', (_, value) =>
-                    value ?? '' // Replace null/undefined with empty string
-                )
-            ).join(',')
+            headers.map(fieldName => {
+                 let value = row[fieldName as keyof T];
+                 // Handle potential objects or arrays if needed, stringify simply for this example
+                 if (typeof value === 'object' && value !== null) {
+                    value = JSON.stringify(value);
+                 }
+                 // Escape double quotes and wrap in double quotes if value contains comma, double quote, or newline
+                 const stringValue = String(value ?? ''); // Ensure it's a string, handle null/undefined
+                 if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                     return `"${stringValue.replace(/"/g, '""')}"`; // Escape double quotes
+                 }
+                 return stringValue;
+            }).join(',')
         )
     ];
     return csvRows.join('\n');

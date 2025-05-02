@@ -39,24 +39,45 @@ export interface ParkingLot {
    * List of services offered at the parking lot (optional).
    */
   services?: ParkingLotService[];
+  /**
+   * User ID of the owner/manager of this parking lot.
+   */
+  ownerUserId?: string;
+  /**
+   * Subscription status for this lot on the Carpso platform.
+   */
+  subscriptionStatus: 'active' | 'trial' | 'inactive' | 'expired';
+  /**
+   * Date when the trial period ends (ISO 8601 format), if applicable.
+   */
+  trialEndDate?: string;
 }
 
 // Sample data - replace with actual API calls or database queries
+// Simulate trial end dates relative to 'now'
+const now = Date.now();
+const futureDate = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
+const pastDate = (days: number) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
+
 const sampleParkingLots: ParkingLot[] = [
-  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Anytown', capacity: 50, latitude: 34.0522, longitude: -118.2437, services: ['EV Charging', 'Mobile Money Agent', 'Wifi'] }, // Added Wifi
-  { id: 'lot_B', name: 'Airport Lot B', address: '456 Airport Rd, Anytown', capacity: 150, latitude: 34.0550, longitude: -118.2500, services: ['Restroom', 'EV Charging'] },
-  { id: 'lot_C', name: 'Mall Parking Deck', address: '789 Retail Ave, Anytown', capacity: 200, latitude: 34.0500, longitude: -118.2400, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom'] },
-   { id: 'lot_D', name: 'University Campus Lot', address: '1 College Way, Anytown', capacity: 80, latitude: 34.0580, longitude: -118.2450 }, // No services listed
+  { id: 'lot_A', name: 'Downtown Garage', address: '123 Main St, Anytown', capacity: 50, latitude: 34.0522, longitude: -118.2437, services: ['EV Charging', 'Mobile Money Agent', 'Wifi'], ownerUserId: 'usr_1', subscriptionStatus: 'active' }, // usr_1 owns this, active subscription
+  { id: 'lot_B', name: 'Airport Lot B', address: '456 Airport Rd, Anytown', capacity: 150, latitude: 34.0550, longitude: -118.2500, services: ['Restroom', 'EV Charging'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: futureDate(15) }, // usr_2 owns this, on trial
+  { id: 'lot_C', name: 'Mall Parking Deck', address: '789 Retail Ave, Anytown', capacity: 200, latitude: 34.0500, longitude: -118.2400, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: pastDate(5) }, // usr_5 owns this, trial expired
+  { id: 'lot_D', name: 'University Campus Lot', address: '1 College Way, Anytown', capacity: 80, latitude: 34.0580, longitude: -118.2450, ownerUserId: 'usr_2', subscriptionStatus: 'inactive' }, // usr_2 also owns this, inactive
 ];
 
 /**
  * Asynchronously retrieves a list of available parking lots.
  * In a real application, this would fetch data from a backend API or database.
  * Includes basic offline caching support using localStorage.
+ * Filters out lots with 'inactive' or 'expired' status for regular users.
+ * Admins/Owners see all lots associated with them.
  *
+ * @param userRole The role of the user requesting the lots ('User', 'Admin', 'ParkingLotOwner').
+ * @param userId The ID of the user requesting the lots.
  * @returns A promise that resolves to an array of ParkingLot objects.
  */
-export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
+export async function getAvailableParkingLots(userRole: string = 'User', userId?: string): Promise<ParkingLot[]> {
   const cacheKey = 'cachedParkingLots';
   const cacheTimestampKey = 'cachedParkingLotsTimestamp';
   const maxCacheAge = 60 * 60 * 1000; // 1 hour in milliseconds
@@ -67,6 +88,8 @@ export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
     isOnline = navigator.onLine;
   }
 
+  let fetchedLots: ParkingLot[] = [];
+
   if (isOnline) {
     try {
       console.log("Fetching fresh parking lots...");
@@ -74,23 +97,23 @@ export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Simulate fetching fresh data and adding occupancy
-      const lotsWithOccupancy = sampleParkingLots.map(lot => ({
+      fetchedLots = sampleParkingLots.map(lot => ({
         ...lot,
+        // Update status if trial has ended
+        subscriptionStatus: (lot.subscriptionStatus === 'trial' && lot.trialEndDate && new Date(lot.trialEndDate) < new Date()) ? 'expired' : lot.subscriptionStatus,
         currentOccupancy: lot.currentOccupancy ?? Math.floor(Math.random() * lot.capacity * 0.9)
       }));
 
       // Cache the fresh data if on client
       if (typeof window !== 'undefined') {
         try {
-            localStorage.setItem(cacheKey, JSON.stringify(lotsWithOccupancy));
+            localStorage.setItem(cacheKey, JSON.stringify(fetchedLots));
             localStorage.setItem(cacheTimestampKey, Date.now().toString());
             console.log("Cached fresh parking lots.");
         } catch (e) {
              console.error("Failed to cache parking lots:", e); // Handle potential storage errors
         }
       }
-      return lotsWithOccupancy;
-
     } catch (error) {
       console.error("Online fetch failed, attempting to use cache:", error);
       // Fallback to cache if online fetch fails
@@ -98,11 +121,13 @@ export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
           console.warn("Returning cached data due to online fetch failure.");
-          return JSON.parse(cachedData);
+          fetchedLots = JSON.parse(cachedData);
+        } else {
+           throw error; // Re-throw if fetch fails and no cache
         }
+      } else {
+          throw error; // Re-throw if server-side fetch fails
       }
-      // If online fetch fails AND cache is unavailable, re-throw the error
-      throw error;
     }
   } else {
     // Offline: Try to load from cache
@@ -113,19 +138,27 @@ export async function getAvailableParkingLots(): Promise<ParkingLot[]> {
 
       if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
         console.log("Using valid cached parking lots (offline).");
-        return JSON.parse(cachedData);
+        fetchedLots = JSON.parse(cachedData);
       } else {
         console.warn("Offline: Cache is old or empty.");
-        // Optionally return empty array or throw error depending on desired offline behavior
-         return []; // Return empty array if cache is invalid/missing offline
-        // throw new Error("Offline and no valid cached data available.");
+        // Return empty array if cache is invalid/missing offline
+        return [];
       }
     } else {
        console.warn("Offline: localStorage not available.");
-       // Server-side offline scenario? Might return empty or throw.
        return [];
-       // throw new Error("Offline and cache unavailable.");
     }
+  }
+
+  // --- Filter based on user role and subscription status ---
+  if (userRole === 'Admin') {
+      return fetchedLots; // Admins see all lots
+  } else if (userRole === 'ParkingLotOwner' && userId) {
+      // Owners see all lots they own, regardless of subscription status
+      return fetchedLots.filter(lot => lot.ownerUserId === userId);
+  } else {
+      // Regular users only see lots that are 'active' or in 'trial'
+      return fetchedLots.filter(lot => lot.subscriptionStatus === 'active' || lot.subscriptionStatus === 'trial');
   }
 }
 
@@ -142,10 +175,13 @@ export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | 
   await new Promise(resolve => setTimeout(resolve, 300));
 
    // TODO: Replace with actual data fetching logic
-  const lot = sampleParkingLots.find(l => l.id === lotId);
+  let lot = sampleParkingLots.find(l => l.id === lotId);
    if (lot) {
+     // Check and update trial status before returning
+     const updatedStatus = (lot.subscriptionStatus === 'trial' && lot.trialEndDate && new Date(lot.trialEndDate) < new Date()) ? 'expired' : lot.subscriptionStatus;
      return {
        ...lot,
+       subscriptionStatus: updatedStatus,
        // Simulate current occupancy if not present
        currentOccupancy: lot.currentOccupancy ?? Math.floor(Math.random() * lot.capacity * 0.9)
      };
@@ -162,10 +198,38 @@ export async function updateParkingLotServices(lotId: string, services: ParkingL
     const lotIndex = sampleParkingLots.findIndex(l => l.id === lotId);
     if (lotIndex !== -1) {
         sampleParkingLots[lotIndex].services = services;
+        // Update cache if online
+        if (typeof window !== 'undefined' && navigator.onLine) {
+            const cacheKey = 'cachedParkingLots';
+            localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
+             localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+        }
         return true;
     }
     return false;
 }
 
+// Mock function to update subscription status (Admin)
+export async function updateLotSubscriptionStatus(lotId: string, status: ParkingLot['subscriptionStatus'], trialEndDate?: string): Promise<boolean> {
+    console.log(`Simulating update subscription for lot ${lotId}:`, { status, trialEndDate });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const lotIndex = sampleParkingLots.findIndex(l => l.id === lotId);
+    if (lotIndex !== -1) {
+        sampleParkingLots[lotIndex].subscriptionStatus = status;
+        sampleParkingLots[lotIndex].trialEndDate = status === 'trial' ? trialEndDate : undefined; // Only set trial end date if status is trial
+        // Update cache if online
+        if (typeof window !== 'undefined' && navigator.onLine) {
+            const cacheKey = 'cachedParkingLots';
+            localStorage.setItem(cacheKey, JSON.stringify(sampleParkingLots));
+            localStorage.setItem('cachedParkingLotsTimestamp', Date.now().toString());
+        }
+        return true;
+    }
+    return false;
+}
 
-// Add more functions as needed, e.g., updateParkingLot, addParkingLot (for admins)
+// Function to start a trial period for a lot (Admin)
+export async function startLotTrial(lotId: string, trialDays: number = 14): Promise<boolean> {
+    const endDate = futureDate(trialDays);
+    return updateLotSubscriptionStatus(lotId, 'trial', endDate);
+}
