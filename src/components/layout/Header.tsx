@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Car, ShieldCheck, Menu, UserCircle, Compass, Home } from 'lucide-react'; // Added Home icon
+import { Car, ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon } from 'lucide-react'; // Added UserIcon
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet'; // Added SheetClose, SheetHeader, SheetTitle
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
@@ -12,6 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; //
 export default function Header() {
   const { isAuthenticated, userRole, userName, userAvatarUrl, logout } = useContext(AppStateContext)!;
   const userInitial = userName ? userName.charAt(0).toUpperCase() : '?';
+
+  const isAdminOrOwner = userRole === 'Admin' || userRole === 'ParkingLotOwner';
+  const isAttendant = userRole === 'ParkingAttendant';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -42,7 +45,7 @@ export default function Header() {
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
                        <Link href="/" className="flex items-center gap-1">
-                         <Home className="h-4 w-4" /> Home {/* Changed Text and Icon */}
+                         <Home className="h-4 w-4" /> Home
                        </Link>
                    </Button>
                 </SheetClose>
@@ -53,13 +56,24 @@ export default function Header() {
                      </Link>
                    </Button>
                </SheetClose>
-              {/* Conditionally show Admin link */}
-               {isAuthenticated && (userRole === 'Admin' || userRole === 'ParkingLotOwner') && (
+              {/* Conditionally show Admin/Owner link */}
+               {isAuthenticated && isAdminOrOwner && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
                            <Link href="/admin" className="flex items-center gap-1">
                               <ShieldCheck className="h-4 w-4" />
                               Admin Dashboard
+                           </Link>
+                       </Button>
+                   </SheetClose>
+               )}
+                {/* Conditionally show Attendant link */}
+               {isAuthenticated && isAttendant && (
+                   <SheetClose asChild>
+                       <Button variant="ghost" className="justify-start" asChild>
+                           <Link href="/attendant" className="flex items-center gap-1">
+                              <UserIcon className="h-4 w-4" /> {/* Use generic User icon */}
+                              Attendant Dashboard
                            </Link>
                        </Button>
                    </SheetClose>
@@ -100,15 +114,21 @@ export default function Header() {
          {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium flex-1">
              <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
-              <Home className="h-4 w-4" /> Home {/* Changed Text and Icon */}
+              <Home className="h-4 w-4" /> Home
             </Link>
             <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <Compass className="h-4 w-4" /> Explore
             </Link>
-            {/* Conditionally show Admin link */}
-            {isAuthenticated && (userRole === 'Admin' || userRole === 'ParkingLotOwner') && (
+            {/* Conditionally show Admin/Owner link */}
+            {isAuthenticated && isAdminOrOwner && (
                 <Link href="/admin" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                    <ShieldCheck className="h-4 w-4" /> Admin
+                </Link>
+            )}
+             {/* Conditionally show Attendant link */}
+            {isAuthenticated && isAttendant && (
+                <Link href="/attendant" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+                   <UserIcon className="h-4 w-4" /> Attendant
                 </Link>
             )}
         </nav>

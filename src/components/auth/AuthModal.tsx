@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Nfc, Loader2, Smartphone, Car, Users, LogIn, MessageSquare, ExternalLink, CheckCircle, CircleAlert, Fingerprint } from 'lucide-react'; // Added Fingerprint
+import { Phone, Mail, Nfc, Loader2, Smartphone, Car, Users, LogIn, MessageSquare, ExternalLink, CheckCircle, CircleAlert, Fingerprint, Briefcase } from 'lucide-react'; // Added Briefcase
 import { useToast } from '@/hooks/use-toast';
 import { checkPlateWithAuthority } from '@/services/authority-check'; // Import the authority check service
 import { Switch } from '@/components/ui/switch'; // Import Switch
+import type { UserRole } from '@/services/user-service'; // Import UserRole type
 
 // Simulate social icons (replace with actual SVGs/components if needed)
 const GoogleIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1h-9.13v2.8h5.37c-.47 1.74-2 3.05-4.27 3.05-2.57 0-4.66-2.09-4.66-4.66s2.09-4.66 4.66-4.66c1.45 0 2.7.52 3.64 1.37l2.1-2.1c-1.32-1.23-3.08-1.98-5.14-1.98C6.49 4.6 3.18 7.9 3.18 12s3.31 7.4 7.17 7.4c4.03 0 6.74-2.82 6.74-6.86 0-.46-.05-.86-.14-1.24Z"/></svg>;
@@ -28,7 +29,7 @@ const AppleIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill=
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (userId: string, name?: string, avatarUrl?: string, role?: string) => void;
+  onAuthSuccess: (userId: string, name?: string, avatarUrl?: string, role?: UserRole | null) => void; // Use UserRole type
 }
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
@@ -39,7 +40,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [name, setName] = useState(''); // Added for sign up
   const [mobileMoneyNumber, setMobileMoneyNumber] = useState('');
   const [licensePlate, setLicensePlate] = useState(''); // Primary license plate for sign up/sign in
-  const [ownerPhone, setOwnerPhone] = useState(''); // Owner's phone for sign up
+  // const [ownerPhone, setOwnerPhone] = useState(''); // Removed for simplified signup
   const [hasMultipleCars, setHasMultipleCars] = useState(false); // State for multiple cars toggle
   const [rfidStatus, setRfidStatus] = useState<'idle' | 'scanning' | 'scanned' | 'error'>('idle');
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
@@ -55,11 +56,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   // --- MOCK AUTH FUNCTIONS (Replace with real backend calls) ---
 
   // Mock Sign In: Returns basic user info
-  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: string } }> => {
+  const mockSignIn = async (method: 'email' | 'phone' | 'rfid' | 'mobileMoney' | 'licensePlate' | 'google' | 'facebook' | 'apple' | 'otp'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => { // Use UserRole type
     console.log(`Simulating sign in with ${method}:`, { email, phone, mobileMoneyNumber, licensePlate, otpPhone });
     setIsLoading(true); // Moved isLoading here to cover authority check
     let userFound = false;
-    let simulatedUser: { id: string, name: string, avatarUrl?: string, role: string } | undefined;
+    let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined; // Use UserRole type
 
     // --- Simulate specific sign-in methods ---
     if (method === 'google' || method === 'facebook' || method === 'apple') {
@@ -94,11 +95,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             const plateDetails = await checkPlateWithAuthority(licensePlate);
             if (plateDetails) {
                 const userId = `user_plate_${licensePlate.replace(/\s+/g, '')}`;
+                // Find existing user based on plate/owner (mock)
+                let existingUser = null; // TODO: Replace with actual lookup
+                if (plateDetails.registeredOwner?.includes('Admin')) existingUser = { role: 'Admin' };
+                else if (plateDetails.registeredOwner?.includes('Owner')) existingUser = { role: 'ParkingLotOwner' };
+                else if (plateDetails.registeredOwner?.includes('Attendant')) existingUser = { role: 'ParkingAttendant' };
+
                 simulatedUser = {
                     id: userId,
                     name: plateDetails.registeredOwner || `Driver ${licensePlate}`,
                     avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-                    role: 'User'
+                    role: existingUser?.role || 'User' // Use found role or default
                 };
                 userFound = true;
             } else {
@@ -114,11 +121,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         userFound = Math.random() > 0.3;
         if (userFound) {
             const userId = `user_${Math.random().toString(36).substring(7)}`;
+             // Simulate role based on email/phone for mock purposes
+            let role: UserRole = 'User';
+            if (email.includes('admin')) role = 'Admin';
+            else if (email.includes('owner')) role = 'ParkingLotOwner';
+            else if (phone.endsWith('007')) role = 'ParkingAttendant'; // Example attendant phone
+
             simulatedUser = {
                 id: userId,
                 name: email.split('@')[0] || phone || mobileMoneyNumber || `User ${userId.substring(0, 4)}`,
                 avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
-                role: email.includes('admin') ? 'Admin' : email.includes('owner') ? 'ParkingLotOwner' : 'User'
+                role: role // Use determined role
             };
         }
     }
@@ -135,13 +148,13 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     }
   };
 
-   // Mock Sign Up: Returns basic user info (Simplified Input - Only Email Method)
-   const mockSignUp = async (method: 'email'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: string } }> => {
-      console.log(`Simulating sign up with ${method}:`, { name, email, licensePlate, ownerPhone, hasMultipleCars });
+   // Mock Sign Up: Returns basic user info (Simplified Input - Email only for now)
+   const mockSignUp = async (method: 'email'): Promise<{ success: boolean, user?: { id: string, name: string, avatarUrl?: string, role: UserRole } }> => { // Use UserRole type
+      console.log(`Simulating sign up with ${method}:`, { name, email, licensePlate, hasMultipleCars }); // Removed ownerPhone from log
       setIsLoading(true);
       await new Promise(resolve => setTimeout(resolve, 1500));
       const success = Math.random() > 0.3;
-      let simulatedUser: { id: string, name: string, avatarUrl?: string, role: string } | undefined;
+      let simulatedUser: { id: string, name: string, avatarUrl?: string, role: UserRole } | undefined; // Use UserRole type
 
       if (success) {
           const userId = `user_${Math.random().toString(36).substring(7)}`;
@@ -151,7 +164,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
               avatarUrl: `https://picsum.photos/seed/${userId}/100/100`,
               role: 'User' // All new signups default to User
           };
-          console.log(`Simulated saving essential signup data for user ${userId}:`, { licensePlate, ownerPhone, hasMultipleCars });
+          console.log(`Simulated saving essential signup data for user ${userId}:`, { licensePlate, hasMultipleCars }); // Removed ownerPhone
       }
       setIsLoading(false);
 
@@ -195,7 +208,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
    const handleSignUp = async (method: 'email') => { // Only email signup now
      if (!name) { toast({ title: "Missing Information", description: "Please enter your full name.", variant: "destructive" }); return; }
      if (!licensePlate) { toast({ title: "Missing Information", description: "Please enter your primary vehicle's license plate.", variant: "destructive" }); return; }
-     if (!ownerPhone) { toast({ title: "Missing Information", description: "Please enter the vehicle owner's phone number.", variant: "destructive" }); return; }
+     // if (!ownerPhone) { toast({ title: "Missing Information", description: "Please enter the vehicle owner's phone number.", variant: "destructive" }); return; } // Removed owner phone check
      if (method === 'email' && (!email || !password)) { toast({ title: "Missing Information", description: "Please enter your email address and create a password.", variant: "destructive" }); return; }
 
     const result = await mockSignUp(method);
@@ -282,7 +295,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
             setPhone('');
             setMobileMoneyNumber('');
             setLicensePlate('');
-            setOwnerPhone('');
+            // setOwnerPhone(''); // Removed
             setHasMultipleCars(false); // Reset toggle
             setRfidStatus('idle');
             setOtpSent(false); // Reset OTP state
@@ -432,13 +445,6 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                      )}
                  </div>
 
-                  {/* Owner Phone Number */}
-                 <div className="space-y-2">
-                   <Label htmlFor="signup-owner-phone">Owner's Phone Number*</Label>
-                   <Input id="signup-owner-phone" type="tel" placeholder="+260 XXX XXX XXX" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)} disabled={isLoading} required />
-                   <p className="text-xs text-muted-foreground">Phone number associated with the vehicle owner for verification.</p>
-                 </div>
-
                   {/* Multiple Cars Toggle */}
                   <div className="flex items-center space-x-2 pt-2">
                       <Switch
@@ -447,10 +453,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                         onCheckedChange={setHasMultipleCars}
                         disabled={isLoading}
                       />
-                      <Label htmlFor="multiple-cars">Do you manage multiple vehicles (Fleet/Company)?</Label>
+                      <Label htmlFor="multiple-cars" className="flex items-center gap-1">
+                         <Briefcase className="h-4 w-4 text-muted-foreground" /> Manage Multiple Vehicles (Fleet/Company)?
+                      </Label>
                   </div>
                   {hasMultipleCars && (
-                      <p className="text-xs text-muted-foreground pl-8">You can add more vehicles in your profile after signing up.</p>
+                      <p className="text-xs text-muted-foreground pl-8">You can add more vehicles in your profile after signing up. Corporate packages are available.</p>
                   )}
 
 
@@ -460,7 +468,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
                     <Input id="signup-email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} required/>
                     <Label htmlFor="signup-password">Create Password*</Label>
                     <Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} required/>
-                    <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !ownerPhone || !email || !password} className="w-full">
+                    <Button onClick={() => handleSignUp('email')} disabled={isLoading || !name || !licensePlate || !email || !password} className="w-full">
                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />} Sign Up with Email
                     </Button>
                  </div>

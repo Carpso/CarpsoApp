@@ -2,18 +2,19 @@
 'use client';
 
 import React, { createContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import type { UserRole } from '@/services/user-service'; // Import UserRole type
 
 interface UserState {
   isAuthenticated: boolean;
   userId: string | null;
   userName: string | null;
   userAvatarUrl: string | null;
-  userRole: string | null; // e.g., 'User', 'Admin', 'ParkingLotOwner'
+  userRole: UserRole | null; // Use imported UserRole type
 }
 
 interface AppStateContextProps extends UserState {
   isOnline: boolean; // Added online status
-  login: (userId: string, name: string, avatarUrl?: string | null, role?: string | null) => void;
+  login: (userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => void; // Use UserRole type
   logout: () => void;
   updateUserProfile: (name: string, avatarUrl?: string | null) => void;
 }
@@ -55,7 +56,7 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
    }, []);
 
 
-  const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: string | null) => {
+  const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => { // Use UserRole type
     // In a real app, you'd verify credentials/token before setting state
     setUserState({
       isAuthenticated: true,
@@ -78,9 +79,29 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
     // Clear persisted login state if needed
     // Clear cached data on logout
     if (typeof window !== 'undefined') {
-        localStorage.removeItem('cachedParkingLots');
-        localStorage.removeItem('cachedUserWallet');
-        // Add other cache clears as needed
+        // Clear user-specific cache keys
+        Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('cachedUserDetails_') ||
+                key.startsWith('cachedBillingInfo_') ||
+                key.startsWith('cachedParkingHistory_') ||
+                key.startsWith('cachedVehicles_') ||
+                key.startsWith('cachedPaymentMethods_') ||
+                key.startsWith('cachedGamification_') ||
+                key.startsWith('cachedPointsTxns_') ||
+                key.startsWith('cachedUserWallet_') ||
+                key.startsWith('cachedUserWalletTxns_') ||
+                key.startsWith('cachedUserBookmarks_') ||
+                key.endsWith('_timestamp')) { // Also remove timestamps
+                localStorage.removeItem(key);
+            }
+        });
+         // Clear general cache if needed (careful not to clear unrelated data)
+         localStorage.removeItem('cachedParkingLots');
+         localStorage.removeItem('cachedParkingLotsTimestamp');
+         localStorage.removeItem('cachedExchangeRates');
+         localStorage.removeItem('cachedExchangeRates_timestamp');
+         localStorage.removeItem('pinnedCarLocation'); // Clear pinned car
+         console.log("Cleared user-specific cache on logout.");
     }
   }, []);
 

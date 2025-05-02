@@ -44,6 +44,23 @@ export interface PointsTransaction {
     type: 'sent' | 'received';
 }
 
+/**
+ * Defines the possible user roles within the system.
+ */
+export type UserRole = 'User' | 'Admin' | 'ParkingLotOwner' | 'ParkingAttendant'; // Added ParkingAttendant
+
+/**
+ * Represents user details for attendant search results.
+ */
+export interface AttendantSearchResult {
+    userId: string;
+    userName: string;
+    phone?: string;
+    vehiclePlate: string;
+    vehicleMake?: string;
+    vehicleModel?: string;
+}
+
 
 // --- Mock Data Store ---
 // In a real app, this data would be stored in a database linked to the user ID.
@@ -62,6 +79,8 @@ let userGamificationData: Record<string, UserGamification> = {
         badges: [],
         isCarpoolEligible: true,
     },
+     // Add a sample attendant user's gamification data if needed
+     'attendant_001': { points: 10, badges: [], isCarpoolEligible: false },
 };
 
 // Mock store for bookmarks
@@ -335,4 +354,84 @@ export async function getMockUsersForTransfer(): Promise<{ id: string, name: str
          id,
          name: `User ${id.substring(0, 5)} (mock)`, // Replace with actual name lookup later
      }));
+}
+
+// Mock data for users and vehicles (replace with actual data source)
+const mockUserData = [
+    { userId: 'user_abc123', userName: 'Alice Smith', phone: '0977123456', role: 'User' },
+    { userId: 'user_def456', userName: 'Bob Phiri', phone: '0966789012', role: 'User' },
+    { userId: 'attendant_001', userName: 'Attendant One', phone: '0955555555', role: 'ParkingAttendant' },
+];
+const mockVehicleData = [
+    { userId: 'user_abc123', plate: 'ABC 123', make: 'Toyota', model: 'Corolla' },
+    { userId: 'user_abc123', plate: 'XYZ 789', make: 'Nissan', model: 'Hardbody' },
+    { userId: 'user_def456', plate: 'DEF 456', make: 'Honda', model: 'CRV' },
+];
+
+/**
+ * Simulates searching for user/vehicle details by plate number or phone number (for attendants).
+ * In a real app, this would query a database or multiple services.
+ * @param query The search query (plate number or phone number).
+ * @returns A promise resolving to an array of matching results.
+ */
+export async function searchUserOrVehicleByAttendant(query: string): Promise<AttendantSearchResult[]> {
+    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate search delay
+    const normalizedQuery = query.replace(/\s+/g, '').toUpperCase();
+    const results: AttendantSearchResult[] = [];
+
+    console.log(`Attendant searching for: ${normalizedQuery}`);
+
+    // Search by Plate Number
+    for (const vehicle of mockVehicleData) {
+        if (vehicle.plate.replace(/\s+/g, '').toUpperCase().includes(normalizedQuery)) {
+            const user = mockUserData.find(u => u.userId === vehicle.userId);
+            if (user) {
+                results.push({
+                    userId: user.userId,
+                    userName: user.userName,
+                    phone: user.phone,
+                    vehiclePlate: vehicle.plate,
+                    vehicleMake: vehicle.make,
+                    vehicleModel: vehicle.model,
+                });
+            }
+        }
+    }
+
+    // Search by Phone Number
+    for (const user of mockUserData) {
+        if (user.phone && user.phone.replace(/\D/g, '').includes(normalizedQuery.replace(/\D/g, ''))) {
+            // Find vehicles associated with this user
+            const userVehicles = mockVehicleData.filter(v => v.userId === user.userId);
+            if (userVehicles.length > 0) {
+                // Add a result for each vehicle found for the matching phone number
+                userVehicles.forEach(vehicle => {
+                    // Avoid adding duplicates if already found via plate search
+                    if (!results.some(r => r.userId === user.userId && r.vehiclePlate === vehicle.plate)) {
+                        results.push({
+                            userId: user.userId,
+                            userName: user.userName,
+                            phone: user.phone,
+                            vehiclePlate: vehicle.plate,
+                            vehicleMake: vehicle.make,
+                            vehicleModel: vehicle.model,
+                        });
+                    }
+                });
+            } else {
+                 // Add user even if no vehicle is found, if phone matches
+                 if (!results.some(r => r.userId === user.userId)) {
+                     results.push({
+                         userId: user.userId,
+                         userName: user.userName,
+                         phone: user.phone,
+                         vehiclePlate: 'N/A', // Indicate no vehicle linked in this mock data
+                     });
+                 }
+            }
+        }
+    }
+
+    console.log(`Attendant search results for "${query}":`, results);
+    return results;
 }
