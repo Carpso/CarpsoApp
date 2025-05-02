@@ -108,9 +108,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
         // Don't show error toast if offline, the main manager component handles the offline notification
         if (isOnline) {
             toast({
-              title: "Error",
-              description: `Failed to load parking data for ${location.name}. Please try again later.`,
+              title: "Error Loading Spots",
+              description: `Failed to load parking data for ${location.name}. Retrying automatically.`,
               variant: "destructive",
+              duration: 5000,
             });
         }
       } finally {
@@ -144,7 +145,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           setPrediction(predictionResult);
       } catch (err) {
           console.error('Prediction failed:', err);
-          if (isOnline) toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default" });
+          // Use toast for non-critical info
+          if (isOnline) toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default", duration: 3000 });
       } finally {
           setIsPredictionLoading(false);
       }
@@ -157,7 +159,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           setCostRule(costResult.appliedRule);
       } catch (err) {
            console.error('Cost calculation failed:', err);
-           if (isOnline) toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default" });
+           if (isOnline) toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default", duration: 3000 });
       } finally {
            setIsCostLoading(false);
       }
@@ -246,17 +248,17 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          // Modify toast for occupied spot when offline
          if (!isOnline) {
               toast({
-                 title: "Spot Occupied (Offline)",
-                 description: `Cannot verify real-time status for ${spot.spotId}. Cached data shows occupied.`,
-                 variant: "default",
-                 duration: 3000,
+                 title: "Spot Status (Offline)",
+                 description: `Cached data shows ${spot.spotId} occupied. Live view might be unavailable.`,
+                 variant: "default", // Use default style, not error
+                 duration: 4000,
               });
          } else {
             toast({
                 title: "Spot Occupied",
                 description: `Spot ${spot.spotId} is currently occupied. Click again to view live location.`, // Updated description
                 variant: "default",
-                duration: 3000,
+                duration: 4000,
             });
          }
      }
@@ -264,11 +266,21 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
 
   const handleReserveConfirm = async () => {
-      if (!selectedSpot || !isOnline) { // Prevent reservation if offline
-          toast({ title: "Offline", description: "Cannot reserve spots while offline.", variant: "destructive"});
-          setIsReserving(false); // Ensure loading stops if offline
+      if (!selectedSpot) return; // Should not happen, but safety check
+
+      if (!isOnline) { // Prevent reservation if offline
+          toast({
+              title: "Offline Reservation Attempted",
+              description: "Your reservation request for " + selectedSpot.spotId + " will be queued and processed when you reconnect.",
+              variant: "destructive" // Use destructive to indicate it's not confirmed
+          });
+          setIsDialogOpen(false); // Close dialog, but don't set as reserved
+          setSelectedSpot(null);
+          // TODO: Add to offline queue logic here
+          setIsReserving(false);
           return;
       }
+
       setIsReserving(true);
       const reservationTime = new Date().toISOString(); // Capture reservation time
 
@@ -292,10 +304,10 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
          setIsDialogOpen(false); // Close dialog on successful reservation
 
-          // Show toast with buttons
+          // Show toast with buttons for success notification
          toast({
-             title: "Reservation Successful",
-             description: `Spot ${selectedSpot.spotId} reserved! Est. Cost: ~K ${estimatedCost?.toFixed(2)}/hr`, // Use K symbol
+             title: "Reservation Successful!",
+             description: `Spot ${selectedSpot.spotId} reserved at ${location.name}.`,
              duration: 15000, // Keep toast longer to allow interaction
              action: (
                  <div className="flex flex-col gap-2 mt-2">
@@ -330,6 +342,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
       } catch (error: any) {
            console.error("Reservation failed:", error);
+           // Use toast for failure notification
            toast({
                title: "Reservation Failed",
                description: error.message || "Could not reserve the spot. Please try again.",
@@ -345,12 +358,6 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                 setPredictionInterval(null);
             }
       }
-
-      // TODO: If offline reservation queue exists, remove this reservation from the queue on success, or mark as failed on error
-       if (!isOnline) {
-            // Handle offline queue result (simulation)
-           // updateOfflineQueueStatus(selectedSpot.spotId, reservationSuccess ? 'synced' : 'failed');
-       }
   };
 
   const handleDialogClose = (open: boolean) => {
@@ -378,10 +385,11 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
   const handleReservationTimeout = () => {
       setIsDialogOpen(false);
+      // Use toast for timeout notification
       toast({
         title: "Reservation Timed Out",
-        description: `Reservation for spot ${selectedSpot?.spotId} expired.`,
-        variant: "destructive",
+        description: `Your hold on spot ${selectedSpot?.spotId} expired. Please select again if needed.`,
+        variant: "destructive", // Use destructive style for timeout
       });
        setTimeout(() => {
            setSelectedSpot(null);
@@ -534,7 +542,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                         <WifiOff className="h-4 w-4" />
                         <AlertTitle>You are offline!</AlertTitle>
                          <AlertDialogDescriptionSub> {/* Use alias */}
-                           Cost estimates and availability predictions are unavailable. Reservations cannot be confirmed until you reconnect.
+                           Cost estimates and availability predictions are unavailable. Reservations cannot be confirmed until you reconnect. Offline reservations will be queued.
                         </AlertDialogDescriptionSub>
                     </Alert>
                 )}
@@ -575,7 +583,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                        <p className="text-muted-foreground text-xs flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Prediction data unavailable.</p>
                    )}
                 </div>
-                 <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Reservations held for a limited time. Confirm below.</p>
+                 <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Reservations held for 60 seconds. Confirm below.</p>
             </div>
 
              {/* Timed Reservation Slider */}
