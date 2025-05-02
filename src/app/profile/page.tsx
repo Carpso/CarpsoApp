@@ -13,13 +13,13 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe } from 'lucide-react'; // Added Landmark, Globe
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact } from 'lucide-react'; // Added RefreshCcw, MessageSquare, Contact
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints
 import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useRouter } from 'next/navigation';
-import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency } from '@/services/wallet-service'; // Import wallet service, added currency functions
+import { getWalletBalance, getWalletTransactions, Wallet, WalletTransaction, getExchangeRates, convertCurrency, getPaymentMethods, updatePaymentMethods, PaymentMethod } from '@/services/wallet-service'; // Import wallet service, added currency functions, payment methods
 import TopUpModal from '@/components/wallet/TopUpModal'; // Import TopUpModal
 import SendMoneyModal from '@/components/wallet/SendMoneyModal'; // Import SendMoneyModal
 import PayForOtherModal from '@/components/wallet/PayForOtherModal'; // Import PayForOtherModal
@@ -29,7 +29,8 @@ import { cn } from '@/lib/utils'; // Import cn utility
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert components
 import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as DialogHeaderSub, DialogTitle as DialogTitleSub, DialogDescription as DialogDescriptionSub, DialogClose } from "@/components/ui/dialog"; // Import Dialog components
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
-
+import { convertToCSV, getParkingRecords, ParkingRecord } from '@/services/pricing-service'; // Import parking records functions
+import PaymentMethodModal from '@/components/profile/PaymentMethodModal'; // Import PaymentMethodModal
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
@@ -40,7 +41,7 @@ interface UserDetails {
     memberSince: string;
     role: string;
     // New fields for editing
-    preferredPaymentMethod?: 'Card' | 'MobileMoney';
+    preferredPaymentMethod?: string; // Now string to hold payment method ID
     notificationPreferences?: {
         promotions: boolean;
         updates: boolean;
@@ -48,23 +49,13 @@ interface UserDetails {
 }
 
 interface BillingInfo {
-    paymentMethods: { id: string; type: 'Card' | 'MobileMoney'; details: string; isPrimary: boolean }[];
+    // paymentMethods moved to separate state/service
     subscriptionTier?: 'Basic' | 'Premium';
     guaranteedSpotsAvailable?: number;
 }
 
-interface ParkingHistoryEntry {
-    id: string;
-    spotId: string;
-    locationName: string;
-    locationId: string;
-    startTime: string;
-    endTime: string;
-    cost: number;
-    status: 'Completed' | 'Active' | 'Upcoming';
-}
-
-interface Vehicle {
+// Moved Vehicle interface outside, assuming it might be reused
+export interface Vehicle { // Export Vehicle interface
     id: string;
     make: string;
     model: string;
@@ -72,12 +63,14 @@ interface Vehicle {
     isPrimary: boolean;
 }
 
+
 // --- Cache Keys ---
 const CACHE_KEYS = {
     userDetails: (userId: string) => `cachedUserDetails_${userId}`,
     billingInfo: (userId: string) => `cachedBillingInfo_${userId}`,
     parkingHistory: (userId: string) => `cachedParkingHistory_${userId}`,
     vehicles: (userId: string) => `cachedVehicles_${userId}`,
+    paymentMethods: (userId: string) => `cachedPaymentMethods_${userId}`, // Added Payment Methods cache
     gamification: (userId: string) => `cachedGamification_${userId}`,
     pointsTxns: (userId: string) => `cachedPointsTxns_${userId}`, // Added points transactions cache
     wallet: (userId: string) => `cachedUserWallet_${userId}`,
@@ -126,7 +119,7 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
     const role = existingRole || 'User';
     // Simulate fetching other details
     const prefs = { promotions: Math.random() > 0.5, updates: true };
-    const details = { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role, preferredPaymentMethod: 'Card', notificationPreferences: prefs };
+    const details = { name, email: `user_${userId.substring(0, 5)}@example.com`, phone: '+260 977 123 456', avatarUrl, memberSince: '2024-01-15', role, preferredPaymentMethod: 'pm_1', notificationPreferences: prefs }; // Set default preferred ID
     setCachedData(CACHE_KEYS.userDetails(userId), details);
     return details;
 };
@@ -134,27 +127,23 @@ const fetchUserDetails = async (userId: string, existingName?: string | null, ex
 const fetchBillingInfo = async (userId: string, role: string): Promise<Omit<BillingInfo, 'accountBalance'>> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     const isPremium = role?.toLowerCase().includes('premium') || Math.random() > 0.7;
-     // Add IDs to payment methods
-    const billing = { paymentMethods: [{ id:'pm_1', type: 'Card', details: 'Visa **** 4321', isPrimary: true }, { id:'pm_2', type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false }], subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
+    // Payment methods are now fetched separately
+    const billing = { subscriptionTier: isPremium ? 'Premium' : 'Basic', guaranteedSpotsAvailable: isPremium ? 3 : 0 };
     setCachedData(CACHE_KEYS.billingInfo(userId), billing);
     return billing;
 };
 
 
-const fetchParkingHistory = async (userId: string): Promise<ParkingHistoryEntry[]> => {
+const fetchParkingHistory = async (userId: string): Promise<ParkingRecord[]> => { // Use ParkingRecord type
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const now = Date.now();
-    const history: ParkingHistoryEntry[] = [
-      { id: 'res1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 30 * 60000).toISOString(), endTime: new Date(now + 60 * 60000).toISOString(), cost: 0, status: 'Active' },
-      { id: 'hist1', spotId: 'lot_A-S5', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 2 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (2 * 24 - 1.5) * 60 * 60000).toISOString(), cost: 35.00, status: 'Completed' }, // Adjusted cost for ZMW
-      { id: 'hist2', spotId: 'lot_B-S22', locationName: 'Airport Lot B', locationId: 'lot_B', startTime: new Date(now - 5 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (5 * 24 - 2) * 60 * 60000).toISOString(), cost: 50.00, status: 'Completed' }, // Adjusted cost for ZMW
-      { id: 'hist3', spotId: 'lot_A-S12', locationName: 'Downtown Garage', locationId: 'lot_A', startTime: new Date(now - 7 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (7 * 24 - 0.75) * 60 * 60000).toISOString(), cost: 15.00, status: 'Completed' }, // Adjusted cost for ZMW
-      { id: 'hist4', spotId: 'lot_C-S100', locationName: 'Mall Parking Deck', locationId: 'lot_C', startTime: new Date(now - 10 * 24 * 60 * 60000).toISOString(), endTime: new Date(now - (10 * 24 - 3) * 60 * 60000).toISOString(), cost: 70.00, status: 'Completed' }, // Adjusted cost for ZMW
-    ];
-     const sortedHistory = history.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-     setCachedData(CACHE_KEYS.parkingHistory(userId), sortedHistory);
-    return sortedHistory;
+    // Use the mock data from pricing-service (adjust if needed)
+    const allRecords = await getParkingRecords({ userId }); // Fetch records for the user
+     // Sort records by startTime descending before caching
+    const sortedRecords = allRecords.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    setCachedData(CACHE_KEYS.parkingHistory(userId), sortedRecords);
+    return sortedRecords;
 };
+
 
 const fetchVehicles = async (userId: string): Promise<Vehicle[]> => {
     await new Promise(resolve => setTimeout(resolve, 600));
@@ -201,6 +190,13 @@ const userBookmarks: Record<string, UserBookmark[]> = {
         { id: 'bm_2', userId: 'user_abc123', label: 'Work', address: '1 Business Ave, Anytown' },
     ],
 };
+
+// --- Payment Methods Fetch (using wallet-service mock) ---
+const fetchPaymentMethods = async (userId: string): Promise<PaymentMethod[]> => {
+    const methods = await getPaymentMethods(userId); // Use the mock function from wallet-service
+    setCachedData(CACHE_KEYS.paymentMethods(userId), methods);
+    return methods;
+}
 
 // --- Modified Gamification Fetch to Cache ---
 const fetchUserGamification = async (userId: string): Promise<UserGamification> => {
@@ -256,7 +252,7 @@ const updateUserDetails = async (userId: string, updates: Partial<UserDetails>):
      console.log("Simulating user details update:", userId, updates);
      // In a real app, update the backend data source
      // This mock doesn't persist changes across sessions in memory, but caches
-     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User' };
+     const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: '', email: '', phone: '', avatarUrl: '', memberSince: new Date().toISOString(), role: 'User', preferredPaymentMethod: undefined };
      const updatedDetails: UserDetails = {
          ...currentDetails,
          name: updates.name || currentDetails.name,
@@ -277,6 +273,15 @@ const updateUserVehicles = async (userId: string, vehicles: Vehicle[]): Promise<
     setCachedData(CACHE_KEYS.vehicles(userId), vehicles);
     return vehicles;
 };
+
+// --- Payment Method Update Function ---
+const updateUserPaymentMethods = async (userId: string, methods: PaymentMethod[]): Promise<PaymentMethod[]> => {
+    // Use the imported update function from wallet-service
+    const updatedMethods = await updatePaymentMethods(userId, methods);
+    setCachedData(CACHE_KEYS.paymentMethods(userId), updatedMethods); // Update cache
+    return updatedMethods;
+};
+
 
 // Helper to get Lucide icon component based on name string
 const getIconFromName = (iconName: string | undefined): React.ElementType => {
@@ -322,8 +327,9 @@ export default function ProfilePage() {
 
     const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
     const [billingInfo, setBillingInfo] = useState<Omit<BillingInfo, 'accountBalance'> | null>(null);
-    const [parkingHistory, setParkingHistory] = useState<ParkingHistoryEntry[] | null>(null);
+    const [parkingHistory, setParkingHistory] = useState<ParkingRecord[] | null>(null); // Use ParkingRecord
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]); // Added state for payment methods
     const [gamification, setGamification] = useState<UserGamification | null>(null);
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
@@ -336,13 +342,14 @@ export default function ProfilePage() {
     const [isLoadingWallet, setIsLoadingWallet] = useState(true);
     const [isLoadingGamification, setIsLoadingGamification] = useState(true); // Added gamification loading state
     const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
+    const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(true); // Added loading state
     const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(true); // Loading state for bookmarks
     const [isLoadingRates, setIsLoadingRates] = useState(true); // Loading state for rates
     const [errorLoading, setErrorLoading] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<number | null>(null); // Track last successful fetch time
 
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-    const [reportingReservation, setReportingReservation] = useState<ParkingHistoryEntry | null>(null);
+    const [reportingReservation, setReportingReservation] = useState<ParkingRecord | null>(null); // Use ParkingRecord
     const [isUpdatingCarpool, setIsUpdatingCarpool] = useState(false);
 
     const [editMode, setEditMode] = useState(false);
@@ -354,11 +361,14 @@ export default function ProfilePage() {
     const [editEmail, setEditEmail] = useState(''); // Added email edit state
     const [editVehicles, setEditVehicles] = useState<Vehicle[]>([]);
     const [editNotificationPrefs, setEditNotificationPrefs] = useState({ promotions: false, updates: false });
+    const [editPreferredPaymentMethod, setEditPreferredPaymentMethod] = useState<string | undefined>(undefined); // Track preferred payment method ID
 
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
     const [isSendMoneyModalOpen, setIsSendMoneyModalOpen] = useState(false);
     const [isPayForOtherModalOpen, setIsPayForOtherModalOpen] = useState(false); // Added state
     const [isTransferPointsModalOpen, setIsTransferPointsModalOpen] = useState(false); // Added state
+    const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false); // State for payment method modal
+
 
     // Bookmark Modal State
     const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
@@ -384,21 +394,24 @@ export default function ProfilePage() {
         setIsLoadingWallet(true);
         setIsLoadingGamification(true); // Set gamification loading
         setIsLoadingVehicles(true);
+        setIsLoadingPaymentMethods(true); // Set payment methods loading
         setIsLoadingBookmarks(true);
         setIsLoadingRates(true); // Set rates loading
         setErrorLoading(null);
 
-        const loadFromCache = (keyFunc: (userId: string) => string, setter: Function) => {
-            const cached = getCachedData<any>(keyFunc(userId));
+        const loadFromCache = <T>(keyFunc: (userId: string) => string, setter: (data: T) => void): boolean => {
+            const cached = getCachedData<T>(keyFunc(userId));
             if (cached) setter(cached);
             return !!cached;
         };
+
 
         // Load initial data from cache if available
         const hasCachedDetails = loadFromCache(CACHE_KEYS.userDetails, setUserDetails);
         const hasCachedBilling = loadFromCache(CACHE_KEYS.billingInfo, setBillingInfo);
         const hasCachedHistory = loadFromCache(CACHE_KEYS.parkingHistory, setParkingHistory);
         const hasCachedVehicles = loadFromCache(CACHE_KEYS.vehicles, setVehicles);
+        const hasCachedPaymentMethods = loadFromCache(CACHE_KEYS.paymentMethods, setPaymentMethods); // Load payment methods cache
         const hasCachedGamification = loadFromCache(CACHE_KEYS.gamification, setGamification);
         const hasCachedPointsTxns = loadFromCache(CACHE_KEYS.pointsTxns, setPointsTransactions); // Load points txns cache
         const hasCachedWallet = loadFromCache(CACHE_KEYS.wallet, setWallet);
@@ -408,28 +421,34 @@ export default function ProfilePage() {
         if (hasCachedRates) setExchangeRates(getCachedData<Record<string, number>>(CACHE_KEYS.exchangeRates));
 
         // Immediately initialize edit states from cached/global state
-        const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName || '', avatarUrl: userAvatarUrl || '', memberSince: '', role: userRole || 'User', phone: '', email: '', notificationPreferences: { promotions: false, updates: false } };
+        const initialDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId)) || { name: userName || '', avatarUrl: userAvatarUrl || '', memberSince: '', role: userRole || 'User', phone: '', email: '', notificationPreferences: { promotions: false, updates: false }, preferredPaymentMethod: undefined };
         setEditName(initialDetails?.name || '');
         setEditAvatarUrl(initialDetails?.avatarUrl || '');
         setEditPhone(initialDetails?.phone || '');
         setEditEmail(initialDetails?.email || '');
         setEditVehicles(getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId)) || []);
         setEditNotificationPrefs(initialDetails?.notificationPreferences || { promotions: false, updates: false });
+        setEditPreferredPaymentMethod(initialDetails?.preferredPaymentMethod); // Initialize preferred payment method
 
-        if (!isOnline && hasCachedDetails && hasCachedBilling && hasCachedHistory && hasCachedVehicles && hasCachedGamification && hasCachedPointsTxns && hasCachedWallet && hasCachedTxns && hasCachedBookmarks && hasCachedRates) {
+        // Determine if full refresh is needed
+        const needsFullRefresh = forceRefresh || !hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedPaymentMethods || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates;
+
+
+        if (!isOnline && !needsFullRefresh) {
             console.log("Offline: Using cached profile data.");
             setIsLoading(false);
             setIsLoadingWallet(false);
-            setIsLoadingGamification(false); // Update gamification loading
+            setIsLoadingGamification(false);
             setIsLoadingVehicles(false);
+            setIsLoadingPaymentMethods(false); // Update payment methods loading
             setIsLoadingBookmarks(false);
-            setIsLoadingRates(false); // Update rates loading
+            setIsLoadingRates(false);
             const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix);
             setLastUpdated(ts ? parseInt(ts) : null);
             return; // Stop if offline and all data loaded from cache
         }
 
-        if (!isOnline && (!hasCachedDetails || !hasCachedBilling || !hasCachedHistory || !hasCachedVehicles || !hasCachedGamification || !hasCachedPointsTxns || !hasCachedWallet || !hasCachedTxns || !hasCachedBookmarks || !hasCachedRates)) {
+        if (!isOnline && needsFullRefresh) {
             console.warn("Offline: Missing some cached profile data.");
             setErrorLoading("Offline: Some profile data is unavailable.");
             // Keep loading spinners for missing sections? Or show cached data + error for missing?
@@ -438,6 +457,7 @@ export default function ProfilePage() {
             if (!hasCachedWallet) setIsLoadingWallet(false);
             if (!hasCachedGamification) setIsLoadingGamification(false); // Update gamification loading
             if (!hasCachedVehicles) setIsLoadingVehicles(false);
+            if (!hasCachedPaymentMethods) setIsLoadingPaymentMethods(false); // Update payment methods loading
             if (!hasCachedBookmarks) setIsLoadingBookmarks(false);
             if (!hasCachedRates) setIsLoadingRates(false); // Update rates loading
              const ts = localStorage.getItem(CACHE_KEYS.userDetails(userId) + CACHE_KEYS.timestampSuffix); // Get any timestamp
@@ -449,11 +469,12 @@ export default function ProfilePage() {
         console.log("Online: Fetching fresh profile data...");
         try {
             const roleToUse = userRole || 'User';
-            const [details, billing, history, vehiclesData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
+            const [details, billing, history, vehiclesData, paymentMethodsData, gamificationData, pointsTxnsData, walletData, transactionsData, bookmarksData, ratesData] = await Promise.all([
                 fetchUserDetails(userId, userName, userAvatarUrl, roleToUse),
                 fetchBillingInfo(userId, roleToUse),
                 fetchParkingHistory(userId),
                 fetchVehicles(userId),
+                fetchPaymentMethods(userId), // Fetch payment methods
                 fetchUserGamification(userId),
                 fetchPointsTransactions(userId, 5), // Fetch points transactions
                 fetchUserWallet(userId),
@@ -465,6 +486,7 @@ export default function ProfilePage() {
             setBillingInfo(billing);
             setParkingHistory(history);
             setVehicles(vehiclesData);
+            setPaymentMethods(paymentMethodsData); // Set payment methods
             setGamification(gamificationData);
             setPointsTransactions(pointsTxnsData); // Set points transactions
             setWallet(walletData);
@@ -480,6 +502,7 @@ export default function ProfilePage() {
             setEditEmail(details.email || '');
             setEditVehicles(vehiclesData);
             setEditNotificationPrefs(details.notificationPreferences || { promotions: false, updates: false });
+             setEditPreferredPaymentMethod(details.preferredPaymentMethod); // Re-initialize preferred payment method
 
         } catch (error) {
             console.error("Failed to load user profile data:", error);
@@ -489,6 +512,7 @@ export default function ProfilePage() {
             if (!hasCachedBilling) setBillingInfo(null);
             if (!hasCachedHistory) setParkingHistory(null);
             if (!hasCachedVehicles) setVehicles([]);
+            if (!hasCachedPaymentMethods) setPaymentMethods([]); // Reset payment methods on error
             if (!hasCachedGamification) setGamification(null);
             if (!hasCachedPointsTxns) setPointsTransactions([]); // Reset points txns on error
             if (!hasCachedWallet) setWallet(null);
@@ -500,11 +524,13 @@ export default function ProfilePage() {
             setIsLoadingWallet(false);
             setIsLoadingGamification(false); // Update gamification loading
             setIsLoadingVehicles(false);
+            setIsLoadingPaymentMethods(false); // Update payment methods loading
             setIsLoadingBookmarks(false);
             setIsLoadingRates(false); // Update rates loading
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId, userRole, isOnline]); // userName/userAvatarUrl removed from deps, added isOnline
+
 
     // Refresh wallet data (Online only)
     const refreshWalletData = useCallback(async () => {
@@ -590,6 +616,25 @@ export default function ProfilePage() {
         }
     }, [isOnline, toast]);
 
+    // Refresh payment methods (Online only)
+    const refreshPaymentMethods = useCallback(async () => {
+        if (!userId || !isOnline) {
+            if (!isOnline) toast({ title: "Offline", description: "Cannot manage payment methods offline.", variant: "destructive" });
+            return;
+        }
+        setIsLoadingPaymentMethods(true);
+        try {
+            const methodsData = await fetchPaymentMethods(userId);
+            setPaymentMethods(methodsData);
+            setLastUpdated(Date.now());
+        } catch (error) {
+             console.error("Failed to refresh payment methods:", error);
+             toast({ title: "Payment Methods Update Error", description: "Could not refresh payment methods.", variant: "destructive" });
+        } finally {
+             setIsLoadingPaymentMethods(false);
+        }
+    }, [userId, toast, isOnline]);
+
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -600,12 +645,14 @@ export default function ProfilePage() {
             setIsLoadingWallet(false);
             setIsLoadingGamification(false); // Clear gamification loading
             setIsLoadingVehicles(false);
+            setIsLoadingPaymentMethods(false); // Clear payment methods loading
             setIsLoadingBookmarks(false);
             setIsLoadingRates(false); // Clear rates loading
             setUserDetails(null);
             setBillingInfo(null);
             setParkingHistory(null);
             setVehicles([]);
+            setPaymentMethods([]); // Clear payment methods
             setGamification(null);
             setPointsTransactions([]); // Clear points txns
             setWallet(null);
@@ -625,7 +672,7 @@ export default function ProfilePage() {
     }, [isOnline, isAuthenticated, isLoading, loadProfileData]);
 
 
-    const handleOpenReportModal = (reservation: ParkingHistoryEntry) => {
+    const handleOpenReportModal = (reservation: ParkingRecord) => { // Use ParkingRecord type
         if (!isAuthenticated) {
             toast({ title: "Sign In Required", description: "Please sign in to report an issue.", variant: "destructive"});
             return;
@@ -634,17 +681,84 @@ export default function ProfilePage() {
         setIsReportModalOpen(true);
     };
 
-    const handleDownloadBilling = () => {
-        console.log("Download billing statement (payment methods, subscriptions):", billingInfo);
-        toast({ title: "Download Started (Simulation)", description: "Downloading billing summary." });
-        // TODO: Implement CSV/PDF generation
-    };
-     const handleDownloadHistory = () => {
-         const completed = parkingHistory?.filter(h => h.status === 'Completed') || [];
-         console.log("Download history (parking, wallet, points):", { parking: completed, wallet: walletTransactions, points: pointsTransactions });
-         toast({ title: "Download Started (Simulation)", description: "Downloading combined history." });
-         // TODO: Implement CSV/PDF generation
+    // --- Download Functions ---
+     const handleDownloadBilling = () => {
+         const billingData = [{
+             subscriptionTier: billingInfo?.subscriptionTier || 'Basic',
+             guaranteedSpotsAvailable: billingInfo?.guaranteedSpotsAvailable || 0,
+         }];
+         const paymentMethodsData = paymentMethods.map(pm => ({
+             id: pm.id,
+             type: pm.type,
+             details: pm.details,
+             isPrimary: pm.isPrimary,
+         }));
+         // Combine or create separate files
+         downloadCSV(billingData, `carpso-plan-summary-${userId}.csv`);
+         downloadCSV(paymentMethodsData, `carpso-payment-methods-${userId}.csv`);
      };
+
+     const handleDownloadHistory = () => {
+         const parkingData = parkingHistory?.map(h => ({
+             recordId: h.recordId,
+             locationName: h.locationName,
+             spotId: h.spotId,
+             startTime: h.startTime,
+             endTime: h.endTime || 'N/A',
+             durationMinutes: h.durationMinutes || 'N/A',
+             cost: h.cost,
+             currency: 'ZMW', // Assuming ZMW
+             status: h.status,
+             paymentMethod: h.paymentMethod || 'N/A',
+             appliedPricingRule: h.appliedPricingRule || 'N/A',
+         })) || [];
+         const walletData = walletTransactions.map(t => ({
+             transactionId: t.id,
+             type: t.type,
+             amount: t.amount,
+             currency: wallet?.currency || 'ZMW',
+             description: t.description,
+             timestamp: t.timestamp,
+             relatedUserId: t.relatedUserId || 'N/A',
+             partnerId: t.partnerId || 'N/A',
+         }));
+         const pointsData = pointsTransactions.map(t => ({
+             transactionId: t.id,
+             type: t.type,
+             points: t.points,
+             senderId: t.senderId,
+             recipientId: t.recipientId,
+             timestamp: t.timestamp,
+         }));
+
+         downloadCSV(parkingData, `carpso-parking-history-${userId}.csv`);
+         downloadCSV(walletData, `carpso-wallet-history-${userId}.csv`);
+         downloadCSV(pointsData, `carpso-points-history-${userId}.csv`);
+     };
+
+      const downloadCSV = (data: any[], filename: string) => {
+        if (!data || data.length === 0) {
+            toast({ title: "No Data", description: "Nothing to download.", variant: "default" });
+            return;
+        }
+        try {
+            const csvContent = convertToCSV(data);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast({ title: "Download Complete", description: `${filename} has been downloaded.` });
+        } catch (error) {
+            console.error("Failed to generate or download CSV:", error);
+            toast({ title: "Download Failed", description: "Could not generate the spreadsheet.", variant: "destructive" });
+        }
+      };
+     // --- End Download Functions ---
 
 
     const handleCarpoolToggle = async (checked: boolean) => {
@@ -693,8 +807,10 @@ export default function ProfilePage() {
                 phone: editPhone,
                 email: editEmail,
                 notificationPreferences: editNotificationPrefs,
+                preferredPaymentMethod: editPreferredPaymentMethod, // Save preferred method ID
             });
              const updatedVehiclesPromise = updateUserVehicles(userId, editVehicles);
+             // Note: Payment methods are updated via their dedicated modal now
 
              const [updatedDetails, updatedVehiclesResult] = await Promise.all([
                  updatedDetailsPromise,
@@ -729,6 +845,7 @@ export default function ProfilePage() {
         setEditEmail(currentDetails?.email || '');
         setEditVehicles(currentVehicles); // Reset to original vehicles fetched/cached
         setEditNotificationPrefs(currentDetails?.notificationPreferences || { promotions: false, updates: false });
+        setEditPreferredPaymentMethod(currentDetails?.preferredPaymentMethod); // Reset preferred payment method
         setEditMode(false);
      };
 
@@ -856,6 +973,52 @@ export default function ProfilePage() {
     };
     // --- End Bookmark Handlers ---
 
+    // --- Payment Method Management ---
+     const handleOpenPaymentMethodModal = () => {
+        if (!isOnline) {
+            toast({ title: "Offline", description: "Cannot manage payment methods offline.", variant: "destructive" });
+            return;
+        }
+        setIsPaymentMethodModalOpen(true);
+     };
+
+     const handleSavePaymentMethods = async (updatedMethods: PaymentMethod[], newPreferredId: string | undefined) => {
+         if (!userId || !isOnline) return;
+         setIsSavingProfile(true); // Reuse saving state
+         try {
+             // Save the methods first
+             await updateUserPaymentMethods(userId, updatedMethods);
+             // Then update the preferred ID in user details
+             const updatedDetails = await updateUserDetails(userId, { preferredPaymentMethod: newPreferredId });
+
+             // Update local state
+             setPaymentMethods(updatedMethods);
+             setUserDetails(updatedDetails); // Update details with new preferred ID
+             setEditPreferredPaymentMethod(newPreferredId); // Update edit state too
+             setLastUpdated(Date.now());
+             toast({ title: "Payment Methods Updated" });
+             setIsPaymentMethodModalOpen(false);
+         } catch (error) {
+             console.error("Failed to save payment methods:", error);
+             toast({ title: "Save Failed", variant: "destructive" });
+         } finally {
+             setIsSavingProfile(false);
+         }
+     };
+    // --- End Payment Method Management ---
+
+     // --- Tawk.to Chat Integration ---
+     const handleOpenChat = () => {
+         if (typeof window !== 'undefined' && (window as any).Tawk_API && (window as any).Tawk_API.maximize) {
+            (window as any).Tawk_API.maximize();
+         } else {
+             // Fallback or error message if Tawk API isn't available
+             toast({ title: "Chat Unavailable", description: "Live chat support is currently unavailable.", variant: "default" });
+         }
+     };
+     // --- End Tawk.to Chat Integration ---
+
+
     const handleLogout = () => {
         logout();
         toast({ title: "Logged Out"});
@@ -905,6 +1068,7 @@ export default function ProfilePage() {
     const userInitial = displayName ? displayName.charAt(0).toUpperCase() : '?';
     const currentTier = billingInfo?.subscriptionTier || 'Basic';
     const isPremium = currentTier === 'Premium';
+     const preferredMethod = paymentMethods.find(pm => pm.id === userDetails?.preferredPaymentMethod); // Find preferred method details
 
     // Render loading or empty state if not authenticated or data is loading
     if (isLoading && !userDetails) { // Show skeleton only on initial full load without cached data
@@ -915,18 +1079,17 @@ export default function ProfilePage() {
         );
     }
 
-    if (errorLoading) {
+    if (errorLoading && !userDetails && !paymentMethods.length && !parkingHistory) { // Only show full error if no cached data at all
          return (
              <div className="container py-8 px-4 md:px-6 lg:px-8 text-center">
                  <AlertCircle className="mx-auto h-10 w-10 text-destructive mb-4" />
                  <p className="text-destructive">{errorLoading}</p>
                  {isOnline && <Button onClick={() => loadProfileData(true)} className="mt-4">Retry</Button>}
                   {!isOnline && <p className="text-sm text-muted-foreground mt-2">Connect to the internet and try again.</p>}
-                 {/* Display cached data below error? Or separate component? */}
-                 {userDetails && <div className="mt-6 text-left"><Card><CardContent><p>Displaying potentially outdated cached data.</p></CardContent></Card></div> /* Basic indication */}
              </div>
          );
     }
+
 
     if (!isAuthenticated || !userId) { // Keep check for authentication state consistency
         return (
@@ -944,24 +1107,33 @@ export default function ProfilePage() {
             <div className="container py-8 px-4 md:px-6 lg:px-8 max-w-4xl mx-auto">
                 <Card>
                     <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-2xl">My Profile</CardTitle>
-                            {!editMode ? (
-                                <Button variant="ghost" size="icon" onClick={() => setEditMode(true)} aria-label="Edit Profile" disabled={!isOnline}>
-                                     {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot edit offline"/> : <Edit className="h-4 w-4" />}
+                        <div className="flex items-start justify-between gap-4 flex-wrap"> {/* Allow wrapping */}
+                             <div>
+                                 <CardTitle className="text-2xl">My Profile</CardTitle>
+                                 <CardDescription>View and manage your account details, wallet, vehicles, and history.</CardDescription>
+                             </div>
+                             {/* Action Buttons */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <Button variant="outline" size="sm" onClick={() => loadProfileData(true)} disabled={isLoading || !isOnline}>
+                                    {!isOnline ? <WifiOff className="h-4 w-4 mr-1.5" /> : isLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCcw className="h-4 w-4 mr-1.5" />}
+                                    Refresh
                                 </Button>
-                            ) : (
-                                <div className="flex gap-2">
-                                     <Button variant="ghost" size="icon" onClick={handleCancelEdit} disabled={isSavingProfile} aria-label="Cancel Edit">
-                                        <X className="h-4 w-4" />
+                                {!editMode ? (
+                                    <Button variant="ghost" size="icon" onClick={() => setEditMode(true)} aria-label="Edit Profile" disabled={!isOnline}>
+                                         {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot edit offline"/> : <Edit className="h-4 w-4" />}
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isSavingProfile || !isOnline} aria-label="Save Profile">
-                                         {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot save offline"/> : isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
-                                    </Button>
-                                </div>
-                            )}
+                                ) : (
+                                    <div className="flex gap-1">
+                                         <Button variant="ghost" size="icon" onClick={handleCancelEdit} disabled={isSavingProfile} aria-label="Cancel Edit">
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" onClick={handleSaveProfile} disabled={isSavingProfile || !isOnline} aria-label="Save Profile">
+                                             {!isOnline ? <WifiOff className="h-4 w-4 text-muted-foreground" title="Cannot save offline"/> : isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Save className="h-4 w-4" />}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <CardDescription>View and manage your account details, wallet, vehicles, and history.</CardDescription>
                           {/* Offline/Last Updated Indicator */}
                          <div className="text-xs text-muted-foreground pt-2">
                             {!isOnline ? (
@@ -974,6 +1146,16 @@ export default function ProfilePage() {
                                 <span>Up to date.</span>
                             )}
                          </div>
+                          {/* Display error if loading failed but some cached data exists */}
+                         {errorLoading && (isLoadingPaymentMethods || isLoadingVehicles || isLoadingGamification || isLoadingWallet) && (
+                              <Alert variant="warning" className="mt-2">
+                                  <AlertTriangle className="h-4 w-4" />
+                                  <AlertTitle>Loading Issue</AlertTitle>
+                                  <AlertDescription>
+                                      {errorLoading} Displaying best available data.
+                                  </AlertDescription>
+                              </Alert>
+                         )}
                     </CardHeader>
                     <CardContent>
                         {/* User Details Section */}
@@ -1002,6 +1184,27 @@ export default function ProfilePage() {
                                           <div className="space-y-1"> <Label htmlFor="profile-name">Name*</Label><Input id="profile-name" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={isSavingProfile || !isOnline} required /></div>
                                           <div className="space-y-1"><Label htmlFor="profile-email">Email</Label><Input id="profile-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="you@example.com" disabled={isSavingProfile || !isOnline} /></div>
                                           <div className="space-y-1"><Label htmlFor="profile-phone">Phone</Label><Input id="profile-phone" type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+260 ..." disabled={isSavingProfile || !isOnline} /></div>
+                                          {/* Preferred Payment Method Selector in Edit Mode */}
+                                          <div className="space-y-1">
+                                               <Label htmlFor="preferred-payment">Preferred Payment</Label>
+                                               <Select
+                                                   value={editPreferredPaymentMethod || ''}
+                                                   onValueChange={setEditPreferredPaymentMethod}
+                                                   disabled={isSavingProfile || isLoadingPaymentMethods || !isOnline}
+                                                >
+                                                   <SelectTrigger id="preferred-payment">
+                                                        <SelectValue placeholder="Select preferred method..." />
+                                                   </SelectTrigger>
+                                                   <SelectContent>
+                                                       {paymentMethods.length === 0 && <SelectItem value="" disabled>No methods saved</SelectItem>}
+                                                       {paymentMethods.map(pm => (
+                                                           <SelectItem key={pm.id} value={pm.id}>
+                                                               {pm.type === 'Card' ? <CreditCard className="inline h-4 w-4 mr-2" /> : <Smartphone className="inline h-4 w-4 mr-2" />} {pm.details}
+                                                           </SelectItem>
+                                                       ))}
+                                                   </SelectContent>
+                                               </Select>
+                                          </div>
                                       </>
                                   ) : (
                                       <>
@@ -1013,6 +1216,9 @@ export default function ProfilePage() {
                                           </h2>
                                           {userDetails?.email && <p className="text-sm text-muted-foreground">{userDetails.email}</p>}
                                           {userDetails?.phone && <p className="text-sm text-muted-foreground">{userDetails.phone}</p>}
+                                           <p className="text-xs text-muted-foreground">
+                                               Preferred Payment: {preferredMethod ? `${preferredMethod.type} (${preferredMethod.details})` : 'Not Set'}
+                                           </p>
                                           <p className="text-xs text-muted-foreground">Role: {userDetails?.role}</p>
                                           <p className="text-xs text-muted-foreground">Member since: {userDetails?.memberSince ? new Date(userDetails.memberSince).toLocaleDateString() : 'N/A'}</p>
                                       </>
@@ -1074,16 +1280,15 @@ export default function ProfilePage() {
                                              <SelectValue placeholder="Currency" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {exchangeRates && Object.keys(exchangeRates).map(curr => (
-                                                 <SelectItem key={curr} value={curr} className="text-xs">
-                                                    {curr} ({getCurrencySymbol(curr)})
-                                                </SelectItem>
-                                            ))}
-                                             {!exchangeRates && <SelectItem value="ZMW" disabled>ZMW (K)</SelectItem>}
+                                             {exchangeRates ? Object.keys(exchangeRates).map(curr => (
+                                                  <SelectItem key={curr} value={curr} className="text-xs">
+                                                     {curr} ({getCurrencySymbol(curr)})
+                                                 </SelectItem>
+                                             )) : <SelectItem value="ZMW" disabled>ZMW (K)</SelectItem>}
                                         </SelectContent>
                                      </Select>
                                     <Button variant="ghost" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
-                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" /> } Refresh
+                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" /> } Refresh
                                     </Button>
                                 </div>
                              </div>
@@ -1104,10 +1309,27 @@ export default function ProfilePage() {
                                                     </p>
                                                 )}
                                              </div>
-                                             <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
-                                                 <QrCode className="h-5 w-5" />
-                                                 <span className="sr-only">Show QR Code</span>
-                                             </Button>
+                                             {/* QR Code Trigger (Functionality needed) */}
+                                              <Dialog>
+                                                  <DialogTrigger asChild>
+                                                      <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary/60 -mr-2 -mt-1">
+                                                          <QrCode className="h-5 w-5" />
+                                                          <span className="sr-only">Show QR Code</span>
+                                                      </Button>
+                                                  </DialogTrigger>
+                                                  <DialogContent className="sm:max-w-xs">
+                                                      <DialogHeaderSub>
+                                                          <DialogTitleSub>Receive Payment</DialogTitleSub>
+                                                          <DialogDescriptionSub>
+                                                              Scan this code to send money to {displayName}.
+                                                          </DialogDescriptionSub>
+                                                      </DialogHeaderSub>
+                                                      <div className="flex justify-center py-4">
+                                                          <QRCode value={`carpso_pay:${userId}`} size={180} />
+                                                      </div>
+                                                      <p className="text-center text-sm text-muted-foreground">User ID: {userId}</p>
+                                                  </DialogContent>
+                                              </Dialog>
                                          </div>
                                          <div className="mt-4 flex flex-wrap gap-2"> {/* Use flex-wrap */}
                                               <Button variant="secondary" size="sm" onClick={() => setIsTopUpModalOpen(true)} disabled={!isOnline}>
@@ -1155,12 +1377,12 @@ export default function ProfilePage() {
 
                         <Separator className="my-6" />
 
-                         {/* Billing / Payment Methods / Carpso Card Section */}
+                         {/* Billing / Payment Methods Section */}
                          <section className="mb-6">
                              <div className="flex justify-between items-center mb-3">
                                  <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5" /> Billing & Plan</h3>
                                   {/* Download button might be complex offline */}
-                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling} disabled={isLoading && !billingInfo}>
+                                 <Button variant="ghost" size="sm" onClick={handleDownloadBilling} disabled={isLoadingPaymentMethods || isLoading}>
                                      <Download className="mr-2 h-4 w-4" /> Summary
                                  </Button>
                              </div>
@@ -1170,8 +1392,9 @@ export default function ProfilePage() {
                                         <CardHeader className="pb-3">
                                             <CardTitle className="text-base flex justify-between items-center">
                                                 Subscription: {currentTier}
+                                                {/* Link to upgrade/manage subscription */}
                                                 <Button variant="link" size="sm" className="text-xs h-auto p-0" disabled={!isOnline}>
-                                                    {isPremium ? "Manage Plan" : "Upgrade"}
+                                                    {isPremium ? "Manage Plan" : "Upgrade to Premium"}
                                                 </Button>
                                             </CardTitle>
                                         </CardHeader>
@@ -1205,29 +1428,29 @@ export default function ProfilePage() {
 
                                      <div>
                                          <p className="text-sm font-medium mb-2">Payment Methods</p>
-                                          {/* Display only if NOT in edit mode */}
-                                          {!editMode && (
+                                         {isLoadingPaymentMethods && !paymentMethods?.length ? <Skeleton className="h-24 w-full"/> : (
                                               <>
                                                  <div className="space-y-2 mb-3">
-                                                     {billingInfo?.paymentMethods && billingInfo.paymentMethods.length > 0 ? (
-                                                         billingInfo.paymentMethods.map((method) => (
+                                                     {paymentMethods.length > 0 ? (
+                                                         paymentMethods.map((method) => (
                                                              <div key={method.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
                                                                  <div className="flex items-center gap-2">
                                                                      {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
                                                                      <span>{method.details}</span>
                                                                  </div>
-                                                                 {method.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>}
+                                                                  {method.id === userDetails?.preferredPaymentMethod && <Badge variant="outline" size="sm">Primary</Badge>}
                                                              </div>
                                                          ))
                                                      ) : (
                                                          <p className="text-sm text-muted-foreground">No payment methods saved.</p>
                                                      )}
                                                  </div>
-                                                 <Button variant="outline" size="sm" className="w-full" disabled={!isOnline}>Manage Payment Methods</Button>
+                                                  {/* Manage Button - Opens Modal */}
+                                                  <Button variant="outline" size="sm" className="w-full" onClick={handleOpenPaymentMethodModal} disabled={isLoadingPaymentMethods || !isOnline}>
+                                                      {isLoadingPaymentMethods ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Manage Payment Methods
+                                                  </Button>
                                              </>
-                                          )}
-                                           {/* TODO: Add editable payment methods section for edit mode */}
-                                            {editMode && <p className="text-sm text-muted-foreground">[Editable payment methods coming soon]</p>}
+                                         )}
                                      </div>
                                 </>
                              )}
@@ -1279,7 +1502,7 @@ export default function ProfilePage() {
                                                 )}
                                                  {editMode && (
                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile || !isOnline}>
-                                                        <X className="h-4 w-4" />
+                                                        <Trash2 className="h-4 w-4" />
                                                         <span className="sr-only">Remove</span>
                                                     </Button>
                                                  )}
@@ -1344,7 +1567,7 @@ export default function ProfilePage() {
                              <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Points</h3>
                                 <Button variant="ghost" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
-                                    {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Refresh
+                                    {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
                                 </Button>
                              </div>
                              {isLoadingGamification && !gamification ? <Skeleton className="h-48 w-full"/> : (
@@ -1441,16 +1664,16 @@ export default function ProfilePage() {
                              {isLoading && !parkingHistory ? <Skeleton className="h-24 w-full"/> : activeReservations.length > 0 ? (
                                 <div className="space-y-3">
                                     {activeReservations.map((res) => (
-                                        <Card key={res.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                        <Card key={res.recordId} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                                             <div>
-                                                <p className="font-medium">{res.locationName} (Spot {res.spotId.split('-')[1]})</p>
+                                                <p className="font-medium">{res.lotName} (Spot {res.spotId.split('-')[1]})</p>
                                                 <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                                                     <Clock className="h-4 w-4" />
-                                                    <span>Ends: {new Date(res.endTime).toLocaleTimeString()}</span>
+                                                    <span>Started: {new Date(res.startTime).toLocaleTimeString()}</span>
                                                     {/* TODO: Add cancel reservation button */}
                                                 </div>
                                             </div>
-                                            <Button variant="destructive" size="sm" className="w-full sm:w-auto mt-2 sm:mt-0" onClick={() => handleOpenReportModal(res)}>
+                                            <Button variant="destructive" size="sm" className="w-full sm:w-auto mt-2 sm:mt-0" onClick={() => handleOpenReportModal(res)} disabled={!isOnline}>
                                                 <AlertTriangle className="mr-1.5 h-4 w-4" /> Report Issue
                                             </Button>
                                         </Card>
@@ -1469,24 +1692,33 @@ export default function ProfilePage() {
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-lg font-semibold flex items-center gap-2"><List className="h-5 w-5" /> Parking History</h3>
                                  {/* Download might not work well offline */}
-                                <Button variant="ghost" size="sm" onClick={handleDownloadHistory} disabled={isLoading && !parkingHistory}>
-                                    <Download className="mr-2 h-4 w-4" /> Download
+                                <Button variant="ghost" size="sm" onClick={handleDownloadHistory} disabled={isLoading}>
+                                    <Download className="mr-2 h-4 w-4" /> Download History
                                 </Button>
                             </div>
                              <ScrollArea className="h-[250px] pr-3">
                                  {isLoading && !parkingHistory ? <Skeleton className="h-full w-full"/> : completedHistory.length > 0 ? (
                                     <div className="space-y-3">
                                         {completedHistory.map((entry) => (
-                                            <Card key={entry.id} className="p-3 text-sm flex justify-between items-start">
-                                                <div>
-                                                    <p className="font-medium">{entry.locationName} (Spot {entry.spotId.split('-')[1]})</p>
+                                            <Card key={entry.recordId} className="p-3 text-sm flex flex-col sm:flex-row justify-between items-start gap-2">
+                                                 <div className="flex-grow">
+                                                    <p className="font-medium">{entry.lotName} (Spot {entry.spotId.split('-')[1]})</p>
                                                     <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                                         <Clock className="h-3 w-3" />
-                                                        <span>{new Date(entry.startTime).toLocaleString()}</span>
+                                                         <span>{new Date(entry.startTime).toLocaleString()} {entry.endTime ? ` - ${new Date(entry.endTime).toLocaleTimeString()}` : ''}</span>
+                                                        {entry.durationMinutes !== undefined && ` (${entry.durationMinutes} min)`}
                                                     </div>
-                                                </div>
-                                                {/* Format history cost */}
-                                                <span className="font-semibold text-sm">{formatAmount(entry.cost)}</span>
+                                                     <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                                         <CreditCard className="h-3 w-3" />
+                                                         <span>Paid via {entry.paymentMethod || 'N/A'}</span>
+                                                          {entry.appliedPricingRule && `(${entry.appliedPricingRule})`}
+                                                     </div>
+                                                 </div>
+                                                <div className="flex-shrink-0 sm:text-right">
+                                                     <span className="font-semibold text-sm block">{formatAmount(entry.cost)}</span>
+                                                      {/* Button to view/print receipt for this specific entry */}
+                                                     {/* <Button variant="link" size="sm" className="h-auto p-0 text-xs mt-1">View Receipt</Button> */}
+                                                 </div>
                                             </Card>
                                         ))}
                                     </div>
@@ -1495,6 +1727,33 @@ export default function ProfilePage() {
                                 )}
                             </ScrollArea>
                         </section>
+
+                        <Separator className="my-6" />
+
+                        {/* Support Section */}
+                         <section className="mb-6">
+                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
+                                     <MessageSquare className="mr-3 h-5 w-5" />
+                                     <div>
+                                        <p className="font-medium">Live Chat</p>
+                                        <p className="text-xs text-muted-foreground">Get help from our support team.</p>
+                                     </div>
+                                  </Button>
+                                  {/* Link to FAQ or Help Center */}
+                                  <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                      <a href="/help" target="_blank" rel="noopener noreferrer">
+                                         <Info className="mr-3 h-5 w-5" />
+                                         <div>
+                                             <p className="font-medium">Help Center</p>
+                                             <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
+                                         </div>
+                                      </a>
+                                  </Button>
+                             </div>
+                         </section>
+
 
                          <Separator className="my-6" />
 
@@ -1553,6 +1812,15 @@ export default function ProfilePage() {
                 currentPoints={gamification?.points ?? 0}
                 onSuccess={refreshGamificationData} // Refresh sender's points data
             />
+             {/* Payment Method Management Modal */}
+              <PaymentMethodModal
+                  isOpen={isPaymentMethodModalOpen}
+                  onClose={() => setIsPaymentMethodModalOpen(false)}
+                  userId={userId || ''}
+                  currentMethods={paymentMethods}
+                  preferredMethodId={editPreferredPaymentMethod} // Pass the editable preferred ID
+                  onSave={handleSavePaymentMethods}
+              />
 
 
              {/* Add/Edit Bookmark Modal */}
@@ -1626,7 +1894,6 @@ const ProfileSkeleton = () => (
              <Skeleton className="h-28 w-full mb-4 rounded-md"/> {/* Carpso Card */}
              <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
              <Skeleton className="h-12 w-full rounded-md"/>
-             <Skeleton className="h-12 w-full rounded-md"/>
              <Skeleton className="h-9 w-full mt-1 rounded-md"/> {/* Manage Button */}
         </div>
         <Separator />
@@ -1639,7 +1906,6 @@ const ProfileSkeleton = () => (
         {/* Bookmarks Skeleton */}
          <div className="space-y-4">
              <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-16 w-full rounded-md"/>
              <Skeleton className="h-16 w-full rounded-md"/>
          </div>
         <Separator />
@@ -1668,7 +1934,15 @@ const ProfileSkeleton = () => (
             <Skeleton className="h-6 w-1/3 mb-3" />
             <Skeleton className="h-16 w-full rounded-md" />
             <Skeleton className="h-16 w-full rounded-md" />
-            <Skeleton className="h-16 w-full rounded-md" />
         </div>
+        <Separator />
+        {/* Support Skeleton */}
+         <div className="space-y-3">
+             <Skeleton className="h-6 w-1/4 mb-3" />
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <Skeleton className="h-20 w-full rounded-md" />
+                 <Skeleton className="h-20 w-full rounded-md" />
+             </div>
+         </div>
     </div>
 );

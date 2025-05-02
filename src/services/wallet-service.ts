@@ -23,6 +23,18 @@ export interface Wallet {
   currency: string; // e.g., 'ZMW', 'USD'
 }
 
+/**
+ * Represents a saved payment method.
+ */
+export interface PaymentMethod {
+    id: string; // Unique identifier for the payment method
+    type: 'Card' | 'MobileMoney';
+    details: string; // e.g., "Visa **** 4321" or "MTN 096X XXX XXX"
+    isPrimary: boolean;
+    // Add other fields if needed, like expiry date for cards, provider name, etc.
+}
+
+
 // --- Mock Data Store ---
 // In a real app, this would be a secure database.
 let userWallets: Record<string, Wallet> = {
@@ -38,6 +50,17 @@ let userTransactions: Record<string, WalletTransaction[]> = {
     ],
      'user_def456': [
          { id: 'txn_5', type: 'receive', amount: 100.00, description: 'Received from user_abc123', relatedUserId: 'user_abc123', timestamp: new Date(Date.now() - 1 * 3600000).toISOString() },
+     ],
+};
+
+// Mock store for saved payment methods
+let userPaymentMethods: Record<string, PaymentMethod[]> = {
+    'user_abc123': [
+        { id: 'pm_1', type: 'Card', details: 'Visa **** 4321', isPrimary: true },
+        { id: 'pm_2', type: 'MobileMoney', details: 'MTN 096X XXX XXX', isPrimary: false },
+    ],
+     'user_def456': [
+        { id: 'pm_3', type: 'MobileMoney', details: 'Airtel 097X XXX XXX', isPrimary: true },
      ],
 };
 
@@ -102,7 +125,7 @@ export async function topUpWallet(
         id: `txn_${Date.now()}`,
         type: 'top-up',
         amount: amount,
-        description: `Top up via ${paymentMethodValue.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
+        description: `Top up via ${paymentMethodValue.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
         paymentMethodUsed: paymentMethodValue,
         timestamp: new Date().toISOString(),
     };
@@ -155,7 +178,14 @@ export async function sendMoney(
     userTransactions[senderId].push(senderTxn);
 
     // Simulate adding to recipient
-    const recipientId = Object.keys(userWallets).find(id => id === recipientIdentifier);
+    // Try to find recipient by ID first, then simulate finding by phone if needed
+    let recipientId = Object.keys(userWallets).find(id => id === recipientIdentifier);
+    if (!recipientId) {
+        // Simulate finding user by phone number (replace with actual lookup)
+        if (recipientIdentifier === '0977111222') recipientId = 'user_def456';
+        // Add more mock phone lookups if needed
+    }
+
     if (recipientId && recipientId !== senderId) {
          if (!userWallets[recipientId]) userWallets[recipientId] = { balance: 0, currency: 'ZMW' }; // Default ZMW
          if (!userTransactions[recipientId]) userTransactions[recipientId] = [];
@@ -172,6 +202,7 @@ export async function sendMoney(
          console.log(`Credited ${recipientId} with ${amount}`);
     } else {
         console.log(`Recipient ${recipientIdentifier} not found or is sender, only logging sender transaction.`);
+        // In a real app, might send notification or hold funds if recipient needs to sign up
     }
 
 
@@ -282,12 +313,13 @@ export async function payForOtherUser(
  */
 export async function getExchangeRates(): Promise<Record<string, number>> {
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate API call
+    // Example rates relative to ZMW=1
     return {
         'ZMW': 1,
-        'USD': 0.040, // Example rate: 1 ZMW = 0.040 USD
-        'EUR': 0.037, // Example rate: 1 ZMW = 0.037 EUR
-        'GBP': 0.032, // Example rate: 1 ZMW = 0.032 GBP
-        'ZAR': 0.75, // Example rate: 1 ZMW = 0.75 ZAR
+        'USD': 0.040,
+        'EUR': 0.037,
+        'GBP': 0.032,
+        'ZAR': 0.75,
     };
 }
 
@@ -305,6 +337,47 @@ export function convertCurrency(amountZMW: number, targetCurrency: string, rates
         return null;
     }
     return amountZMW * rate;
+}
+
+
+/**
+ * Fetches saved payment methods for a user.
+ * @param userId The ID of the user.
+ * @returns A promise resolving to an array of PaymentMethod objects.
+ */
+export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
+    await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
+    return userPaymentMethods[userId] || [];
+}
+
+/**
+ * Updates (replaces) the payment methods for a user.
+ * Handles setting the primary method based on the isPrimary flag.
+ * @param userId The ID of the user.
+ * @param methods The complete array of new payment methods for the user.
+ * @returns A promise resolving to the updated array of PaymentMethod objects.
+ */
+export async function updatePaymentMethods(userId: string, methods: PaymentMethod[]): Promise<PaymentMethod[]> {
+    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
+
+    // Ensure only one method is marked as primary
+    let primaryFound = false;
+    const updatedMethods = methods.map(method => {
+        if (method.isPrimary && !primaryFound) {
+            primaryFound = true;
+            return method;
+        }
+        return { ...method, isPrimary: false };
+    });
+
+    // If no primary was explicitly set and there are methods, make the first one primary
+    if (!primaryFound && updatedMethods.length > 0) {
+        updatedMethods[0].isPrimary = true;
+    }
+
+    userPaymentMethods[userId] = updatedMethods;
+    console.log(`Updated payment methods for user ${userId}:`, updatedMethods);
+    return updatedMethods;
 }
 
 
