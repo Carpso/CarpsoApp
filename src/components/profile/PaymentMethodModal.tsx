@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, PlusCircle, Trash2, CreditCard, Smartphone, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { PaymentMethod } from '@/services/wallet-service'; // Import type
+import { ScrollArea } from "@/components/ui/scroll-area"; // Import ScrollArea
 
 interface PaymentMethodModalProps {
   isOpen: boolean;
