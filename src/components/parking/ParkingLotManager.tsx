@@ -8,10 +8,10 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // 
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
+import { Badge } from "@/components/ui/badge"; // Import Badge
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon } from 'lucide-react'; // Added Phone, GlobeIcon
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
@@ -89,6 +89,15 @@ export default function ParkingLotManager() {
    const isVisible = useVisibilityChange(); // Track tab visibility
 
    // --- Voice Assistant Integration ---
+    const voiceAssistant = useVoiceAssistant({
+       onCommand: (transcript) => handleVoiceCommand(transcript),
+       onStateChange: (newState) => {
+           console.log("Voice Assistant State (Manager):", newState);
+           setVoiceAssistantState(newState);
+       }
+    });
+   const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError } = voiceAssistant; // Destructure hook results
+
    // Moved handleVoiceCommandResult and handleVoiceCommand inside component body
    const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput) => {
        const { intent, entities, responseText } = commandOutput;
@@ -370,15 +379,6 @@ export default function ParkingLotManager() {
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient]); // Removed fetchRecommendations, fetchUserBookmarks, speak from deps
 
-   // Call the hook *outside* of useEffect
-   const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError } = useVoiceAssistant({
-        onCommand: (transcript) => handleVoiceCommand(transcript),
-        onStateChange: (newState) => {
-            console.log("Voice Assistant State (Manager):", newState);
-            setVoiceAssistantState(newState);
-        }
-   });
-
    // Handle command processing logic here, using `speak` from the hook result
    const handleVoiceCommand = useCallback(async (transcript: string) => {
        if (!transcript) return;
@@ -618,10 +618,12 @@ export default function ParkingLotManager() {
              try {
                 fetchedLocations = JSON.parse(cachedData);
                 console.log("Using valid cached parking lots.");
+                needsServerFetch = false; // Cache is valid, no need to fetch initially
              } catch {
-                 console.error("Failed to parse cached locations");
+                 console.error("Failed to parse cached locations, will fetch fresh.", e);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
+                 needsServerFetch = true;
              }
         }
     }
@@ -629,7 +631,7 @@ export default function ParkingLotManager() {
     // If no valid cache or forcing refresh, and online, fetch fresh data
     if ((!fetchedLocations || forceRefresh) && isOnline) {
         try {
-            console.log("Fetching fresh parking lots...");
+            console.log("Fetching fresh parking lots (including external simulation)...");
              // Pass user context to potentially filter early on backend if needed
             const freshData = await getAvailableParkingLots(userRole || 'User', userId, true); // Pass forceRefresh to underlying fetcher too
             // Update cache if on client
@@ -637,7 +639,7 @@ export default function ParkingLotManager() {
                 try {
                     localStorage.setItem(cacheKey, JSON.stringify(freshData));
                     localStorage.setItem(cacheTimestampKey, Date.now().toString());
-                    console.log("Cached fresh parking lots.");
+                    console.log("Cached combined parking lots.");
                 } catch (e) {
                     console.error("Failed to cache parking lots:", e);
                 }
@@ -693,7 +695,8 @@ export default function ParkingLotManager() {
     setIsLoadingLocations(false);
     setIsRefreshing(false); // Stop refresh indicator
 
-  }, [isOnline, isVisible, locations, userRole, userId]); // Depend on isOnline, visibility and locations (to compare for changes)
+  }, [isOnline, isVisible, userRole, userId]); // Removed 'locations' from dependency array
+
 
   // Manual refresh handler
   const handleManualRefresh = () => {
@@ -1228,11 +1231,15 @@ export default function ParkingLotManager() {
          {isLoadingLocations ? (
            <Skeleton className="h-10 w-full" />
          ) : error ? (
-            <p className="text-destructive">{error}</p>
+            <Alert variant="destructive" className="mb-4">
+                <AlertTriangle className="h-4 w-4"/>
+                <CardTitle>Error Loading Locations</CardTitle>
+                <CardDescription>{error}</CardDescription>
+            </Alert>
          ) : locations.length === 0 && isOnline ? ( // Only show 'no locations' if online and empty
-             <p className="text-muted-foreground">No parking locations available.</p>
+             <p className="text-muted-foreground text-center py-4">No parking locations available at the moment.</p>
           ) : locations.length === 0 && !isOnline ? ( // Specific message if offline and empty
-              <p className="text-muted-foreground">Offline: No cached parking locations available.</p>
+              <p className="text-muted-foreground text-center py-4 flex items-center justify-center gap-2"><WifiOff className="h-4 w-4" /> Offline: No cached parking locations available.</p>
           ) : (
            <Select
              value={selectedLocationId || ""}
@@ -1349,7 +1356,14 @@ export default function ParkingLotManager() {
           <p className="text-center text-muted-foreground">
               {isAuthenticated ? 'Select a recommended or specific parking location above.' : 'Please select a parking location above.'}
           </p>
-      ) : null }
+       ) : !isLoadingLocations && !error && locations.length === 0 && !isOnline ? (
+            // Explicitly show nothing here if offline and no locations cached
+            null
+       ) : !isLoadingLocations && !error && locations.length === 0 && isOnline ? (
+            // Show message if online and no locations found
+            <p className="text-center text-muted-foreground py-4">No parking locations found in the system.</p>
+       ) : null }
+
 
       <AuthModal
           isOpen={isAuthModalOpen}
@@ -1357,11 +1371,13 @@ export default function ParkingLotManager() {
           onAuthSuccess={handleAuthSuccess}
       />
 
-       <BottomNavBar
-            // Props now passed from context automatically within BottomNavBar
-            onAuthClick={() => setIsAuthModalOpen(true)}
-            // onProfileClick is removed
-        />
+       {isClient && ( // Conditionally render BottomNavBar only on the client
+            <BottomNavBar
+                // Props now passed from context automatically within BottomNavBar
+                onAuthClick={() => setIsAuthModalOpen(true)}
+                // onProfileClick is removed
+            />
+        )}
 
        {/* Report Issue Modal (Now also potentially triggered by voice) */}
        <ReportIssueModal
@@ -1376,3 +1392,4 @@ export default function ParkingLotManager() {
    </div>
  );
 }
+
