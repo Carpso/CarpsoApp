@@ -111,10 +111,10 @@ export default function ParkingLotManager() {
                if (isOnline) {
                     if (entities.destination) {
                         toast({ title: "Finding Parking", description: `Looking for parking near ${entities.destination}. Recommendations updated.` });
-                        // await fetchRecommendations(entities.destination); // fetchRecommendations is defined later, this might cause issues if not hoisted or refactored
+                        await fetchRecommendations(entities.destination); // Call the function directly
                     } else {
                         toast({ title: "Finding Parking", description: `Showing general recommendations.` });
-                        // await fetchRecommendations(); // fetchRecommendations is defined later
+                        await fetchRecommendations(); // Call the function directly
                     }
                } else {
                     toast({ title: "Offline", description: "Recommendations require an internet connection.", variant: "destructive"});
@@ -634,25 +634,55 @@ export default function ParkingLotManager() {
     if (needsServerFetch && isOnline) {
         try {
             console.log("Fetching fresh parking lots (including external simulation)...");
-             // Pass user context to potentially filter early on backend if needed
-            const freshData = await getAvailableParkingLots(userRole || 'User', userId, true); // Pass forceRefresh to underlying fetcher too
-            // Update cache if on client
-            if (typeof window !== 'undefined') {
+            await new Promise(resolve => setTimeout(resolve, 900)); // Simulate API call delay
+
+            // --- Simulate fetching BOTH Carpso lots AND External Lots ---
+            // In a real backend, this might involve two separate queries/API calls
+            const carpsoLotsData = sampleCarpsoLots.map(lot => {
+               // Simulate live status updates for Carpso lots
+               let updatedStatus = lot.subscriptionStatus;
+               let occupancy = lot.currentOccupancy;
+               updatedStatus = (lot.subscriptionStatus === 'trial' && lot.trialEndDate && new Date(lot.trialEndDate) < new Date()) ? 'expired' : lot.subscriptionStatus;
+               occupancy = occupancy ?? Math.floor(Math.random() * lot.capacity * 0.9);
+               return { ...lot, subscriptionStatus: updatedStatus, currentOccupancy: occupancy };
+            });
+
+            // Simulate fetching external lots (e.g., from Google Places API)
+            // NOTE: The API key check is crucial for real implementation
+            const googleApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+            let externalLotsData: ParkingLot[] = [];
+            if (googleApiKey) {
                 try {
-                    localStorage.setItem(cacheKey, JSON.stringify(freshData));
-                    localStorage.setItem(cacheTimestampKey, Date.now().toString());
-                    console.log("Cached combined parking lots.");
-                } catch (e) {
-                    console.error("Failed to cache parking lots:", e);
+                     externalLotsData = await fetchGooglePlacesParking("Zambia", googleApiKey, 50); // Fetch more (simulated)
+                } catch (googleError) {
+                     console.error("Failed to fetch from Google Places API:", googleError);
+                     // Decide if you want to proceed without external data or show an error
                 }
+            } else {
+                console.warn("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY not configured. Skipping external parking lot search.");
             }
-             // Only update state if data is different to potentially avoid loop
-             if (JSON.stringify(freshData) !== JSON.stringify(locations)) {
-                setLocations(freshData);
-             }
-             fetchedLocations = freshData; // Use fresh data
+
+            // Combine and remove potential duplicates based on ID (if external ID matches an internal one)
+            const combinedLotsMap = new Map<string, ParkingLot>();
+            [...carpsoLotsData, ...externalLotsData].forEach(lot => {
+                if (!combinedLotsMap.has(lot.id)) { // Prioritize Carpso data if IDs clash
+                    combinedLotsMap.set(lot.id, lot);
+                }
+            });
+            allLots = Array.from(combinedLotsMap.values());
+
+            // Cache the combined data if on client
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem(cacheKey, JSON.stringify(allLots));
+                localStorage.setItem(cacheTimestampKey, Date.now().toString());
+                console.log("Cached combined parking lots.");
+              } catch (e) {
+                console.error("Failed to cache parking lots:", e);
+              }
+            }
         } catch (fetchError) {
-            console.error("Failed to fetch fresh parking locations:", fetchError);
+            console.error("Online fetch failed, using potentially stale/empty cache:", error);
             // If fetch fails but we had cached data from earlier, keep it
             if (!fetchedLocations) {
                 setError("Could not load parking locations. Please check connection.");
@@ -677,16 +707,16 @@ export default function ParkingLotManager() {
     }
 
     // Update selected location ID based on fetched/cached data
-    if (fetchedLocations && fetchedLocations.length > 0) {
+    if (allLots && allLots.length > 0) {
        // Maintain selection if valid, otherwise default to first available (Carpso first, then external)
        setSelectedLocationId(prevId => {
-           if (fetchedLocations!.some(loc => loc.id === prevId)) {
+           if (allLots!.some(loc => loc.id === prevId)) {
                return prevId;
            }
            // Default to first Carpso location, then first external, then null
-            const firstCarpso = fetchedLocations!.find(l => l.isCarpsoManaged);
+            const firstCarpso = allLots!.find(l => l.isCarpsoManaged);
             if (firstCarpso) return firstCarpso.id;
-            const firstExternal = fetchedLocations!.find(l => !l.isCarpsoManaged);
+            const firstExternal = allLots!.find(l => !l.isCarpsoManaged);
             if (firstExternal) return firstExternal.id;
             return null;
        });
@@ -697,7 +727,7 @@ export default function ParkingLotManager() {
     setIsLoadingLocations(false);
     setIsRefreshing(false); // Stop refresh indicator
 
-  }, [isOnline, isVisible, userRole, userId, locations]); // Added 'locations' back to dep array carefully
+  }, [isOnline, isVisible, userRole, userId, locations, error]); // Added 'error' to dependencies
 
 
   // Manual refresh handler
@@ -1093,7 +1123,7 @@ export default function ParkingLotManager() {
                    </Button>
                </CardContent>
           </Card>
-      )}
+       )}
        {isPinning && (
             <div className="flex items-center justify-center text-muted-foreground text-sm mb-4">
                <Loader2 className="h-4 w-4 mr-2 animate-spin"/> Pinning car location...
@@ -1394,3 +1424,54 @@ export default function ParkingLotManager() {
    </div>
  );
 }
+
+// Sample Carpso lots data (moved outside component)
+const sampleCarpsoLots: ParkingLot[] = [
+    { id: 'lot_A', name: 'Downtown Garage (Carpso)', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
+    { id: 'lot_B', name: 'Airport Lot B (Carpso Partner)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() + 15 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' },
+    { id: 'lot_C', name: 'East Park Mall Deck (Carpso)', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() - 5 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' }, // Expired trial
+    { id: 'lot_D', name: 'Levy Junction Upper Level (Carpso)', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
+    { id: 'lot_E', name: 'Arcades Park & Shop (Carpso)', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso'},
+    { id: 'lot_F', name: 'UTH Parking Zone 1 (Carpso)', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive', isCarpsoManaged: true, dataSource: 'carpso' },
+];
+
+// --- Google Places API Helper (Conceptual & Simulated) ---
+async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 20): Promise<ParkingLot[]> {
+    console.log(`SIMULATING Google Places parking search for region: ${region} (Max: ${maxResults})`);
+    if (!apiKey) {
+         console.warn("Google API Key missing - simulation will proceed but real fetch would fail.");
+    }
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const zambiaLatRange = [-18.0, -8.0];
+    const zambiaLonRange = [22.0, 34.0];
+    const simulatedResults: ParkingLot[] = [];
+    const names = ["Central", "North", "South", "East", "West", "Plaza", "Tower", "Square", "Junction", "Heights"];
+    const suffixes = ["Parking", "Garage", "Lot", "Parkade", "Deck"];
+    const cities = ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Livingstone", "Chipata", "Kasama"];
+    for (let i = 0; i < maxResults; i++) {
+        const lat = Math.random() * (zambiaLatRange[1] - zambiaLatRange[0]) + zambiaLatRange[0];
+        const lon = Math.random() * (zambiaLonRange[1] - zambiaLonRange[0]) + zambiaLonRange[0];
+        const city = cities[Math.floor(Math.random() * cities.length)];
+        const namePart1 = names[Math.floor(Math.random() * names.length)];
+        const namePart2 = suffixes[Math.floor(Math.random() * suffixes.length)];
+        const place_id = `g_sim_${city.toLowerCase()}_${i}_${Date.now().toString().slice(-4)}`;
+        simulatedResults.push({
+            id: place_id,
+            name: `${namePart1} ${city} ${namePart2} #${i + 1}`,
+            address: `${Math.floor(100 + Math.random() * 900)} ${namePart1} Rd, ${city}, ${region}`,
+            capacity: Math.floor(20 + Math.random() * 280),
+            latitude: parseFloat(lat.toFixed(6)),
+            longitude: parseFloat(lon.toFixed(6)),
+            services: Math.random() > 0.8 ? ['Restroom'] : [],
+            subscriptionStatus: 'external',
+            isCarpsoManaged: false,
+            dataSource: 'google_places_simulated',
+            phoneNumber: Math.random() > 0.7 ? `+260 9${Math.floor(Math.random()*3)+5} XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
+            website: Math.random() > 0.8 ? `https://www.google.com/maps/search/?api=1&query_place_id=${place_id}` : undefined,
+            contactStatus: 'prospect',
+        });
+    }
+    return simulatedResults;
+}
+
+    
