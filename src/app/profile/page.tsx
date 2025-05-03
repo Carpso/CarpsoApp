@@ -32,9 +32,16 @@ import { Dialog, DialogTrigger, DialogContent, DialogFooter, DialogHeader as Dia
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'; // Import Select components for currency
 import { convertToCSV, getParkingRecords, ParkingRecord } from '@/services/pricing-service'; // Import parking records functions
 import PaymentMethodModal from '@/components/profile/PaymentMethodModal'; // Import PaymentMethodModal
+import { getLinkedLoyaltyPrograms, linkLoyaltyProgram, unlinkLoyaltyProgram, LinkedLoyaltyProgram } from '@/services/loyalty-service'; // Import loyalty service
 
 // Define Point to Kwacha Conversion Rate
 const POINTS_TO_KWACHA_RATE = 0.10; // Example: 1 point = K 0.10
+
+// WhatsApp Support Numbers (adjust country code as needed) - MOVED OUTSIDE COMPONENT
+const WHATSAPP_NUMBER_1 = "+260955202036"; // +260 is Zambia's code
+const WHATSAPP_NUMBER_2 = "+260968551110";
+// Construct the WhatsApp click-to-chat link
+const WHATSAPP_CHAT_LINK_1 = `https://wa.me/${WHATSAPP_NUMBER_1.replace(/\D/g, '')}`;
 
 // Mock data types and functions (Should be moved to a shared location or replaced by API)
 interface UserDetails {
@@ -66,15 +73,6 @@ export interface Vehicle { // Export Vehicle interface
     plateNumber: string;
     isPrimary: boolean;
 }
-
-// Interface for Linked Loyalty Program (Placeholder)
-interface LinkedLoyaltyProgram {
-    id: string;
-    programName: string;
-    membershipId: string;
-    linkedDate: string;
-}
-
 
 // --- Cache Keys ---
 const CACHE_KEYS = {
@@ -257,16 +255,11 @@ const fetchExchangeRates = async (): Promise<Record<string, number>> => {
     return rates;
 }
 
-// --- Fetch Linked Loyalty Programs (Placeholder) ---
-const fetchLinkedLoyaltyPrograms = async (userId: string): Promise<LinkedLoyaltyProgram[]> => {
-    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate API call
-    // Replace with actual API call to fetch linked programs
-    const mockPrograms = [
-        { id: 'loy_1', programName: 'GroceryMart Rewards', membershipId: 'GM123456', linkedDate: '2024-07-01T00:00:00Z' },
-        { id: 'loy_2', programName: 'AirMiles Zambia', membershipId: 'AM987654', linkedDate: '2024-06-15T00:00:00Z' },
-    ];
-    setCachedData(CACHE_KEYS.linkedLoyalty(userId), mockPrograms);
-    return mockPrograms;
+// --- Fetch Linked Loyalty Programs ---
+const fetchLinkedLoyalty = async (userId: string): Promise<LinkedLoyaltyProgram[]> => {
+    const programs = await getLinkedLoyaltyPrograms(userId); // Use service function
+    setCachedData(CACHE_KEYS.linkedLoyalty(userId), programs); // Cache results
+    return programs;
 }
 
 
@@ -306,37 +299,28 @@ const updateUserPaymentMethods = async (userId: string, methods: PaymentMethod[]
     return updatedMethods;
 };
 
-// --- Link Loyalty Program (Placeholder) ---
-const linkLoyaltyProgram = async (userId: string, programName: string, membershipId: string): Promise<LinkedLoyaltyProgram | null> => {
-    await new Promise(resolve => setTimeout(resolve, 600)); // Simulate API call
-    // In a real app, validate credentials with the loyalty provider API
-    const success = Math.random() > 0.2; // Simulate success
-    if (success) {
-        const newLink: LinkedLoyaltyProgram = {
-            id: `loy_${Date.now()}`,
-            programName,
-            membershipId,
-            linkedDate: new Date().toISOString(),
-        };
-        // Update mock/cached data (replace with real update logic)
+// --- Link Loyalty Program ---
+const handleLinkLoyalty = async (userId: string, programName: string, membershipId: string): Promise<LinkedLoyaltyProgram | null> => {
+    // Use imported function from loyalty-service
+    const linkedProgram = await linkLoyaltyProgram(userId, programName, membershipId);
+    if (linkedProgram) {
+        // Update cache after successful link (getLinkedLoyaltyPrograms already updates)
         const currentPrograms = getCachedData<LinkedLoyaltyProgram[]>(CACHE_KEYS.linkedLoyalty(userId)) || [];
-        setCachedData(CACHE_KEYS.linkedLoyalty(userId), [...currentPrograms, newLink]);
-        return newLink;
+        setCachedData(CACHE_KEYS.linkedLoyalty(userId), [...currentPrograms, linkedProgram]);
     }
-    return null;
+    return linkedProgram;
 }
 
-// --- Unlink Loyalty Program (Placeholder) ---
-const unlinkLoyaltyProgram = async (userId: string, linkId: string): Promise<boolean> => {
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate API call
-    const success = Math.random() > 0.1; // Simulate success
+// --- Unlink Loyalty Program ---
+const handleUnlinkLoyalty = async (userId: string, linkId: string): Promise<boolean> => {
+    // Use imported function from loyalty-service
+    const success = await unlinkLoyaltyProgram(userId, linkId);
     if (success) {
-        // Update mock/cached data
+        // Update cache after successful unlink
         const currentPrograms = getCachedData<LinkedLoyaltyProgram[]>(CACHE_KEYS.linkedLoyalty(userId)) || [];
         setCachedData(CACHE_KEYS.linkedLoyalty(userId), currentPrograms.filter(p => p.id !== linkId));
-        return true;
     }
-    return false;
+    return success;
 }
 
 
@@ -376,6 +360,7 @@ const getCurrencySymbol = (currencyCode: string): string => {
         default: return currencyCode; // Fallback to code
     }
 };
+
 
 export default function ProfilePage() {
     const { isAuthenticated, userId, userName, userAvatarUrl, userRole, updateUserProfile: updateGlobalProfile, logout, isOnline } = useContext(AppStateContext)!;
@@ -577,7 +562,7 @@ export default function ProfilePage() {
                 fetchUserWalletTransactions(userId, 5),
                 fetchUserBookmarks(userId),
                 fetchExchangeRates(), // Fetch exchange rates
-                fetchLinkedLoyaltyPrograms(userId), // Fetch linked loyalty programs
+                fetchLinkedLoyalty(userId), // Fetch linked loyalty programs
             ]);
             setUserDetails(details);
             setBillingInfo(billing);
@@ -613,13 +598,13 @@ export default function ProfilePage() {
             if (!hasCachedVehicles) setVehicles([]);
             if (!hasCachedPaymentMethods) setPaymentMethods([]); // Reset payment methods on error
             if (!hasCachedGamification) setGamification(null);
-            if (!hasCachedPointsTxns) setPointsTransactions([]); // Reset points txns on error
+            if (!hasCachedPointsTransactions([]); // Reset points txns on error
             if (!hasCachedReferrals) setReferralHistory([]); // Reset referrals on error
             if (!hasCachedWallet) setWallet(null);
             if (!hasCachedTxns) setWalletTransactions([]);
-            if (!hasCachedBookmarks) setBookmarks([]);
-            if (!hasCachedRates) setExchangeRates(null); // Reset rates on error
-            if (!hasCachedLoyalty) setLinkedLoyalty([]); // Reset loyalty on error
+            setBookmarks([]);
+            setExchangeRates(null); // Reset rates on error
+            setLinkedLoyalty([]); // Reset loyalty on error
         } finally {
             setIsLoading(false);
             setIsLoadingWallet(false);
@@ -745,7 +730,7 @@ export default function ProfilePage() {
         }
     }, [userId, toast, isOnline]);
 
-    // Refresh Loyalty Programs (Online only) - Added refresh function
+    // Refresh Loyalty Programs (Online only)
     const refreshLoyaltyPrograms = useCallback(async () => {
         if (!userId || !isOnline) {
             if (!isOnline) toast({ title: "Offline", description: "Cannot refresh linked programs offline.", variant: "destructive" });
@@ -753,7 +738,7 @@ export default function ProfilePage() {
         }
         setIsLoadingLoyalty(true);
         try {
-            const loyaltyData = await fetchLinkedLoyaltyPrograms(userId);
+            const loyaltyData = await fetchLinkedLoyalty(userId); // Use updated fetch function
             setLinkedLoyalty(loyaltyData);
             setLastUpdated(Date.now());
             toast({ title: "Linked Programs Refreshed" });
@@ -1259,7 +1244,7 @@ export default function ProfilePage() {
      // --- End Points Redemption ---
 
      // --- Loyalty Program Linking ---
-     const handleLinkLoyalty = async () => {
+     const handleLinkLoyaltySubmit = async () => {
          if (!userId || !newLoyaltyProgram || !newLoyaltyId || !isOnline) {
              if (!isOnline) toast({ title: "Offline", description: "Cannot link programs offline.", variant: "destructive" });
              else toast({ title: "Missing Info", description: "Please enter program name and ID.", variant: "destructive" });
@@ -1267,7 +1252,7 @@ export default function ProfilePage() {
          }
          setIsSavingProfile(true); // Reuse saving indicator
          try {
-             const linkedProgram = await linkLoyaltyProgram(userId, newLoyaltyProgram, newLoyaltyId);
+             const linkedProgram = await handleLinkLoyalty(userId, newLoyaltyProgram, newLoyaltyId); // Use handler function
              if (linkedProgram) {
                  await refreshLoyaltyPrograms();
                  toast({ title: "Program Linked", description: `${newLoyaltyProgram} linked successfully.` });
@@ -1285,14 +1270,14 @@ export default function ProfilePage() {
          }
      };
 
-     const handleUnlinkLoyalty = async (linkId: string) => {
+     const handleUnlinkLoyaltySubmit = async (linkId: string) => {
          if (!userId || !isOnline) {
              if (!isOnline) toast({ title: "Offline", description: "Cannot unlink programs offline.", variant: "destructive" });
              return;
          }
          setIsSavingProfile(true); // Reuse saving indicator
          try {
-             const success = await unlinkLoyaltyProgram(userId, linkId);
+             const success = await handleUnlinkLoyalty(userId, linkId); // Use handler function
              if (success) {
                  await refreshLoyaltyPrograms();
                  toast({ title: "Program Unlinked" });
@@ -1707,236 +1692,236 @@ export default function ProfilePage() {
                                             ) : !isPremium ? (
                                                 <p className="text-sm text-muted-foreground">Upgrade for exclusive benefits like guaranteed spots!</p>
                                             ) : null}
-                                        </CardContent>
-                                     </Card>
+                                        CardContent>
+                                     Card>
 
                                      {/* Carpso Card - Coming Soon */}
                                     <Card className="mb-4 border-dashed border-accent">
-                                        <CardHeader className="pb-3">
+                                        CardHeader className="pb-3">
                                             <CardTitle className="text-base flex items-center gap-2">
                                                 <Landmark className="h-4 w-4 text-accent"/> Carpso Card
                                                 <Badge variant="outline" className="border-accent text-accent">Coming Soon</Badge>
                                             </CardTitle>
                                         </CardHeader>
-                                        <CardContent>
+                                        CardContent>
                                             <p className="text-sm text-muted-foreground">
                                                 Get a physical Carpso Card for tap-to-pay parking and exclusive partner discounts. Register your interest!
-                                            </p>
-                                             <Button size="sm" variant="outline" className="mt-3" disabled={!isOnline}>Notify Me</Button>
-                                        </CardContent>
-                                    </Card>
+                                            p>
+                                             Button size="sm" variant="outline" className="mt-3" disabled={!isOnline}>Notify MeButton>
+                                        CardContent>
+                                    Card>
 
 
-                                     <div>
-                                         <p className="text-sm font-medium mb-2">Payment Methods</p>
-                                         {isLoadingPaymentMethods && !paymentMethods?.length ? <Skeleton className="h-24 w-full"/> : (
-                                              <>
-                                                 <div className="space-y-2 mb-3">
+                                     
+                                         p className="text-sm font-medium mb-2">Payment Methodsp>
+                                         {isLoadingPaymentMethods && !paymentMethods?.length ?  Skeleton className="h-24 w-full"/> : (
+                                              
+                                                 
                                                      {paymentMethods.length > 0 ? (
                                                          paymentMethods.map((method) => (
-                                                             <div key={method.id} className="flex items-center justify-between p-3 border rounded-md text-sm">
-                                                                 <div className="flex items-center gap-2">
-                                                                     {method.type === 'Card' ? <CreditCard className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-                                                                     <span>{method.details}</span>
-                                                                 </div>
-                                                                  {method.id === userDetails?.preferredPaymentMethod && <Badge variant="outline" size="sm">Primary</Badge>}
-                                                             </div>
+                                                             
+                                                                  
+                                                                      {method.type === 'Card' ?  CreditCard className="h-4 w-4 text-muted-foreground" /> :  Smartphone className="h-4 w-4 text-muted-foreground" />}
+                                                                      span>{method.details}span>
+                                                                  
+                                                                   {method.id === userDetails?.preferredPaymentMethod &&  Badge variant="outline" size="sm">PrimaryBadge>}
+                                                             
                                                          ))
                                                      ) : (
-                                                         <p className="text-sm text-muted-foreground">No payment methods saved.</p>
+                                                         p className="text-sm text-muted-foreground">No payment methods saved.p>
                                                      )}
-                                                 </div>
+                                                 
                                                   {/* Manage Button - Opens Modal */}
-                                                  <Button variant="outline" size="sm" className="w-full" onClick={handleOpenPaymentMethodModal} disabled={isLoadingPaymentMethods || !isOnline}>
-                                                      {isLoadingPaymentMethods ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Manage Payment Methods
-                                                  </Button>
-                                             </>
+                                                  Button variant="outline" size="sm" className="w-full" onClick={handleOpenPaymentMethodModal} disabled={isLoadingPaymentMethods || !isOnline}>
+                                                      {isLoadingPaymentMethods ?  Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Manage Payment Methods
+                                                  Button>
+                                             
                                          )}
-                                     </div>
-                                </>
+                                     
+                                
                              )}
-                         </section>
+                         section>
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
                          {/* Vehicle Management Section */}
-                        <section className="mb-6">
-                           <div className="flex justify-between items-center mb-3">
-                               <h3 className="text-lg font-semibold flex items-center gap-2"><CarTaxiFront className="h-5 w-5" /> My Vehicles</h3>
+                        section className="mb-6">
+                           
+                               h3 className="text-lg font-semibold flex items-center gap-2"> CarTaxiFront className="h-5 w-5" /> My Vehiclesh3>
                                {editMode && (
-                                   <Button variant="outline" size="sm" onClick={handleAddVehicle} disabled={isSavingProfile || !isOnline}>
-                                       <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
-                                   </Button>
+                                   Button variant="outline" size="sm" onClick={handleAddVehicle} disabled={isSavingProfile || !isOnline}>
+                                        PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
+                                   Button>
                                )}
-                           </div>
+                           
                             {isLoadingVehicles && !vehicles?.length ? ( // Show skeleton if loading and no cached data
-                               <Skeleton className="h-20 w-full" />
+                                Skeleton className="h-20 w-full" />
                            ) : (editMode ? editVehicles : vehicles).length > 0 ? (
-                               <div className="space-y-3">
+                               
                                    {(editMode ? editVehicles : vehicles).map((vehicle, index) => (
-                                       <div key={vehicle.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 border rounded-md gap-3">
-                                            <div className="flex items-start gap-3 flex-grow">
-                                                <Car className="h-5 w-5 text-muted-foreground mt-1" />
-                                                <div className="flex-grow">
+                                       
+                                            
+                                                
                                                      {editMode ? (
-                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                             <div className="space-y-1"> <Label htmlFor={`veh-make-${index}`} className="text-xs">Make</Label><Input id={`veh-make-${index}`} value={vehicle.make} onChange={(e) => handleEditVehicleChange(index, 'make', e.target.value)} placeholder="e.g., Toyota" disabled={isSavingProfile || !isOnline} className="h-8"/></div>
-                                                             <div className="space-y-1"> <Label htmlFor={`veh-model-${index}`} className="text-xs">Model</Label><Input id={`veh-model-${index}`} value={vehicle.model} onChange={(e) => handleEditVehicleChange(index, 'model', e.target.value)} placeholder="e.g., Corolla" disabled={isSavingProfile || !isOnline} className="h-8"/></div>
-                                                             <div className="space-y-1 col-span-1 sm:col-span-2"><Label htmlFor={`veh-plate-${index}`} className="text-xs">License Plate*</Label><Input id={`veh-plate-${index}`} value={vehicle.plateNumber} onChange={(e) => handleEditVehicleChange(index, 'plateNumber', e.target.value.toUpperCase())} placeholder="e.g., ABC 1234" required disabled={isSavingProfile || !isOnline} className="h-8 uppercase"/></div>
-                                                         </div>
+                                                         
+                                                              
+                                                                Label htmlFor={`veh-make-${index}`} className="text-xs">MakeLabel>Input id={`veh-make-${index}`} value={vehicle.make} onChange={(e) => handleEditVehicleChange(index, 'make', e.target.value)} placeholder="e.g., Toyota" disabled={isSavingProfile || !isOnline} className="h-8"/>
+                                                                Label htmlFor={`veh-model-${index}`} className="text-xs">ModelLabel>Input id={`veh-model-${index}`} value={vehicle.model} onChange={(e) => handleEditVehicleChange(index, 'model', e.target.value)} placeholder="e.g., Corolla" disabled={isSavingProfile || !isOnline} className="h-8"/>
+                                                                Label htmlFor={`veh-plate-${index}`} className="text-xs">License Plate*Label>Input id={`veh-plate-${index}`} value={vehicle.plateNumber} onChange={(e) => handleEditVehicleChange(index, 'plateNumber', e.target.value.toUpperCase())} placeholder="e.g., ABC 1234" required disabled={isSavingProfile || !isOnline} className="h-8 uppercase"/>
+                                                         
                                                      ) : (
-                                                         <div>
-                                                            <p className="font-medium">{vehicle.make} {vehicle.model}</p>
-                                                            <p className="text-sm text-muted-foreground uppercase">{vehicle.plateNumber}</p>
-                                                         </div>
+                                                         
+                                                            p className="font-medium">{vehicle.make} {vehicle.model}p>
+                                                            p className="text-sm text-muted-foreground uppercase">{vehicle.plateNumber}p>
+                                                         
                                                      )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 sm:ml-4 flex-shrink-0">
-                                                {editMode ? (
-                                                     <Button variant={vehicle.isPrimary ? "default" : "outline"} size="sm" onClick={() => handleSetPrimaryVehicle(vehicle.id)} disabled={isSavingProfile || vehicle.isPrimary || !isOnline} className="h-8">
-                                                         {vehicle.isPrimary ? <CheckCircle className="h-4 w-4 sm:mr-1"/> : null}
-                                                          <span className="hidden sm:inline">{vehicle.isPrimary ? 'Primary' : 'Set Primary'}</span>
-                                                     </Button>
-                                                ) : (
-                                                     vehicle.isPrimary && <Badge variant="outline" size="sm">Primary</Badge>
-                                                )}
-                                                 {editMode && (
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile || !isOnline}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                        <span className="sr-only">Remove</span>
-                                                    </Button>
+                                                
+                                            
+                                            
+                                                 {editMode ? (
+                                                      Button variant={vehicle.isPrimary ? "default" : "outline"} size="sm" onClick={() => handleSetPrimaryVehicle(vehicle.id)} disabled={isSavingProfile || vehicle.isPrimary || !isOnline} className="h-8">
+                                                          {vehicle.isPrimary ?  CheckCircle className="h-4 w-4 sm:mr-1"/> : null}
+                                                           span className="hidden sm:inline">{vehicle.isPrimary ? 'Primary' : 'Set Primary'}span>
+                                                      Button>
+                                                 ) : (
+                                                      vehicle.isPrimary &&  Badge variant="outline" size="sm">PrimaryBadge>
                                                  )}
-                                            </div>
-                                       </div>
+                                                  {editMode && (
+                                                     Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveVehicle(vehicle.id)} disabled={isSavingProfile || !isOnline}>
+                                                          Trash2 className="h-4 w-4" />
+                                                         span className="sr-only">Removespan>
+                                                     Button>
+                                                  )}
+                                            
+                                       
                                    ))}
-                               </div>
+                               
                            ) : (
-                               <p className="text-sm text-muted-foreground text-center py-4">{editMode ? 'Click "Add Vehicle" to get started.' : 'No vehicles added yet.'}</p>
+                               p className="text-sm text-muted-foreground text-center py-4">{editMode ? 'Click "Add Vehicle" to get started.' : 'No vehicles added yet.'}p>
                            )}
-                       </section>
+                       section>
 
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
                         {/* Saved Locations (Bookmarks) Section */}
-                         <section className="mb-6">
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><BookMarked className="h-5 w-5" /> Saved Locations</h3>
-                                <Button variant="outline" size="sm" onClick={() => handleOpenBookmarkModal()} disabled={isLoadingBookmarks || !isOnline}>
-                                    <PlusCircle className="mr-2 h-4 w-4" /> Add Location
-                                </Button>
-                            </div>
+                         section className="mb-6">
+                            
+                                h3 className="text-lg font-semibold flex items-center gap-2"> BookMarked className="h-5 w-5" /> Saved Locationsh3>
+                                Button variant="outline" size="sm" onClick={() => handleOpenBookmarkModal()} disabled={isLoadingBookmarks || !isOnline}>
+                                     PlusCircle className="mr-2 h-4 w-4" /> Add Location
+                                Button>
+                            
                              {isLoadingBookmarks && !bookmarks?.length ? ( // Show skeleton if loading and no cached data
-                                <Skeleton className="h-24 w-full" />
+                                 Skeleton className="h-24 w-full" />
                             ) : bookmarks.length > 0 ? (
-                                <div className="space-y-3">
+                                
                                     {bookmarks.map(bookmark => {
                                         const Icon = getBookmarkIcon(bookmark.label);
                                         return (
-                                            <div key={bookmark.id} className="flex items-center justify-between p-3 border rounded-md gap-3">
-                                                <div className="flex items-start gap-3 flex-grow overflow-hidden">
-                                                    <Icon className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                                                    <div className="flex-grow truncate">
-                                                        <p className="font-medium truncate">{bookmark.label}</p>
-                                                        {bookmark.address && <p className="text-xs text-muted-foreground truncate">{bookmark.address}</p>}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-1 flex-shrink-0">
-                                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenBookmarkModal(bookmark)} aria-label={`Edit ${bookmark.label}`} disabled={!isOnline}>
-                                                        <Edit2 className="h-4 w-4" />
-                                                     </Button>
-                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteBookmark(bookmark.id)} disabled={isDeletingBookmark || !isOnline} aria-label={`Delete ${bookmark.label}`}>
-                                                        {isDeletingBookmark ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
-                                                     </Button>
-                                                </div>
-                                            </div>
+                                             
+                                                 
+                                                     Icon className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                                                     
+                                                         p className="font-medium truncate">{bookmark.label}p>
+                                                        {bookmark.address &&  p className="text-xs text-muted-foreground truncate">{bookmark.address}p>}
+                                                     
+                                                 
+                                                 
+                                                      Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenBookmarkModal(bookmark)} aria-label={`Edit ${bookmark.label}`} disabled={!isOnline}>
+                                                            Edit2 className="h-4 w-4" />
+                                                      Button>
+                                                      Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteBookmark(bookmark.id)} disabled={isDeletingBookmark || !isOnline} aria-label={`Delete ${bookmark.label}`}>
+                                                        {isDeletingBookmark ?  Loader2 className="h-4 w-4 animate-spin"/> :  Trash2 className="h-4 w-4" />}
+                                                     Button>
+                                                
+                                             
                                         );
                                     })}
-                                </div>
+                                
                             ) : (
-                                <p className="text-sm text-muted-foreground text-center py-4">No saved locations yet. Add your home, work, or other frequent destinations.</p>
+                                p className="text-sm text-muted-foreground text-center py-4">No saved locations yet. Add your home, work, or other frequent destinations.p>
                             )}
-                        </section>
+                        section>
 
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
 
                         {/* Rewards & Referrals Section */}
-                        <section className="mb-6">
-                             <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Referrals</h3>
-                                <Button variant="outline" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
-                                    {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
-                                </Button>
-                             </div>
-                             {isLoadingGamification && !gamification ? <Skeleton className="h-64 w-full"/> : (
-                                <>
+                        section className="mb-6">
+                             
+                                h3 className="text-lg font-semibold flex items-center gap-2"> Trophy className="h-5 w-5 text-yellow-600" /> Rewards & Referralsh3>
+                                Button variant="outline" size="sm" onClick={refreshGamificationData} disabled={isLoadingGamification || !isOnline}>
+                                    {!isOnline ?  WifiOff className="mr-2 h-4 w-4" /> : isLoadingGamification ?  Loader2 className="mr-2 h-4 w-4 animate-spin" /> :  RefreshCcw className="mr-2 h-4 w-4" />} Refresh
+                                Button>
+                             
+                             {isLoadingGamification && !gamification ?  Skeleton className="h-64 w-full"/> : (
+                                
                                     {/* Points and Carpool */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <Card className="p-4">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <Coins className="h-5 w-5 text-primary" />
-                                                    <span className="font-medium">Points Balance</span>
-                                                </div>
-                                                 <Button variant="link" size="sm" className="text-xs h-auto p-0" onClick={() => setIsRedeemPointsModalOpen(true)} disabled={!isOnline || currentPointsValue <= 0}>
+                                    
+                                        Card className="p-4">
+                                             
+                                                
+                                                    Coins className="h-5 w-5 text-primary" />
+                                                    span className="font-medium">Points Balancespan>
+                                                
+                                                 Button variant="link" size="sm" className="text-xs h-auto p-0" onClick={() => setIsRedeemPointsModalOpen(true)} disabled={!isOnline || currentPointsValue <= 0}>
                                                      Redeem
-                                                 </Button>
-                                            </div>
-                                             <p className="text-2xl font-bold text-primary">{currentPointsValue}</p>
-                                             <p className="text-xs text-muted-foreground">(≈ K {pointsKwachaValue})</p>
-                                        </Card>
-                                        <Card className="flex items-center justify-between p-4">
-                                             <div className="space-y-0.5">
-                                                <Label htmlFor="carpool-switch" className="font-medium flex items-center gap-1.5">
-                                                    <Users className="h-4 w-4" /> Carpooling Eligible
-                                                </Label>
-                                                <p className="text-xs text-muted-foreground">Enable for potential discounts.</p>
-                                            </div>
-                                            <Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool || !isOnline} />
-                                        </Card>
-                                    </div>
-                                    {/* Transfer Points */}
-                                    <Button
+                                                 Button>
+                                             
+                                             p className="text-2xl font-bold text-primary">{currentPointsValue}p>
+                                             p className="text-xs text-muted-foreground">(≈ K {pointsKwachaValue})p>
+                                        Card>
+                                        Card className="flex items-center justify-between p-4">
+                                             
+                                                Label htmlFor="carpool-switch" className="font-medium flex items-center gap-1.5">
+                                                     Users className="h-4 w-4" /> Carpooling Eligible
+                                                Label>
+                                                p className="text-xs text-muted-foreground">Enable for potential discounts.p>
+                                            
+                                            Switch id="carpool-switch" checked={gamification?.isCarpoolEligible ?? false} onCheckedChange={handleCarpoolToggle} disabled={isUpdatingCarpool || !isOnline} />
+                                        Card>
+                                    
+
+                                    Button
                                         variant="outline" size="sm" className="w-full mb-4"
                                         onClick={() => setIsTransferPointsModalOpen(true)}
                                         disabled={!isOnline || (gamification?.points ?? 0) <= 0}
                                     >
-                                        <Gift className="mr-2 h-4 w-4" /> Transfer Points to Friend
-                                    </Button>
+                                         Gift className="mr-2 h-4 w-4" /> Transfer Points to Friend
+                                    Button>
 
                                     {/* Referral Code */}
-                                     <Card className="mb-4 border-dashed border-primary/50">
-                                         <CardHeader className="pb-3">
-                                             <CardTitle className="text-base flex items-center gap-2">
-                                                  <UsersRound className="h-4 w-4 text-primary" /> Your Referral Code
-                                             </CardTitle>
-                                         </CardHeader>
-                                         <CardContent>
-                                             <div className="flex items-center justify-between gap-2 p-2 border rounded-md bg-muted">
-                                                 <span className="font-mono text-sm font-semibold text-primary truncate">{gamification?.referralCode || 'Loading...'}</span>
-                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={handleCopyReferralCode} disabled={!gamification?.referralCode || typeof navigator === 'undefined' || !navigator.clipboard}>
-                                                     <Copy className="h-4 w-4" />
-                                                     <span className="sr-only">Copy Code</span>
-                                                 </Button>
-                                             </div>
-                                             <p className="text-xs text-muted-foreground mt-2">Share this code with friends! You both get bonus points when they sign up and complete their first parking.</p>
-                                             <p className="text-xs font-medium mt-1">Referrals Completed: {gamification?.referralsCompleted ?? 0}</p>
-                                         </CardContent>
-                                     </Card>
+                                     Card className="mb-4 border-dashed border-primary/50">
+                                          CardHeader className="pb-3">
+                                             CardTitle className="text-base flex items-center gap-2">
+                                                   UsersRound className="h-4 w-4 text-primary" /> Your Referral Code
+                                             CardTitle>
+                                          CardHeader>
+                                          CardContent>
+                                             
+                                                 span className="font-mono text-sm font-semibold text-primary truncate">{gamification?.referralCode || 'Loading...'}span>
+                                                 Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={handleCopyReferralCode} disabled={!gamification?.referralCode || typeof navigator === 'undefined' || !navigator.clipboard}>
+                                                      Copy className="h-4 w-4" />
+                                                     span className="sr-only">Copy Codespan>
+                                                 Button>
+                                             
+                                             p className="text-xs text-muted-foreground mt-2">Share this code with friends! You both get bonus points when they sign up and complete their first parking.p>
+                                             p className="text-xs font-medium mt-1">Referrals Completed: {gamification?.referralsCompleted ?? 0}p>
+                                          CardContent>
+                                     Card>
 
                                     {/* Promo Code Input */}
-                                     <Card className="mb-4">
-                                         <CardHeader className="pb-3">
-                                             <CardTitle className="text-base flex items-center gap-2">
-                                                 <Ticket className="h-4 w-4 text-accent"/> Apply Promo Code
-                                             </CardTitle>
-                                         </CardHeader>
-                                         <CardContent>
-                                             <div className="flex items-center gap-2">
-                                                 <Input
+                                     Card className="mb-4">
+                                          CardHeader className="pb-3">
+                                             CardTitle className="text-base flex items-center gap-2">
+                                                 Ticket className="h-4 w-4 text-accent"/> Apply Promo Code
+                                             CardTitle>
+                                          CardHeader>
+                                          CardContent>
+                                             
+                                                 Input
                                                     id="promo-code"
                                                     value={promoCodeInput}
                                                     onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
@@ -1944,281 +1929,281 @@ export default function ProfilePage() {
                                                     disabled={isApplyingPromo || !isOnline}
                                                     className="flex-grow uppercase"
                                                  />
-                                                  <Button onClick={handleApplyPromoCode} disabled={isApplyingPromo || !isOnline || !promoCodeInput}>
-                                                     {isApplyingPromo ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Apply
-                                                 </Button>
-                                             </div>
-                                         </CardContent>
-                                     </Card>
+                                                  Button onClick={handleApplyPromoCode} disabled={isApplyingPromo || !isOnline || !promoCodeInput}>
+                                                     {isApplyingPromo ?  Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Apply
+                                                 Button>
+                                             
+                                          CardContent>
+                                     Card>
 
-                                     {/* Recent Points Activity */}
-                                     <div className="mt-4">
-                                        <p className="text-sm font-medium mb-2">Recent Points Activity:</p>
+                                     
+                                        p className="text-sm font-medium mb-2">Recent Points Activity:p>
                                          {pointsTransactions.length > 0 ? (
-                                             <div className="space-y-2">
+                                             
                                                  {pointsTransactions.map(txn => (
-                                                     <div key={txn.id} className="flex items-center justify-between p-2 border rounded-md text-sm bg-background hover:bg-muted/50">
-                                                         <div className="flex items-center gap-2 overflow-hidden">
-                                                             {getPointsTransactionIcon(txn.type)}
-                                                             <div className="flex-1 truncate">
-                                                                  <p className="text-xs font-medium truncate">
-                                                                      {txn.description || (
-                                                                          txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` :
-                                                                          txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` :
-                                                                          txn.type === 'earned' ? 'Points Earned' :
-                                                                          txn.type === 'redeemed' ? 'Points Redeemed' :
-                                                                          'System Update'
-                                                                      )}
-                                                                 </p>
-                                                                 <p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}</p>
-                                                             </div>
-                                                         </div>
-                                                         <span className={cn(
+                                                     
+                                                          
+                                                              {getPointsTransactionIcon(txn.type)}
+                                                              
+                                                                   p className="text-xs font-medium truncate">
+                                                                       {txn.description || (
+                                                                           txn.type === 'sent' ? `Sent to ${txn.recipientId.substring(0,8)}...` :
+                                                                           txn.type === 'received' ? `Received from ${txn.senderId.substring(0,8)}...` :
+                                                                           txn.type === 'earned' ? 'Points Earned' :
+                                                                           txn.type === 'redeemed' ? 'Points Redeemed' :
+                                                                           'System Update'
+                                                                       )}
+                                                                  p>
+                                                                  p className="text-xs text-muted-foreground">{new Date(txn.timestamp).toLocaleString()}p>
+                                                              
+                                                          
+                                                          span className={cn(
                                                              "font-semibold text-xs whitespace-nowrap",
                                                              (txn.type === 'received' || txn.type === 'earned') ? "text-green-600" : (txn.type === 'sent' || txn.type === 'redeemed') ? "text-red-600" : "text-primary"
                                                          )}>
-                                                             {(txn.type === 'received' || txn.type === 'earned') ? '+' : (txn.type === 'sent' || txn.type === 'redeemed') ? '-' : ''}{txn.points} points
-                                                         </span>
-                                                     </div>
+                                                              {(txn.type === 'received' || txn.type === 'earned') ? '+' : (txn.type === 'sent' || txn.type === 'redeemed') ? '-' : ''}{txn.points} points
+                                                         span>
+                                                     
                                                  ))}
-                                             </div>
+                                             
                                          ) : (
-                                             <p className="text-sm text-muted-foreground text-center py-3">No recent points activity.</p>
+                                             p className="text-sm text-muted-foreground text-center py-3">No recent points activity.p>
                                          )}
-                                    </div>
-                                     {/* Earned Badges */}
-                                     <div className="mt-4">
-                                        <p className="text-sm font-medium mb-2">Earned Badges:</p>
+                                     
+
+                                      
+                                        p className="text-sm font-medium mb-2">Earned Badges:p>
                                         {gamification?.badges && gamification.badges.length > 0 ? (
-                                            <div className="flex flex-wrap gap-2">
+                                            
                                                 {gamification.badges.map(badge => {
                                                     const IconComponent = getIconFromName(badge.iconName);
                                                     return (
-                                                        <Tooltip key={badge.id}>
-                                                            <TooltipTrigger asChild>
-                                                                <Badge variant="outline" className="flex items-center gap-1.5 p-2 cursor-default text-xs">
-                                                                    <IconComponent className="h-4 w-4 text-yellow-600" />
-                                                                    {badge.name}
-                                                                </Badge>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                                <p className="text-sm font-medium">{badge.name}</p>
-                                                                <p className="text-xs text-muted-foreground max-w-xs">{badge.description}</p>
-                                                                <p className="text-xs text-muted-foreground mt-1">Earned: {new Date(badge.earnedDate).toLocaleDateString()}</p>
-                                                            </TooltipContent>
-                                                        </Tooltip>
+                                                         Tooltip key={badge.id}>
+                                                            TooltipTrigger asChild>
+                                                                 Badge variant="outline" className="flex items-center gap-1.5 p-2 cursor-default text-xs">
+                                                                      IconComponent className="h-4 w-4 text-yellow-600" />
+                                                                      {badge.name}
+                                                                 Badge>
+                                                            TooltipTrigger>
+                                                            TooltipContent>
+                                                                p className="text-sm font-medium">{badge.name}p>
+                                                                p className="text-xs text-muted-foreground max-w-xs">{badge.description}p>
+                                                                p className="text-xs text-muted-foreground mt-1">Earned: {new Date(badge.earnedDate).toLocaleDateString()}p>
+                                                            TooltipContent>
+                                                        Tooltip>
                                                     );
                                                 })}
-                                            </div>
+                                            
                                         ) : (
-                                            <p className="text-sm text-muted-foreground">No badges earned yet. Keep parking!</p>
+                                            p className="text-sm text-muted-foreground">No badges earned yet. Keep parking!p>
                                         )}
-                                    </div>
-                                     {/* Referral History (Optional/Collapsible) */}
-                                      <div className="mt-4">
-                                          <p className="text-sm font-medium mb-2">Referral History ({gamification?.referralsCompleted ?? 0} Completed):</p>
-                                           {isLoadingReferrals ? <Skeleton className="h-16 w-full"/> : referralHistory.length > 0 ? (
-                                                <ScrollArea className="h-[150px] border rounded-md p-2">
-                                                    <Table>
-                                                        <TableHeader><TableRow><TableHead className="h-8 text-xs">Referred User</TableHead><TableHead className="h-8 text-xs">Date</TableHead><TableHead className="h-8 text-xs text-right">Bonus Awarded</TableHead></TableRow></TableHeader>
-                                                        <TableBody>
-                                                            {referralHistory.map((ref, index) => (
-                                                                <TableRow key={index}>
-                                                                    <TableCell className="py-1 text-xs">{ref.referredUserName || ref.referredUserId.substring(0, 8)}...</TableCell>
-                                                                    <TableCell className="py-1 text-xs">{new Date(ref.signupTimestamp).toLocaleDateString()}</TableCell>
-                                                                    <TableCell className="py-1 text-xs text-right">{ref.bonusAwarded ? <CheckCircle className="h-4 w-4 text-green-600 inline"/> : 'Pending'}</TableCell>
-                                                                </TableRow>
-                                                            ))}
-                                                        </TableBody>
-                                                    </Table>
-                                                </ScrollArea>
-                                           ) : (
-                                               <p className="text-sm text-muted-foreground text-center py-3">No referral history yet.</p>
-                                           )}
-                                      </div>
-                                </>
-                             )}
-                        </section>
+                                    
 
-                        <Separator className="my-6" />
+                                       
+                                          p className="text-sm font-medium mb-2">Referral History ({gamification?.referralsCompleted ?? 0} Completed):p>
+                                           {isLoadingReferrals ?  Skeleton className="h-16 w-full"/> : referralHistory.length > 0 ? (
+                                                ScrollArea className="h-[150px] border rounded-md p-2">
+                                                    Table>
+                                                        TableHeader>TableRow>TableHead className="h-8 text-xs">Referred UserTableHead>TableHead className="h-8 text-xs">DateTableHead>TableHead className="h-8 text-xs text-right">Bonus AwardedTableHead>TableRow>TableHeader>
+                                                        TableBody>
+                                                            {referralHistory.map((ref, index) => (
+                                                                 TableRow key={index}>
+                                                                     TableCell className="py-1 text-xs">{ref.referredUserName || ref.referredUserId.substring(0, 8)}...TableCell>
+                                                                     TableCell className="py-1 text-xs">{new Date(ref.signupTimestamp).toLocaleDateString()}TableCell>
+                                                                     TableCell className="py-1 text-xs text-right">{ref.bonusAwarded ?  CheckCircle className="h-4 w-4 text-green-600 inline"/> : 'Pending'}TableCell>
+                                                                 TableRow>
+                                                            ))}
+                                                        TableBody>
+                                                    Table>
+                                                ScrollArea>
+                                           ) : (
+                                               p className="text-sm text-muted-foreground text-center py-3">No referral history yet.p>
+                                           )}
+                                      
+                                
+                             )}
+                        section>
+
+                        Separator className="my-6" />
 
                          {/* Linked Loyalty Programs Section */}
-                        <section className="mb-6">
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon className="h-5 w-5" /> Linked Loyalty Programs</h3>
-                                <Button variant="outline" size="sm" onClick={() => setIsLinkLoyaltyModalOpen(true)} disabled={isLoadingLoyalty || !isOnline}>
-                                    <PlusCircle className="mr-2 h-4 w-4" /> Link Program
-                                </Button>
-                            </div>
+                        section className="mb-6">
+                            
+                                h3 className="text-lg font-semibold flex items-center gap-2"> LinkIcon className="h-5 w-5" /> Linked Loyalty Programsh3>
+                                Button variant="outline" size="sm" onClick={() => setIsLinkLoyaltyModalOpen(true)} disabled={isLoadingLoyalty || !isOnline}>
+                                     PlusCircle className="mr-2 h-4 w-4" /> Link Program
+                                Button>
+                            
                             {isLoadingLoyalty ? (
-                                <Skeleton className="h-24 w-full" />
+                                Skeleton className="h-24 w-full" />
                             ) : linkedLoyalty.length > 0 ? (
-                                <div className="space-y-3">
+                                
                                     {linkedLoyalty.map(program => (
-                                        <Card key={program.id} className="p-3 flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3">
-                                                <Award className="h-5 w-5 text-muted-foreground" /> {/* Placeholder Icon */}
-                                                <div>
-                                                    <p className="font-medium text-sm">{program.programName}</p>
-                                                    <p className="text-xs text-muted-foreground">ID: {program.membershipId}</p>
-                                                    <p className="text-xs text-muted-foreground">Linked: {new Date(program.linkedDate).toLocaleDateString()}</p>
-                                                </div>
-                                            </div>
-                                             <Button
+                                         Card key={program.id} className="p-3 flex items-center justify-between gap-3">
+                                            
+                                                 Award className="h-5 w-5 text-muted-foreground" /> {/* Placeholder Icon */}
+                                                 
+                                                      p className="font-medium text-sm">{program.programName}p>
+                                                      p className="text-xs text-muted-foreground">ID: {program.membershipId}p>
+                                                      p className="text-xs text-muted-foreground">Linked: {new Date(program.linkedDate).toLocaleDateString()}p>
+                                                 
+                                            
+
+                                             Button
                                                  variant="ghost"
                                                  size="icon"
                                                  className="h-8 w-8 text-destructive flex-shrink-0"
-                                                 onClick={() => handleUnlinkLoyalty(program.id)}
+                                                 onClick={() => handleUnlinkLoyaltySubmit(program.id)} // Use submit handler
                                                  disabled={isSavingProfile || !isOnline}
                                                  aria-label={`Unlink ${program.programName}`}
                                              >
-                                                 {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
-                                             </Button>
-                                        </Card>
+                                                 {isSavingProfile ?  Loader2 className="h-4 w-4 animate-spin"/> :  Trash2 className="h-4 w-4" />}
+                                             Button>
+                                        Card>
                                     ))}
-                                </div>
+                                
                             ) : (
-                                <p className="text-sm text-muted-foreground text-center py-4">No loyalty programs linked yet.</p>
+                                p className="text-sm text-muted-foreground text-center py-4">No loyalty programs linked yet.p>
                             )}
-                        </section>
+                        section>
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
                         {/* Active Reservations Section */}
-                         <section className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Car className="h-5 w-5" /> Active Reservations</h3>
-                             {isLoading && !parkingHistory ? <Skeleton className="h-24 w-full"/> : activeReservations.length > 0 ? (
-                                <div className="space-y-3">
+                         section className="mb-6">
+                            h3 className="text-lg font-semibold mb-3 flex items-center gap-2"> Car className="h-5 w-5" /> Active Reservationsh3>
+                             {isLoading && !parkingHistory ?  Skeleton className="h-24 w-full"/> : activeReservations.length > 0 ? (
+                                
                                     {activeReservations.map((res) => (
-                                        <Card key={res.recordId} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                            <div>
-                                                <p className="font-medium">{res.lotName} (Spot {res.spotId.split('-')[1]})</p>
-                                                <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                                                    <Clock className="h-4 w-4" />
-                                                    <span>Started: {new Date(res.startTime).toLocaleTimeString()}</span>
-                                                    {/* TODO: Add cancel reservation button */}
-                                                </div>
-                                            </div>
-                                            <Button variant="destructive" size="sm" className="w-full sm:w-auto mt-2 sm:mt-0" onClick={() => handleOpenReportModal(res)} disabled={!isOnline}>
-                                                <AlertTriangle className="mr-1.5 h-4 w-4" /> Report Issue
-                                            </Button>
-                                        </Card>
+                                         Card key={res.recordId} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                            
+                                                p className="font-medium">{res.lotName} (Spot {res.spotId.split('-')[1]})p>
+                                                
+                                                     Clock className="h-4 w-4" />
+                                                     span>Started: {new Date(res.startTime).toLocaleTimeString()}span>
+                                                     {/* TODO: Add cancel reservation button */}
+                                                
+                                            
+                                            Button variant="destructive" size="sm" className="w-full sm:w-auto mt-2 sm:mt-0" onClick={() => handleOpenReportModal(res)} disabled={!isOnline}>
+                                                 AlertTriangle className="mr-1.5 h-4 w-4" /> Report Issue
+                                            Button>
+                                        Card>
                                     ))}
-                                </div>
+                                
                             ) : (
-                                <p className="text-sm text-muted-foreground">No active reservations found.</p>
+                                p className="text-sm text-muted-foreground">No active reservations found.p>
                             )}
-                        </section>
+                        section>
 
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
                         {/* Parking History Section */}
-                         <section>
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><List className="h-5 w-5" /> Parking History</h3>
-                                 {/* Download might not work well offline */}
-                                <Button variant="ghost" size="sm" onClick={handleDownloadHistory} disabled={isLoading}>
-                                    <Download className="mr-2 h-4 w-4" /> Download History
-                                </Button>
-                            </div>
-                             <ScrollArea className="h-[250px] pr-3">
-                                 {isLoading && !parkingHistory ? <Skeleton className="h-full w-full"/> : completedHistory.length > 0 ? (
-                                    <div className="space-y-3">
+                         section>
+                             
+                                 h3 className="text-lg font-semibold flex items-center gap-2"> List className="h-5 w-5" /> Parking Historyh3>
+                                  {/* Download might not work well offline */}
+                                 Button variant="ghost" size="sm" onClick={handleDownloadHistory} disabled={isLoading}>
+                                     Download className="mr-2 h-4 w-4" /> Download History
+                                 Button>
+                             
+                             ScrollArea className="h-[250px] pr-3">
+                                 {isLoading && !parkingHistory ?  Skeleton className="h-full w-full"/> : completedHistory.length > 0 ? (
+                                    
                                         {completedHistory.map((entry) => (
-                                            <Card key={entry.recordId} className="p-3 text-sm flex flex-col sm:flex-row justify-between items-start gap-2">
-                                                 <div className="flex-grow">
-                                                    <p className="font-medium">{entry.lotName} (Spot {entry.spotId.split('-')[1]})</p>
-                                                    <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                                                        <Clock className="h-3 w-3" />
-                                                         <span>{new Date(entry.startTime).toLocaleString()} {entry.endTime ? ` - ${new Date(entry.endTime).toLocaleTimeString()}` : ''}</span>
+                                             Card key={entry.recordId} className="p-3 text-sm flex flex-col sm:flex-row justify-between items-start gap-2">
+                                                  
+                                                     p className="font-medium">{entry.lotName} (Spot {entry.spotId.split('-')[1]})p>
+                                                     
+                                                         Clock className="h-3 w-3" />
+                                                          span>{new Date(entry.startTime).toLocaleString()} {entry.endTime ? ` - ${new Date(entry.endTime).toLocaleTimeString()}` : ''}span>
                                                         {entry.durationMinutes !== undefined && ` (${entry.durationMinutes} min)`}
-                                                    </div>
-                                                     <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                                                         <CreditCard className="h-3 w-3" />
-                                                         <span>Paid via {entry.paymentMethod || 'N/A'}</span>
+                                                     
+                                                      
+                                                          CreditCard className="h-3 w-3" />
+                                                         span>Paid via {entry.paymentMethod || 'N/A'}span>
                                                           {entry.appliedPricingRule && `(${entry.appliedPricingRule})`}
-                                                     </div>
-                                                 </div>
-                                                <div className="flex-shrink-0 sm:text-right">
-                                                     <span className="font-semibold text-sm block">{formatAmount(entry.cost)}</span>
-                                                      {/* Button to view/print receipt for this specific entry */}
-                                                     {/* <Button variant="link" size="sm" className="h-auto p-0 text-xs mt-1">View Receipt</Button> */}
-                                                 </div>
-                                            </Card>
+                                                     
+                                                  
+                                                  
+                                                       span className="font-semibold text-sm block">{formatAmount(entry.cost)}span>
+                                                       {/* Button to view/print receipt for this specific entry */}
+                                                      {/* Button variant="link" size="sm" className="h-auto p-0 text-xs mt-1">View ReceiptButton> */}
+                                                  
+                                             Card>
                                         ))}
-                                    </div>
+                                    
                                 ) : (
-                                    <p className="text-sm text-muted-foreground text-center py-4">No completed parking history.</p>
+                                    p className="text-sm text-muted-foreground text-center py-4">No completed parking history.p>
                                 )}
-                            </ScrollArea>
-                        </section>
+                            ScrollArea>
+                        section>
 
-                        <Separator className="my-6" />
+                        Separator className="my-6" />
 
                         {/* Support Section */}
-                         <section className="mb-6">
-                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         section className="mb-6">
+                             
+                                h3 className="text-lg font-semibold mb-3 flex items-center gap-2"> Contact className="h-5 w-5" /> Supporth3>
+                             
                                   {/* Live Chat Button */}
-                                   <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
-                                       <MessageSquare className="mr-3 h-5 w-5 text-blue-600" />
-                                       <div>
-                                           <p className="font-medium">Live Chat</p>
-                                           <p className="text-xs text-muted-foreground">Get help via Tawk.to.</p>
-                                       </div>
-                                   </Button>
+                                   Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
+                                       MessageSquare className="mr-3 h-5 w-5 text-blue-600" />
+                                       
+                                           p className="font-medium">Live Chatp>
+                                           p className="text-xs text-muted-foreground">Get help via Tawk.to.p>
+                                       
+                                   Button>
                                    {/* WhatsApp Button */}
-                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
-                                       <a href={WHATSAPP_CHAT_LINK_1} target="_blank" rel="noopener noreferrer">
-                                          <MessageSquare className="mr-3 h-5 w-5 text-green-600" /> {/* Can reuse icon or use specific WhatsApp icon */}
-                                          <div>
-                                             <p className="font-medium">WhatsApp Chat</p>
-                                             <p className="text-xs text-muted-foreground">Via WhatsApp (+260 95...).</p>
-                                          </div>
-                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
-                                       </a>
-                                   </Button>
+                                   Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                        a href={WHATSAPP_CHAT_LINK_1} target="_blank" rel="noopener noreferrer">
+                                          MessageSquare className="mr-3 h-5 w-5 text-green-600" /> {/* Can reuse icon or use specific WhatsApp icon */}
+                                          
+                                             p className="font-medium">WhatsApp Chatp>
+                                             p className="text-xs text-muted-foreground">Via WhatsApp (+260 95...).p>
+                                          
+                                          ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       a>
+                                   Button>
                                    {/* Phone Call Link (Second Number) - Example */}
-                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
-                                       <a href={`tel:${WHATSAPP_NUMBER_2}`}>
-                                          <Smartphone className="mr-3 h-5 w-5" />
-                                          <div>
-                                             <p className="font-medium">Call Support</p>
-                                             <p className="text-xs text-muted-foreground">(+260 96...).</p>
-                                          </div>
-                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
-                                       </a>
-                                   </Button>
+                                   Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                        a href={`tel:${WHATSAPP_NUMBER_2}`}>
+                                          Smartphone className="mr-3 h-5 w-5" />
+                                          
+                                             p className="font-medium">Call Supportp>
+                                             p className="text-xs text-muted-foreground">(+260 96...).p>
+                                          
+                                          ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       a>
+                                   Button>
                                    {/* Link to FAQ or Help Center */}
-                                   <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
-                                       <a href="/help" target="_blank" rel="noopener noreferrer">
-                                          <Info className="mr-3 h-5 w-5" />
-                                          <div>
-                                              <p className="font-medium">Help Center</p>
-                                              <p className="text-xs text-muted-foreground">Find answers to common questions.</p>
-                                          </div>
-                                          <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
-                                       </a>
-                                   </Button>
-                             </div>
-                         </section>
+                                   Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                        a href="/help" target="_blank" rel="noopener noreferrer">
+                                          Info className="mr-3 h-5 w-5" />
+                                          
+                                              p className="font-medium">Help Centerp>
+                                              p className="text-xs text-muted-foreground">Find answers to common questions.p>
+                                          
+                                          ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                       a>
+                                   Button>
+                             
+                         section>
 
 
-                         <Separator className="my-6" />
+                         Separator className="my-6" />
 
                          {/* Logout Button */}
-                         <div className="flex justify-center mt-6">
-                             <Button variant="destructive" onClick={handleLogout}>
+                         
+                             Button variant="destructive" onClick={handleLogout}>
                                 Log Out
-                             </Button>
-                         </div>
-                    </CardContent>
-                </Card>
-            </div>
-
+                             Button>
+                         
+                    CardContent>
+                Card>
+            
             {/* Report Issue Modal */}
-            <ReportIssueModal
+             ReportIssueModal
                 isOpen={isReportModalOpen}
                 onClose={() => {
                     setIsReportModalOpen(false);
@@ -2228,7 +2213,7 @@ export default function ProfilePage() {
                 userId={userId || ''} // Pass userId or empty string
             />
              {/* Top Up Modal */}
-            <TopUpModal
+             TopUpModal
                 isOpen={isTopUpModalOpen}
                 onClose={() => setIsTopUpModalOpen(false)}
                 userId={userId || ''} // Pass userId or empty string
@@ -2237,7 +2222,7 @@ export default function ProfilePage() {
                 onSuccess={refreshWalletData} // Refresh data on success
             />
              {/* Send Money Modal */}
-            <SendMoneyModal
+             SendMoneyModal
                 isOpen={isSendMoneyModalOpen}
                 onClose={() => setIsSendMoneyModalOpen(false)}
                 userId={userId || ''} // Pass userId or empty string
@@ -2246,7 +2231,7 @@ export default function ProfilePage() {
                 onSuccess={refreshWalletData} // Refresh data on success
             />
              {/* Pay for Other Modal */}
-             <PayForOtherModal
+             PayForOtherModal
                 isOpen={isPayForOtherModalOpen}
                 onClose={() => setIsPayForOtherModalOpen(false)}
                 payerId={userId || ''} // Pass userId or empty string
@@ -2255,7 +2240,7 @@ export default function ProfilePage() {
                 onSuccess={refreshWalletData} // Refresh payer's wallet data
             />
              {/* Transfer Points Modal */}
-             <TransferPointsModal
+             TransferPointsModal
                 isOpen={isTransferPointsModalOpen}
                 onClose={() => setIsTransferPointsModalOpen(false)}
                 senderId={userId || ''} // Pass userId or empty string
@@ -2263,7 +2248,7 @@ export default function ProfilePage() {
                 onSuccess={refreshGamificationData} // Refresh sender's points data
             />
              {/* Payment Method Management Modal */}
-              <PaymentMethodModal
+              PaymentMethodModal
                   isOpen={isPaymentMethodModalOpen}
                   onClose={() => setIsPaymentMethodModalOpen(false)}
                   userId={userId || ''}
@@ -2273,19 +2258,19 @@ export default function ProfilePage() {
               />
 
              {/* Redeem Points Modal */}
-              <Dialog open={isRedeemPointsModalOpen} onOpenChange={setIsRedeemPointsModalOpen}>
-                 <DialogContent className="sm:max-w-md">
-                     <DialogHeaderSub>
-                         <DialogTitleSub>Redeem Points</DialogTitleSub>
-                         <DialogDescriptionSub>
+              Dialog open={isRedeemPointsModalOpen} onOpenChange={setIsRedeemPointsModalOpen}>
+                 DialogContent className="sm:max-w-md">
+                     DialogHeaderSub>
+                         DialogTitleSub>Redeem PointsDialogTitleSub>
+                         DialogDescriptionSub>
                              Convert your points into wallet credit (K {POINTS_TO_KWACHA_RATE.toFixed(2)} per point).
                              Available Points: {currentPointsValue}.
-                         </DialogDescriptionSub>
-                     </DialogHeaderSub>
-                     <div className="grid gap-4 py-4">
-                         <div className="space-y-1">
-                             <Label htmlFor="redeem-points">Points to Redeem</Label>
-                             <Input
+                         DialogDescriptionSub>
+                     DialogHeaderSub>
+                     
+                         
+                             Label htmlFor="redeem-points">Points to RedeemLabel>
+                             Input
                                  id="redeem-points"
                                  type="number"
                                  value={pointsToRedeem}
@@ -2296,188 +2281,190 @@ export default function ProfilePage() {
                                  disabled={isSavingProfile || !isOnline}
                              />
                              {pointsToRedeem !== '' && pointsToRedeem > 0 && (
-                                 <p className="text-sm text-muted-foreground mt-1">
+                                  p className="text-sm text-muted-foreground mt-1">
                                      ≈ K {(pointsToRedeem * POINTS_TO_KWACHA_RATE).toFixed(2)} Wallet Credit
-                                 </p>
+                                 p>
                              )}
                              {pointsToRedeem !== '' && pointsToRedeem > currentPointsValue && (
-                                  <p className="text-xs text-destructive mt-1">Amount exceeds available points.</p>
+                                  p className="text-xs text-destructive mt-1">Amount exceeds available points.p>
                              )}
-                         </div>
-                     </div>
-                     <DialogFooter>
-                          <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingProfile}>Cancel</Button></DialogClose>
-                          <Button
+                         
+                     
+                     DialogFooter>
+                          DialogClose asChild>Button type="button" variant="outline" disabled={isSavingProfile}>CancelButton>DialogClose>
+                          Button
                              onClick={handleRedeemPoints}
                              disabled={isSavingProfile || !isOnline || pointsToRedeem === '' || pointsToRedeem <= 0 || pointsToRedeem > currentPointsValue}
                          >
-                             {isSavingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                             {isSavingProfile ?  Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                              Redeem {pointsToRedeem || 0} Points
-                         </Button>
-                     </DialogFooter>
-                 </DialogContent>
-              </Dialog>
+                         Button>
+                     DialogFooter>
+                 DialogContent>
+              Dialog>
 
               {/* Link Loyalty Program Modal */}
-              <Dialog open={isLinkLoyaltyModalOpen} onOpenChange={setIsLinkLoyaltyModalOpen}>
-                  <DialogContent className="sm:max-w-md">
-                      <DialogHeaderSub>
-                          <DialogTitleSub>Link Loyalty Program</DialogTitleSub>
-                          <DialogDescriptionSub>Connect external loyalty programs to potentially earn or redeem points.</DialogDescriptionSub>
-                      </DialogHeaderSub>
-                      <div className="grid gap-4 py-4">
-                          <div className="space-y-1">
-                              <Label htmlFor="loyalty-program">Program Name*</Label>
-                              <Input id="loyalty-program" value={newLoyaltyProgram} onChange={(e) => setNewLoyaltyProgram(e.target.value)} placeholder="e.g., GroceryMart Rewards" disabled={isSavingProfile || !isOnline} />
-                          </div>
-                          <div className="space-y-1">
-                              <Label htmlFor="loyalty-id">Membership ID*</Label>
-                              <Input id="loyalty-id" value={newLoyaltyId} onChange={(e) => setNewLoyaltyId(e.target.value)} placeholder="Enter your membership number" disabled={isSavingProfile || !isOnline} />
-                          </div>
-                           <p className="text-xs text-muted-foreground">Note: Linking programs is simulated and does not connect to real external services.</p>
-                      </div>
-                      <DialogFooter>
-                           <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingProfile}>Cancel</Button></DialogClose>
-                           <Button onClick={handleLinkLoyalty} disabled={isSavingProfile || !isOnline || !newLoyaltyProgram || !newLoyaltyId}>
-                               {isSavingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Link Program
-                           </Button>
-                      </DialogFooter>
-                  </DialogContent>
-              </Dialog>
+              Dialog open={isLinkLoyaltyModalOpen} onOpenChange={setIsLinkLoyaltyModalOpen}>
+                  DialogContent className="sm:max-w-md">
+                      DialogHeaderSub>
+                          DialogTitleSub>Link Loyalty ProgramDialogTitleSub>
+                          DialogDescriptionSub>Connect external loyalty programs to potentially earn or redeem points.DialogDescriptionSub>
+                      DialogHeaderSub>
+                      
+                          
+                              Label htmlFor="loyalty-program">Program Name*Label>
+                              Input id="loyalty-program" value={newLoyaltyProgram} onChange={(e) => setNewLoyaltyProgram(e.target.value)} placeholder="e.g., GroceryMart Rewards" disabled={isSavingProfile || !isOnline} />
+                          
+                          
+                              Label htmlFor="loyalty-id">Membership ID*Label>
+                              Input id="loyalty-id" value={newLoyaltyId} onChange={(e) => setNewLoyaltyId(e.target.value)} placeholder="Enter your membership number" disabled={isSavingProfile || !isOnline} />
+                          
+                           p className="text-xs text-muted-foreground">Note: Linking programs is simulated and does not connect to real external services.p>
+                      
+                      DialogFooter>
+                           DialogClose asChild>Button type="button" variant="outline" disabled={isSavingProfile}>CancelButton>DialogClose>
+                           Button onClick={handleLinkLoyaltySubmit} disabled={isSavingProfile || !isOnline || !newLoyaltyProgram || !newLoyaltyId}>
+                               {isSavingProfile ?  Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Link Program
+                           Button>
+                      DialogFooter>
+                  DialogContent>
+              Dialog>
 
 
              {/* Add/Edit Bookmark Modal */}
-             <Dialog open={isBookmarkModalOpen} onOpenChange={handleBookmarkModalClose}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeaderSub>
-                        <DialogTitleSub>{currentBookmark?.id ? 'Edit' : 'Add'} Saved Location</DialogTitleSub>
-                        <DialogDescriptionSub>Save frequently visited locations for quick access.</DialogDescriptionSub>
-                    </DialogHeaderSub>
-                    <div className="grid gap-4 py-4">
-                        <div className="space-y-1">
-                            <Label htmlFor="bookmark-label">Label*</Label>
-                            <Input id="bookmark-label" name="label" value={currentBookmark?.label || ''} onChange={handleBookmarkFormChange} placeholder="e.g., Home, Work, Gym" disabled={isSavingBookmark || !isOnline} required />
-                        </div>
-                        <div className="space-y-1">
-                            <Label htmlFor="bookmark-address">Address (Optional)</Label>
-                            <Input id="bookmark-address" name="address" value={currentBookmark?.address || ''} onChange={handleBookmarkFormChange} placeholder="123 Main St, Anytown" disabled={isSavingBookmark || !isOnline} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-1">
-                                 <Label htmlFor="bookmark-lat">Latitude (Optional)</Label>
-                                 <Input id="bookmark-lat" name="latitude" type="number" value={currentBookmark?.latitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., 34.0522" disabled={isSavingBookmark || !isOnline} step="any"/>
-                             </div>
-                             <div className="space-y-1">
-                                 <Label htmlFor="bookmark-lon">Longitude (Optional)</Label>
-                                 <Input id="bookmark-lon" name="longitude" type="number" value={currentBookmark?.longitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., -118.2437" disabled={isSavingBookmark || !isOnline} step="any"/>
-                             </div>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                         <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingBookmark}>Cancel</Button></DialogClose>
-                         <Button type="submit" onClick={handleSaveBookmark} disabled={isSavingBookmark || !currentBookmark?.label || !isOnline}>
-                             {isSavingBookmark ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+             Dialog open={isBookmarkModalOpen} onOpenChange={handleBookmarkModalClose}>
+                DialogContent className="sm:max-w-md">
+                    DialogHeaderSub>
+                        DialogTitleSub>{currentBookmark?.id ? 'Edit' : 'Add'} Saved LocationDialogTitleSub>
+                        DialogDescriptionSub>Save frequently visited locations for quick access.DialogDescriptionSub>
+                    DialogHeaderSub>
+                    
+                        
+                            Label htmlFor="bookmark-label">Label*Label>
+                            Input id="bookmark-label" name="label" value={currentBookmark?.label || ''} onChange={handleBookmarkFormChange} placeholder="e.g., Home, Work, Gym" disabled={isSavingBookmark || !isOnline} required />
+                        
+                        
+                            Label htmlFor="bookmark-address">Address (Optional)Label>
+                            Input id="bookmark-address" name="address" value={currentBookmark?.address || ''} onChange={handleBookmarkFormChange} placeholder="123 Main St, Anytown" disabled={isSavingBookmark || !isOnline} />
+                        
+                         
+                             
+                                 Label htmlFor="bookmark-lat">Latitude (Optional)Label>
+                                 Input id="bookmark-lat" name="latitude" type="number" value={currentBookmark?.latitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., 34.0522" disabled={isSavingBookmark || !isOnline} step="any"/>
+                             
+                             
+                                 Label htmlFor="bookmark-lon">Longitude (Optional)Label>
+                                 Input id="bookmark-lon" name="longitude" type="number" value={currentBookmark?.longitude ?? ''} onChange={handleBookmarkFormChange} placeholder="e.g., -118.2437" disabled={isSavingBookmark || !isOnline} step="any"/>
+                             
+                        
+                    
+                    DialogFooter>
+                         DialogClose asChild>Button type="button" variant="outline" disabled={isSavingBookmark}>CancelButton>DialogClose>
+                         Button type="submit" onClick={handleSaveBookmark} disabled={isSavingBookmark || !currentBookmark?.label || !isOnline}>
+                             {isSavingBookmark ?  Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                              {currentBookmark?.id ? 'Save Changes' : 'Add Bookmark'}
-                         </Button>
-                    </DialogFooter>
-                </DialogContent>
-             </Dialog>
-        </TooltipProvider>
+                         Button>
+                    DialogFooter>
+                DialogContent>
+             Dialog>
+        TooltipProvider>
     );
 }
 
 
 // Skeleton Loader Component
 const ProfileSkeleton = () => (
-    <div className="space-y-6">
+     div className="space-y-6">
         {/* Header Skeleton */}
-        <div className="flex items-start space-x-6">
-            <Skeleton className="h-32 w-32 rounded-full flex-shrink-0" />
-            <div className="space-y-3 flex-grow mt-2">
-                <Skeleton className="h-8 w-3/4" />
-                <Skeleton className="h-5 w-1/2" />
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="h-4 w-1/4" />
-            </div>
-        </div>
-        <Separator />
+        
+            Skeleton className="h-32 w-32 rounded-full flex-shrink-0" />
+            
+                Skeleton className="h-8 w-3/4" />
+                Skeleton className="h-5 w-1/2" />
+                Skeleton className="h-4 w-1/3" />
+                Skeleton className="h-4 w-1/4" />
+            
+        
+        Separator />
          {/* Wallet Skeleton */}
-         <div className="space-y-4">
-            <Skeleton className="h-6 w-1/4 mb-3" />
-            <Skeleton className="h-36 w-full mb-4 rounded-lg" /> {/* Balance card + buttons */}
-            <Skeleton className="h-5 w-1/3 mb-2"/> {/* Transactions Title */}
-            <Skeleton className="h-10 w-full rounded-md"/>
-            <Skeleton className="h-10 w-full rounded-md"/>
-         </div>
-        <Separator />
+         
+            Skeleton className="h-6 w-1/4 mb-3" />
+            Skeleton className="h-36 w-full mb-4 rounded-lg" /> {/* Balance card + buttons */}
+            Skeleton className="h-5 w-1/3 mb-2"/> {/* Transactions Title */}
+            Skeleton className="h-10 w-full rounded-md"/>
+            Skeleton className="h-10 w-full rounded-md"/>
+         
+        Separator />
         {/* Billing/Plan/Card Skeleton */}
-        <div className="space-y-4">
-             <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-24 w-full mb-4 rounded-md"/> {/* Subscription */}
-             <Skeleton className="h-28 w-full mb-4 rounded-md"/> {/* Carpso Card */}
-             <Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
-             <Skeleton className="h-12 w-full rounded-md"/>
-             <Skeleton className="h-9 w-full mt-1 rounded-md"/> {/* Manage Button */}
-        </div>
-        <Separator />
+         
+             Skeleton className="h-6 w-1/4 mb-3" />
+             Skeleton className="h-24 w-full mb-4 rounded-md"/> {/* Subscription */}
+             Skeleton className="h-28 w-full mb-4 rounded-md"/> {/* Carpso Card */}
+             Skeleton className="h-5 w-1/3 mb-2"/> {/* Payment Methods Title */}
+             Skeleton className="h-12 w-full rounded-md"/>
+             Skeleton className="h-9 w-full mt-1 rounded-md"/> {/* Manage Button */}
+         
+        Separator />
          {/* Vehicle Skeleton */}
-         <div className="space-y-4">
-             <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-20 w-full rounded-md"/>
-         </div>
-        <Separator />
+         
+             Skeleton className="h-6 w-1/4 mb-3" />
+             Skeleton className="h-20 w-full rounded-md"/>
+         
+        Separator />
         {/* Bookmarks Skeleton */}
-         <div className="space-y-4">
-             <Skeleton className="h-6 w-1/4 mb-3" />
-             <Skeleton className="h-16 w-full rounded-md"/>
-         </div>
-        <Separator />
+         
+             Skeleton className="h-6 w-1/4 mb-3" />
+             Skeleton className="h-16 w-full rounded-md"/>
+         
+        Separator />
         {/* Rewards & Referrals Skeleton */}
-        <div className="space-y-4">
-            <Skeleton className="h-6 w-1/3 mb-3" />
+         
+            Skeleton className="h-6 w-1/3 mb-3" />
             {/* Points & Carpool */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <Skeleton className="h-20 w-full rounded-md" />
-                 <Skeleton className="h-20 w-full rounded-md" />
-             </div>
-             <Skeleton className="h-9 w-full mt-2 rounded-md"/> {/* Transfer Button */}
-             <Skeleton className="h-24 w-full rounded-md" /> {/* Referral Code Card */}
-             <Skeleton className="h-20 w-full rounded-md" /> {/* Promo Code Card */}
-             <Skeleton className="h-5 w-1/4 mt-4" /> {/* History Title */}
-             <Skeleton className="h-10 w-full rounded-md"/> {/* History Item */}
-            <Skeleton className="h-5 w-1/4 mt-4" /> {/* Badges Title */}
-            <div className="flex gap-2"> <Skeleton className="h-8 w-20 rounded-full"/> <Skeleton className="h-8 w-24 rounded-full"/></div>
-             <Skeleton className="h-5 w-1/3 mt-4" /> {/* Referral History Title */}
-             <Skeleton className="h-24 w-full rounded-md" /> {/* Referral History Table */}
-        </div>
-        <Separator />
+             
+                 Skeleton className="h-20 w-full rounded-md" />
+                 Skeleton className="h-20 w-full rounded-md" />
+             
+             Skeleton className="h-9 w-full mt-2 rounded-md"/> {/* Transfer Button */}
+             Skeleton className="h-24 w-full rounded-md" /> {/* Referral Code Card */}
+             Skeleton className="h-20 w-full rounded-md" /> {/* Promo Code Card */}
+             Skeleton className="h-5 w-1/4 mt-4" /> {/* History Title */}
+             Skeleton className="h-10 w-full rounded-md"/> {/* History Item */}
+            Skeleton className="h-5 w-1/4 mt-4" /> {/* Badges Title */}
+             div className="flex gap-2">  Skeleton className="h-8 w-20 rounded-full"/>  Skeleton className="h-8 w-24 rounded-full"/>div>
+             Skeleton className="h-5 w-1/3 mt-4" /> {/* Referral History Title */}
+             Skeleton className="h-24 w-full rounded-md" /> {/* Referral History Table */}
+         
+        Separator />
         {/* Loyalty Programs Skeleton */}
-         <div className="space-y-4">
-             <Skeleton className="h-6 w-1/3 mb-3" />
-             <Skeleton className="h-20 w-full rounded-md" />
-             <Skeleton className="h-9 w-full mt-1 rounded-md" /> {/* Link Button */}
-         </div>
-         <Separator />
+         
+             Skeleton className="h-6 w-1/3 mb-3" />
+             Skeleton className="h-20 w-full rounded-md" />
+             Skeleton className="h-9 w-full mt-1 rounded-md" /> {/* Link Button */}
+         
+         Separator />
          {/* Active Reservation Skeleton */}
-         <div className="space-y-3">
-             <Skeleton className="h-6 w-1/3 mb-3" />
-             <Skeleton className="h-24 w-full rounded-md" />
-         </div>
-        <Separator />
+         
+             Skeleton className="h-6 w-1/3 mb-3" />
+             Skeleton className="h-24 w-full rounded-md" />
+         
+        Separator />
         {/* History Skeleton */}
-        <div className="space-y-3">
-            <Skeleton className="h-6 w-1/3 mb-3" />
-            <Skeleton className="h-16 w-full rounded-md" />
-            <Skeleton className="h-16 w-full rounded-md" />
-        </div>
-        <Separator />
+         
+            Skeleton className="h-6 w-1/3 mb-3" />
+            Skeleton className="h-16 w-full rounded-md" />
+            Skeleton className="h-16 w-full rounded-md" />
+         
+        Separator />
         {/* Support Skeleton */}
-         <div className="space-y-3">
-             <Skeleton className="h-6 w-1/4 mb-3" />
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <Skeleton className="h-20 w-full rounded-md" />
-                 <Skeleton className="h-20 w-full rounded-md" />
-             </div>
-         </div>
-    </div>
+         
+             Skeleton className="h-6 w-1/4 mb-3" />
+             div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 Skeleton className="h-20 w-full rounded-md" />
+                 Skeleton className="h-20 w-full rounded-md" />
+             div>
+         
+    div>
 );
+
+    
