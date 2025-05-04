@@ -1,5 +1,5 @@
-
 // src/services/user-service.ts
+// 'use server'; // Removed directive as localStorage and other browser APIs are used
 
 /**
  * Represents a badge earned by a user.
@@ -140,6 +140,8 @@ let referrals: Referral[] = [
     { referringUserId: 'user_abc123', referredUserId: 'user_new_1', referredUserName: 'New User 1', signupTimestamp: new Date(Date.now() - 5*86400000).toISOString(), bonusAwarded: true },
 ];
 
+// Mock store for user preferences (replace with localStorage or backend)
+let userPreferences: Record<string, UserPreferences> = {};
 
 // Available badges definition (could be stored elsewhere)
 const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
@@ -153,78 +155,163 @@ const availableBadges: Omit<UserBadge, 'earnedDate'>[] = [
 
 // --- Mock Service Functions ---
 
+// Cache constants for gamification
+const GAMIFICATION_CACHE_KEY_PREFIX = 'cachedGamification_';
+const GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX = '_timestamp';
+const GAMIFICATION_CACHE_MAX_AGE = 5 * 60 * 1000; // 5 minutes cache
+
 /**
  * Fetches the gamification status (points, badges, carpool status, referral code) for a user.
+ * Includes offline caching.
  * @param userId The ID of the user.
+ * @param forceRefresh Bypasses cache and fetches fresh data if true.
  * @returns A promise resolving to the user's gamification data.
  */
-export async function getUserGamification(userId: string): Promise<UserGamification> {
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
-    // Return existing data or default if user not found
-    let data = userGamificationData[userId];
-    if (!data) {
-         // Create default gamification data if none exists, including a referral code
-         const referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-         data = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0, referralCode: referralCode, referralsCompleted: 0 };
-         userGamificationData[userId] = data;
-         console.log(`Initialized gamification data for ${userId} with referral code ${referralCode}`);
-    } else {
-        // Ensure referralCode and referralsCompleted exist for older mock data
-        if (!data.referralCode) {
-             data.referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-             console.log(`Generated missing referral code for ${userId}: ${data.referralCode}`);
-        }
-        if (data.referralsCompleted === undefined) {
-            data.referralsCompleted = referrals.filter(r => r.referringUserId === userId && r.bonusAwarded).length; // Calculate from referral history if missing
+export async function getUserGamification(userId: string, forceRefresh: boolean = false): Promise<UserGamification> {
+    const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+    const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    let cachedData: UserGamification | null = null;
+
+    // 1. Try loading from cache
+    if (!forceRefresh && typeof window !== 'undefined') {
+        const cachedTimestamp = localStorage.getItem(timestampKey);
+        const cachedRaw = localStorage.getItem(cacheKey);
+        if (cachedRaw && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < GAMIFICATION_CACHE_MAX_AGE) {
+            try {
+                cachedData = JSON.parse(cachedRaw);
+                console.log(`Using cached gamification data for ${userId}.`);
+            } catch (e) {
+                console.error("Failed to parse cached gamification data.", e);
+                localStorage.removeItem(cacheKey);
+                localStorage.removeItem(timestampKey);
+            }
         }
     }
 
-    // Ensure parkingExtensionsUsed is initialized
-    if (data.parkingExtensionsUsed === undefined) {
-        data.parkingExtensionsUsed = 0;
+    // 2. If cache is invalid/missing/forced OR online, fetch/simulate fresh data
+    if (cachedData === null || (isOnline && forceRefresh)) {
+        if (isOnline) {
+            console.log(`Fetching fresh gamification data for ${userId}...`);
+            await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
+            // --- Simulation Logic ---
+            let data = userGamificationData[userId];
+            if (!data) {
+                 const referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+                 data = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0, referralCode: referralCode, referralsCompleted: 0 };
+                 userGamificationData[userId] = data;
+                 console.log(`Initialized gamification data for ${userId} with referral code ${referralCode}`);
+            } else {
+                if (!data.referralCode) {
+                     data.referralCode = `${(mockUserData.find(u => u.userId === userId)?.userName || 'USER').slice(0, 5).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+                     console.log(`Generated missing referral code for ${userId}: ${data.referralCode}`);
+                }
+                if (data.referralsCompleted === undefined) {
+                    data.referralsCompleted = referrals.filter(r => r.referringUserId === userId && r.bonusAwarded).length;
+                }
+                if (data.parkingExtensionsUsed === undefined) {
+                     data.parkingExtensionsUsed = 0;
+                }
+            }
+             cachedData = { ...data }; // Use the fetched/simulated data
+            // --- End Simulation Logic ---
+
+            // Cache the fresh data
+            if (typeof window !== 'undefined') {
+                 try {
+                    localStorage.setItem(cacheKey, JSON.stringify(cachedData));
+                    localStorage.setItem(timestampKey, Date.now().toString());
+                 } catch (e) {
+                    console.error("Failed to cache gamification data:", e);
+                 }
+            }
+
+        } else {
+            // Offline and no valid cache
+            console.warn(`Offline and no cached gamification data for ${userId}. Returning default.`);
+            // Return a default structure to prevent errors in components expecting the object
+            cachedData = { points: 0, badges: [], isCarpoolEligible: false, parkingExtensionsUsed: 0, referralCode: 'OFFLINE', referralsCompleted: 0 };
+        }
     }
-    return { ...data }; // Return a copy
+
+    return cachedData!; // Should always have data by this point (either cached or default)
 }
 
 /**
- * Increments the parking extension counter for a user.
- * In a real app, this might have limits based on subscription or time period.
+ * Increments the parking extension counter for a user (requires online).
+ * Invalidates cache.
  * @param userId The ID of the user.
- * @returns A promise resolving to the updated number of extensions used.
+ * @returns A promise resolving to the updated number of extensions used, or null if offline.
  */
-export async function incrementParkingExtensions(userId: string): Promise<number> {
+export async function incrementParkingExtensions(userId: string): Promise<number | null> {
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+        console.error("Cannot increment extensions: Offline.");
+        // TODO: Queue action if offline?
+        return null;
+    }
+
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
-    const data = await getUserGamification(userId); // Ensure data exists
+    const data = await getUserGamification(userId, true); // Force refresh to ensure current count
     data.parkingExtensionsUsed = (data.parkingExtensionsUsed || 0) + 1;
     userGamificationData[userId] = data; // Update mock store
+
+    // Invalidate cache
+    const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+    const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+     if (typeof window !== 'undefined') {
+          localStorage.removeItem(cacheKey);
+          localStorage.removeItem(timestampKey);
+     }
+
     console.log(`Incremented parking extensions for user ${userId}. Total used: ${data.parkingExtensionsUsed}`);
     return data.parkingExtensionsUsed!;
 }
 
 /**
- * Resets the parking extension counter for a user (e.g., monthly or based on subscription).
+ * Resets the parking extension counter for a user (requires online).
+ * Invalidates cache.
  * @param userId The ID of the user.
- * @returns A promise resolving to true if successful.
+ * @returns A promise resolving to true if successful, false otherwise (or if offline).
  */
 export async function resetParkingExtensions(userId: string): Promise<boolean> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+        console.error("Cannot reset extensions: Offline.");
+        return false;
+     }
     await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
     if (userGamificationData[userId]) {
         userGamificationData[userId].parkingExtensionsUsed = 0;
+        // Invalidate cache
+        const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+        const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+         if (typeof window !== 'undefined') {
+              localStorage.removeItem(cacheKey);
+              localStorage.removeItem(timestampKey);
+         }
         console.log(`Reset parking extensions for user ${userId}.`);
     }
     return true;
 }
 
 /**
- * Awards points to a user and records the transaction.
+ * Awards points to a user and records the transaction (requires online).
+ * Invalidates cache.
  * @param userId The ID of the user.
  * @param pointsToAdd The number of points to add.
  * @param description Optional description for the transaction.
- * @returns A promise resolving to the updated total points.
+ * @returns A promise resolving to the updated total points, or null if offline.
  */
-export async function awardPoints(userId: string, pointsToAdd: number, description?: string): Promise<number> {
+export async function awardPoints(userId: string, pointsToAdd: number, description?: string): Promise<number | null> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+        console.error(`Cannot award points to ${userId}: Offline.`);
+        // TODO: Queue action if offline?
+        return null;
+     }
     await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
-    const data = await getUserGamification(userId); // Ensure data exists
+    const data = await getUserGamification(userId, true); // Force refresh
     data.points += pointsToAdd;
     userGamificationData[userId] = data; // Update mock store
 
@@ -241,19 +328,41 @@ export async function awardPoints(userId: string, pointsToAdd: number, descripti
     if (!pointsTransactions[userId]) pointsTransactions[userId] = [];
     pointsTransactions[userId].push(earnTx);
 
+     // Invalidate cache
+     const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+     const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+      if (typeof window !== 'undefined') {
+           localStorage.removeItem(cacheKey);
+           localStorage.removeItem(timestampKey);
+      }
+      // Also invalidate points transaction cache
+       const txnCacheKey = `cachedPointsTxns_${userId}`;
+       const txnTimestampKey = `${txnCacheKey}_timestamp`;
+       if (typeof window !== 'undefined') {
+           localStorage.removeItem(txnCacheKey);
+           localStorage.removeItem(txnTimestampKey);
+       }
+
     console.log(`Awarded ${pointsToAdd} points to user ${userId}. Description: ${description || 'N/A'}. New total: ${data.points}`);
     return data.points;
 }
 
 /**
- * Awards a specific badge to a user if they haven't earned it already.
+ * Awards a specific badge to a user if they haven't earned it already (requires online).
+ * Invalidates cache.
  * @param userId The ID of the user.
  * @param badgeId The ID of the badge to award.
- * @returns A promise resolving to true if the badge was newly awarded, false otherwise.
+ * @returns A promise resolving to true if the badge was newly awarded, false otherwise (or if offline).
  */
 export async function awardBadge(userId: string, badgeId: string): Promise<boolean> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+        console.error(`Cannot award badge to ${userId}: Offline.`);
+        // TODO: Queue action if offline?
+        return false;
+     }
     await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
-    const data = await getUserGamification(userId); // Ensure data exists
+    const data = await getUserGamification(userId, true); // Force refresh
 
     const alreadyHasBadge = data.badges.some(b => b.id === badgeId);
     if (alreadyHasBadge) {
@@ -272,43 +381,75 @@ export async function awardBadge(userId: string, badgeId: string): Promise<boole
     };
     data.badges.push(newBadge);
     userGamificationData[userId] = data; // Update mock store
+
+     // Invalidate cache
+     const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+     const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+      if (typeof window !== 'undefined') {
+           localStorage.removeItem(cacheKey);
+           localStorage.removeItem(timestampKey);
+      }
+
     console.log(`Awarded badge "${badgeDefinition.name}" to user ${userId}.`);
     return true;
 }
 
 /**
- * Updates the user's carpool eligibility status.
+ * Updates the user's carpool eligibility status (requires online).
+ * Invalidates cache.
  * @param userId The ID of the user.
  * @param isEligible The new eligibility status.
- * @returns A promise resolving to true if the update was successful.
+ * @returns A promise resolving to true if the update was successful, false if offline.
  */
 export async function updateCarpoolEligibility(userId: string, isEligible: boolean): Promise<boolean> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+        console.error("Cannot update carpool status: Offline.");
+        // TODO: Queue action if offline?
+        return false;
+     }
     await new Promise(resolve => setTimeout(resolve, 100)); // Simulate delay
-    const data = await getUserGamification(userId); // Ensure data exists
+    const data = await getUserGamification(userId, true); // Force refresh
     data.isCarpoolEligible = isEligible;
     userGamificationData[userId] = data; // Update mock store
+
+     // Invalidate cache
+     const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userId;
+     const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+      if (typeof window !== 'undefined') {
+           localStorage.removeItem(cacheKey);
+           localStorage.removeItem(timestampKey);
+      }
+
     console.log(`Set carpool eligibility for user ${userId} to ${isEligible}.`);
 
     // Potentially award carpool badge
     if (isEligible) {
-        await awardBadge(userId, 'badge_carpool_champ');
+        await awardBadge(userId, 'badge_carpool_champ'); // Award badge will handle its own cache invalidation
     }
     return true;
 }
 
 /**
- * Transfers gamification points from one user to another.
+ * Transfers gamification points from one user to another (requires online).
+ * Invalidates cache for both users.
  * @param senderId The ID of the user sending points.
  * @param recipientId The ID of the user receiving points.
  * @param pointsToTransfer The number of points to transfer.
  * @returns A promise resolving to an object containing the sender's and recipient's new point balances and the created transaction.
- * @throws Error if sender or recipient is not found, or if sender has insufficient points.
+ * @throws Error if sender or recipient is not found, insufficient points, offline, or self-transfer.
  */
 export async function transferPoints(
     senderId: string,
     recipientId: string,
     pointsToTransfer: number
 ): Promise<{ senderNewPoints: number; recipientNewPoints: number; transaction: PointsTransaction }> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+         throw new Error("Cannot transfer points: Offline.");
+         // TODO: Queue action if offline?
+     }
+
     await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
 
     if (pointsToTransfer <= 0) {
@@ -318,18 +459,20 @@ export async function transferPoints(
         throw new Error("Cannot transfer points to yourself.");
     }
 
-    const senderData = await getUserGamification(senderId); // Ensure sender data exists
-    let recipientData = userGamificationData[recipientId]; // Check if recipient exists
+    const senderData = await getUserGamification(senderId, true); // Force refresh sender
+    let recipientData = userGamificationData[recipientId]; // Check recipient mock data
 
     if (!recipientData) {
-        // Optionally create recipient if they don't exist in gamification yet
          const recipientUser = mockUserData.find(u => u.userId === recipientId);
          if (recipientUser) {
-              recipientData = await getUserGamification(recipientId); // This will initialize recipient data
+              recipientData = await getUserGamification(recipientId, true); // Initialize recipient if they exist as user
               console.log(`Initialized recipient ${recipientId} gamification data for transfer.`);
          } else {
             throw new Error("Recipient user not found.");
          }
+    } else {
+         // Recipient exists, force refresh their data too
+         recipientData = await getUserGamification(recipientId, true);
     }
 
     if (senderData.points < pointsToTransfer) {
@@ -339,28 +482,20 @@ export async function transferPoints(
     // Perform the transfer
     senderData.points -= pointsToTransfer;
     recipientData.points += pointsToTransfer;
-    userGamificationData[senderId] = senderData; // Update mock store
-    userGamificationData[recipientId] = recipientData; // Update mock store
+    userGamificationData[senderId] = senderData;
+    userGamificationData[recipientId] = recipientData;
 
-    // Record the transaction (optional)
+    // Record the transaction
     const timestamp = new Date().toISOString();
     const transactionId = `pts_txn_${Date.now()}`;
     const senderTx: PointsTransaction = {
-        id: transactionId + '_s',
-        timestamp,
-        senderId,
-        recipientId,
-        points: -pointsToTransfer, // Negative for sender
-        type: 'sent',
-        description: `Sent to ${recipientData.referralCode || recipientId.substring(0,8)}...` // Use referral code if available
+        id: transactionId + '_s', timestamp, senderId, recipientId,
+        points: -pointsToTransfer, type: 'sent',
+        description: `Sent to ${recipientData.referralCode || recipientId.substring(0,8)}...`
     };
     const recipientTx: PointsTransaction = {
-        id: transactionId + '_r',
-        timestamp,
-        senderId,
-        recipientId,
-        points: pointsToTransfer,
-        type: 'received',
+        id: transactionId + '_r', timestamp, senderId, recipientId,
+        points: pointsToTransfer, type: 'received',
         description: `Received from ${senderData.referralCode || senderId.substring(0,8)}...`
     };
 
@@ -369,437 +504,523 @@ export async function transferPoints(
     pointsTransactions[senderId].push(senderTx);
     pointsTransactions[recipientId].push(recipientTx);
 
+    // --- Invalidate Caches ---
+    const invalidateCache = (userIdToInvalidate: string) => {
+        const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userIdToInvalidate;
+        const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+        const txnCacheKey = `cachedPointsTxns_${userIdToInvalidate}`;
+        const txnTimestampKey = `${txnCacheKey}_timestamp`;
+         if (typeof window !== 'undefined') {
+             localStorage.removeItem(cacheKey);
+             localStorage.removeItem(timestampKey);
+             localStorage.removeItem(txnCacheKey);
+             localStorage.removeItem(txnTimestampKey);
+         }
+    };
+    invalidateCache(senderId);
+    invalidateCache(recipientId);
+    // --- End Invalidate Caches ---
 
     console.log(`Transferred ${pointsToTransfer} points from ${senderId} to ${recipientId}.`);
-    console.log(`Sender new balance: ${senderData.points}. Recipient new balance: ${recipientData.points}`);
-
-    // Return sender's transaction for receipt purposes
     return { senderNewPoints: senderData.points, recipientNewPoints: recipientData.points, transaction: senderTx };
 }
-
-
-/**
- * Fetches the points transaction history for a user.
- * @param userId The ID of the user.
- * @param limit Max number of transactions to return.
- * @returns A promise resolving to an array of points transactions.
- */
-export async function getPointsTransactions(userId: string, limit: number = 10): Promise<PointsTransaction[]> {
-    await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
-    const transactions = pointsTransactions[userId] || [];
-    // Sort by timestamp descending and take limit
-    return transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
-}
-
-/**
- * Simulates redeeming points for wallet credit.
- * @param userId The ID of the user redeeming points.
- * @param pointsToRedeem The number of points to redeem.
- * @param conversionRate The rate at which points convert to wallet currency (e.g., 0.10 ZMW per point).
- * @returns A promise resolving to details of the redemption or null if failed.
- * @throws Error if user not found, insufficient points, or wallet update fails.
- */
-export async function redeemPoints(
-    userId: string,
-    pointsToRedeem: number,
-    conversionRate: number = 0.10 // Default to K0.10 per point
-): Promise<{ redeemedAmount: number; newPointsBalance: number; newWalletBalance: number; transaction: PointsTransaction } | null> {
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate delay
-
-    if (pointsToRedeem <= 0) {
-        throw new Error("Points to redeem must be positive.");
-    }
-
-    const gamificationData = await getUserGamification(userId);
-    if (gamificationData.points < pointsToRedeem) {
-        throw new Error(`Insufficient points. You only have ${gamificationData.points}.`);
-    }
-
-    // Ensure wallet exists
-    if (!userWallets[userId]) {
-         userWallets[userId] = { balance: 0, currency: 'ZMW' };
-    }
-    if (!userTransactions[userId]) {
-        userTransactions[userId] = [];
-    }
-     if (!pointsTransactions[userId]) {
-        pointsTransactions[userId] = [];
-     }
-
-    const redeemedAmount = pointsToRedeem * conversionRate;
-
-    // Update points
-    gamificationData.points -= pointsToRedeem;
-    userGamificationData[userId] = gamificationData;
-
-    // Update wallet balance
-    userWallets[userId].balance += redeemedAmount;
-
-    // Record points transaction
-    const timestamp = new Date().toISOString();
-    const pointsTx: PointsTransaction = {
-        id: `pts_txn_redeem_${Date.now()}`,
-        timestamp,
-        senderId: userId, // User 'sends' points to system
-        recipientId: 'system', // System 'receives' points
-        points: -pointsToRedeem, // Negative for redemption
-        type: 'redeemed',
-        description: `Redeemed for K ${redeemedAmount.toFixed(2)} wallet credit`,
-    };
-    pointsTransactions[userId].push(pointsTx);
-
-    // Record wallet transaction
-     const walletTx: WalletTransaction = {
-         id: `txn_redeem_${Date.now()}`,
-         type: 'points_redemption', // Use a specific type if needed
-         amount: redeemedAmount, // Positive amount added to wallet
-         description: `Credit from redeeming ${pointsToRedeem} points`,
-         timestamp,
-         paymentMethodUsed: 'points', // Indicate source
-     };
-     userTransactions[userId].push(walletTx);
-
-    console.log(`User ${userId} redeemed ${pointsToRedeem} points for K ${redeemedAmount.toFixed(2)}. New points: ${gamificationData.points}. New wallet balance: ${userWallets[userId].balance}.`);
-
-    return {
-        redeemedAmount,
-        newPointsBalance: gamificationData.points,
-        newWalletBalance: userWallets[userId].balance,
-        transaction: pointsTx, // Return the points transaction for potential receipt
-    };
-}
-
-
-// --- Bookmark Functions ---
-
-/**
- * Fetches the saved location bookmarks for a user.
- * @param userId The ID of the user.
- * @returns A promise resolving to an array of the user's bookmarks.
- */
-export async function getUserBookmarks(userId: string): Promise<UserBookmark[]> {
-    await new Promise(resolve => setTimeout(resolve, 250)); // Simulate delay
-    return userBookmarks[userId] || [];
-}
-
-/**
- * Adds a new bookmark for a user.
- * @param userId The ID of the user.
- * @param bookmarkData Data for the new bookmark (label is required).
- * @returns A promise resolving to the newly created bookmark.
- */
-export async function addBookmark(userId: string, bookmarkData: Pick<UserBookmark, 'label' | 'address' | 'latitude' | 'longitude'>): Promise<UserBookmark> {
-    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate delay
-    if (!bookmarkData.label) {
-        throw new Error("Bookmark label cannot be empty.");
-    }
-    const newBookmark: UserBookmark = {
-        id: `bm_${Date.now()}`,
-        userId,
-        ...bookmarkData,
-    };
-    if (!userBookmarks[userId]) {
-        userBookmarks[userId] = [];
-    }
-    userBookmarks[userId].push(newBookmark);
-    console.log(`Added bookmark for user ${userId}:`, newBookmark);
-    return newBookmark;
-}
-
-/**
- * Updates an existing bookmark.
- * @param bookmarkId The ID of the bookmark to update.
- * @param updateData The fields to update.
- * @returns A promise resolving to the updated bookmark or null if not found.
- */
-export async function updateBookmark(bookmarkId: string, updateData: Partial<Omit<UserBookmark, 'id' | 'userId'>>): Promise<UserBookmark | null> {
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
-    for (const userId in userBookmarks) {
-        const bookmarkIndex = userBookmarks[userId].findIndex(bm => bm.id === bookmarkId);
-        if (bookmarkIndex !== -1) {
-            userBookmarks[userId][bookmarkIndex] = {
-                ...userBookmarks[userId][bookmarkIndex],
-                ...updateData,
-            };
-            console.log(`Updated bookmark ${bookmarkId}:`, userBookmarks[userId][bookmarkIndex]);
-            return userBookmarks[userId][bookmarkIndex];
-        }
-    }
-    console.warn(`Bookmark not found for update: ${bookmarkId}`);
-    return null;
-}
-
-/**
- * Deletes a bookmark.
- * @param bookmarkId The ID of the bookmark to delete.
- * @returns A promise resolving to true if successful, false otherwise.
- */
-export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
-    await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
-    for (const userId in userBookmarks) {
-        const initialLength = userBookmarks[userId].length;
-        userBookmarks[userId] = userBookmarks[userId].filter(bm => bm.id !== bookmarkId);
-        if (userBookmarks[userId].length < initialLength) {
-            console.log(`Deleted bookmark ${bookmarkId} for user ${userId}.`);
-            return true;
-        }
-    }
-    console.warn(`Bookmark not found for deletion: ${bookmarkId}`);
-    return false;
-}
-
-// --- User Preferences (including Favorites) ---
-
-const USER_PREFS_KEY_PREFIX = 'userPreferences_';
-
-/**
- * Saves user preferences (including favorite locations) to localStorage.
- * @param userId The ID of the user.
- * @param preferences The preferences object to save.
- */
-export function saveUserPreferences(userId: string, preferences: UserPreferences): void {
-    if (typeof window === 'undefined') return;
-    try {
-        const key = USER_PREFS_KEY_PREFIX + userId;
-        localStorage.setItem(key, JSON.stringify(preferences));
-        console.log(`Saved preferences for user ${userId}`);
-    } catch (e) {
-        console.error(`Failed to save preferences for user ${userId}:`, e);
-    }
-}
-
-/**
- * Loads user preferences (including favorite locations) from localStorage.
- * @param userId The ID of the user.
- * @returns The loaded preferences object or null if not found or error.
- */
-export function loadUserPreferences(userId: string): UserPreferences | null {
-    if (typeof window === 'undefined') return null;
-    try {
-        const key = USER_PREFS_KEY_PREFIX + userId;
-        const data = localStorage.getItem(key);
-        if (data) {
-            return JSON.parse(data) as UserPreferences;
-        }
-        return null; // No preferences saved yet
-    } catch (e) {
-        console.error(`Failed to load preferences for user ${userId}:`, e);
-        return null;
-    }
-}
-
-
-// Add more functions as needed, e.g., getLeaderboard
 
 // Helper function for modals etc. to get mock users (replace with real user search later)
 export async function getMockUsersForTransfer(): Promise<{ id: string, name: string }[]> {
      await new Promise(resolve => setTimeout(resolve, 100));
-     // Get all users from the gamification data as an example
+     // Get all users from the wallet data as an example
      return Object.keys(userGamificationData).map(id => ({
          id,
          name: mockUserData.find(u => u.userId === id)?.userName || `User ${id.substring(0, 5)} (mock)`, // Use actual name if available
      })).filter(u => u.name); // Ensure user has a name
 }
 
-// Mock data for users and vehicles (replace with actual data source)
-const mockUserData = [
-    { userId: 'user_abc123', userName: 'Alice Smith', phone: '0977123456', role: 'User' },
-    { userId: 'user_def456', userName: 'Bob Phiri', phone: '0966789012', role: 'Premium' }, // Bob is Premium
-    { userId: 'attendant_001', userName: 'Attendant One', phone: '0955555555', role: 'ParkingAttendant' },
-    { userId: 'user_premium_test', userName: 'Premium Tester', phone: '0977777777', role: 'Premium' },
-];
-const mockVehicleData = [
-    { userId: 'user_abc123', plate: 'ABC 123', make: 'Toyota', model: 'Corolla' },
-    { userId: 'user_abc123', plate: 'XYZ 789', make: 'Nissan', model: 'Hardbody' },
-    { userId: 'user_def456', plate: 'DEF 456', make: 'Honda', model: 'CRV' },
-    { userId: 'user_premium_test', plate: 'PREMIUM 1', make: 'BMW', model: 'X5' },
-];
-
 /**
- * Simulates searching for user/vehicle details by plate number or phone number (for attendants).
- * In a real app, this would query a database or multiple services.
- * @param query The search query (plate number or phone number).
- * @returns A promise resolving to an array of matching results.
+ * Fetches the recent points transactions for a user.
+ * @param userId The ID of the user.
+ * @param limit Max number of transactions to return.
+ * @returns A promise resolving to an array of points transactions.
  */
-export async function searchUserOrVehicleByAttendant(query: string): Promise<AttendantSearchResult[]> {
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate search delay
-    const normalizedQuery = query.replace(/\s+/g, '').toUpperCase();
-    const results: AttendantSearchResult[] = [];
-
-    console.log(`Attendant searching for: ${normalizedQuery}`);
-
-    // Search by Plate Number
-    for (const vehicle of mockVehicleData) {
-        if (vehicle.plate.replace(/\s+/g, '').toUpperCase().includes(normalizedQuery)) {
-            const user = mockUserData.find(u => u.userId === vehicle.userId);
-            if (user) {
-                results.push({
-                    userId: user.userId,
-                    userName: user.userName,
-                    phone: user.phone,
-                    vehiclePlate: vehicle.plate,
-                    vehicleMake: vehicle.make,
-                    vehicleModel: vehicle.model,
-                });
-            }
-        }
-    }
-
-    // Search by Phone Number
-    for (const user of mockUserData) {
-        if (user.phone && user.phone.replace(/\D/g, '').includes(normalizedQuery.replace(/\D/g, ''))) {
-            // Find vehicles associated with this user
-            const userVehicles = mockVehicleData.filter(v => v.userId === user.userId);
-            if (userVehicles.length > 0) {
-                // Add a result for each vehicle found for the matching phone number
-                userVehicles.forEach(vehicle => {
-                    // Avoid adding duplicates if already found via plate search
-                    if (!results.some(r => r.userId === user.userId && r.vehiclePlate === vehicle.plate)) {
-                        results.push({
-                            userId: user.userId,
-                            userName: user.userName,
-                            phone: user.phone,
-                            vehiclePlate: vehicle.plate,
-                            vehicleMake: vehicle.make,
-                            vehicleModel: vehicle.model,
-                        });
-                    }
-                });
-            } else {
-                 // Add user even if no vehicle is found, if phone matches
-                 if (!results.some(r => r.userId === user.userId)) {
-                     results.push({
-                         userId: user.userId,
-                         userName: user.userName,
-                         phone: user.phone,
-                         vehiclePlate: 'N/A', // Indicate no vehicle linked in this mock data
-                     });
-                 }
-            }
-        }
-    }
-
-    console.log(`Attendant search results for "${query}":`, results);
-    return results;
+export async function getPointsTransactions(userId: string, limit: number = 10): Promise<PointsTransaction[]> {
+     await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
+     const txns = pointsTransactions[userId] || [];
+     // Sort by timestamp descending and take limit
+     return txns.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
 }
 
-// --- Referral and Promo Code Functions ---
+/**
+ * Redeems user points for wallet credit (requires online).
+ * Invalidates gamification and wallet caches.
+ * @param userId The ID of the user redeeming points.
+ * @param pointsToRedeem The number of points to redeem.
+ * @param rate The conversion rate (e.g., 0.10 Kwacha per point).
+ * @returns A promise resolving to an object with the redeemed amount, new balances, and the transaction, or null if offline.
+ * @throws Error if insufficient points or other errors occur.
+ */
+export async function redeemPoints(
+    userId: string,
+    pointsToRedeem: number,
+    rate: number = 0.10 // Default rate (e.g., K 0.10 per point)
+): Promise<{
+    redeemedAmount: number;
+    newPointsBalance: number;
+    newWalletBalance: number;
+    transaction: PointsTransaction;
+} | null> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+         console.error(`Cannot redeem points for ${userId}: Offline.`);
+         // TODO: Queue action if offline?
+         return null;
+     }
+    await new Promise(resolve => setTimeout(resolve, 450)); // Simulate delay
+
+    if (pointsToRedeem <= 0) {
+        throw new Error("Points to redeem must be positive.");
+    }
+
+    const gamificationData = await getUserGamification(userId, true); // Force refresh
+    const { getWalletBalance, getWalletTransactions } = await import('./wallet-service'); // Dynamically import wallet service functions
+    const walletData = await getWalletBalance(userId); // Ensure wallet exists
+
+    if (gamificationData.points < pointsToRedeem) {
+        throw new Error(`Insufficient points. You only have ${gamificationData.points}.`);
+    }
+
+    const redeemedAmount = parseFloat((pointsToRedeem * rate).toFixed(2));
+
+    // Update points
+    gamificationData.points -= pointsToRedeem;
+    userGamificationData[userId] = gamificationData;
+
+    // Update wallet - Assuming wallet-service handles internal update
+    // This requires wallet-service to expose an update function or handle this internally
+    // For mock, we might need direct access (which is bad practice in real apps)
+    // Let's assume a simulated update via an internal function if wallet-service doesn't export one.
+    let newWalletBalance = walletData.balance + redeemedAmount;
+    // userWallets[userId].balance = newWalletBalance; // Direct update for mock (replace with proper service call)
+
+    // Record points transaction
+    const redeemTx: PointsTransaction = {
+        id: `pts_txn_redeem_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        senderId: userId, // User is "sending" points to the system
+        recipientId: 'system',
+        points: -pointsToRedeem, // Negative points
+        type: 'redeemed',
+        description: `Redeemed for K ${redeemedAmount.toFixed(2)} wallet credit`,
+    };
+    if (!pointsTransactions[userId]) pointsTransactions[userId] = [];
+    pointsTransactions[userId].push(redeemTx);
+
+    // Record wallet transaction (Needs access to wallet transaction array or service function)
+    const walletTx: any = { // Using 'any' as WalletTransaction type might not be exported/accessible here
+        id: `txn_pts_redeem_${Date.now()}`,
+        timestamp: redeemTx.timestamp,
+        type: 'points_redemption',
+        amount: redeemedAmount, // Positive amount for wallet
+        description: `Credit from redeeming ${pointsToRedeem} points`,
+        paymentMethodUsed: 'points',
+    };
+    // if (!userTransactions[userId]) userTransactions[userId] = [];
+    // userTransactions[userId].push(walletTx);
+
+
+    // --- Invalidate Caches ---
+    const invalidateGamificationCache = (userIdToInvalidate: string) => {
+        const cacheKey = GAMIFICATION_CACHE_KEY_PREFIX + userIdToInvalidate;
+        const timestampKey = cacheKey + GAMIFICATION_CACHE_TIMESTAMP_KEY_SUFFIX;
+        const txnCacheKey = `cachedPointsTxns_${userIdToInvalidate}`;
+        const txnTimestampKey = `${txnCacheKey}_timestamp`;
+         if (typeof window !== 'undefined') {
+             localStorage.removeItem(cacheKey);
+             localStorage.removeItem(timestampKey);
+             localStorage.removeItem(txnCacheKey);
+             localStorage.removeItem(txnTimestampKey);
+         }
+    };
+     const invalidateWalletCache = (userIdToInvalidate: string) => {
+        const cacheKey = `cachedUserWallet_${userIdToInvalidate}`;
+        const timestampKey = `${cacheKey}_timestamp`;
+        const txnCacheKey = `cachedUserWalletTxns_${userIdToInvalidate}`;
+        const txnTimestampKey = `${txnCacheKey}_timestamp`;
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem(cacheKey);
+            localStorage.removeItem(timestampKey);
+            localStorage.removeItem(txnCacheKey);
+            localStorage.removeItem(txnTimestampKey);
+        }
+     };
+    invalidateGamificationCache(userId);
+    invalidateWalletCache(userId);
+    // --- End Invalidate Caches ---
+
+    console.log(`Redeemed ${pointsToRedeem} points for K ${redeemedAmount} by user ${userId}.`);
+    return {
+        redeemedAmount,
+        newPointsBalance: gamificationData.points,
+        newWalletBalance: newWalletBalance,
+        transaction: redeemTx
+    };
+}
+
+
+// --- Bookmark Functions ---
+
+// Cache constants for bookmarks
+const BOOKMARKS_CACHE_KEY_PREFIX = 'cachedUserBookmarks_';
+const BOOKMARKS_CACHE_TIMESTAMP_KEY_SUFFIX = '_timestamp';
+const BOOKMARKS_CACHE_MAX_AGE = 10 * 60 * 1000; // 10 minutes cache
+
+/**
+ * Fetches saved location bookmarks for a user. Includes offline caching.
+ * @param userId The ID of the user.
+ * @param forceRefresh Bypasses cache and fetches fresh data if true.
+ * @returns A promise resolving to an array of UserBookmark objects.
+ */
+export async function getUserBookmarks(userId: string, forceRefresh: boolean = false): Promise<UserBookmark[]> {
+    const cacheKey = BOOKMARKS_CACHE_KEY_PREFIX + userId;
+    const timestampKey = cacheKey + BOOKMARKS_CACHE_TIMESTAMP_KEY_SUFFIX;
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    let cachedData: UserBookmark[] | null = null;
+
+     // 1. Try loading from cache
+    if (!forceRefresh && typeof window !== 'undefined') {
+        const cachedTimestamp = localStorage.getItem(timestampKey);
+        const cachedRaw = localStorage.getItem(cacheKey);
+        if (cachedRaw && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < BOOKMARKS_CACHE_MAX_AGE) {
+            try {
+                cachedData = JSON.parse(cachedRaw);
+                console.log(`Using cached bookmarks for ${userId}.`);
+            } catch (e) {
+                console.error("Failed to parse cached bookmarks.", e);
+                localStorage.removeItem(cacheKey);
+                localStorage.removeItem(timestampKey);
+            }
+        }
+    }
+
+    // 2. If cache is invalid/missing/forced OR online, fetch/simulate fresh data
+    if (cachedData === null || (isOnline && forceRefresh)) {
+        if (isOnline) {
+             console.log(`Fetching fresh bookmarks for ${userId}...`);
+            await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
+            // --- Simulation Logic ---
+            cachedData = userBookmarks[userId] || [];
+            // --- End Simulation Logic ---
+
+             // Cache the fresh data
+             if (typeof window !== 'undefined') {
+                  try {
+                     localStorage.setItem(cacheKey, JSON.stringify(cachedData));
+                     localStorage.setItem(timestampKey, Date.now().toString());
+                  } catch (e) {
+                     console.error("Failed to cache bookmarks:", e);
+                  }
+             }
+        } else {
+            // Offline and no valid cache
+             console.warn(`Offline and no cached bookmarks for ${userId}. Returning empty array.`);
+            cachedData = [];
+        }
+    }
+    // Sort bookmarks alphabetically by label before returning
+    return cachedData!.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Adds a new bookmark for a user (requires online). Invalidates cache.
+ * @param userId The ID of the user.
+ * @param bookmarkData Data for the new bookmark (label is required).
+ * @returns A promise resolving to the newly created bookmark, or null if offline.
+ */
+export async function addBookmark(userId: string, bookmarkData: Omit<UserBookmark, 'id' | 'userId'>): Promise<UserBookmark | null> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+         console.error("Cannot add bookmark: Offline.");
+         // TODO: Queue action if offline?
+         return null;
+     }
+    await new Promise(resolve => setTimeout(resolve, 250)); // Simulate delay
+    if (!bookmarkData.label) throw new Error("Bookmark label is required.");
+
+    const newBookmark: UserBookmark = {
+        id: `bm_${Date.now()}`,
+        userId: userId,
+        ...bookmarkData,
+    };
+
+    if (!userBookmarks[userId]) {
+        userBookmarks[userId] = [];
+    }
+    userBookmarks[userId].push(newBookmark);
+
+    // Invalidate cache
+    const cacheKey = BOOKMARKS_CACHE_KEY_PREFIX + userId;
+    const timestampKey = cacheKey + BOOKMARKS_CACHE_TIMESTAMP_KEY_SUFFIX;
+     if (typeof window !== 'undefined') {
+        localStorage.removeItem(cacheKey);
+        localStorage.removeItem(timestampKey);
+     }
+
+    console.log(`Added bookmark "${newBookmark.label}" for user ${userId}.`);
+    return newBookmark;
+}
+
+/**
+ * Updates an existing bookmark (requires online). Invalidates cache.
+ * @param bookmarkId The ID of the bookmark to update.
+ * @param updateData The fields to update (label, address, etc.).
+ * @returns A promise resolving to the updated bookmark, or null if not found or offline.
+ */
+export async function updateBookmark(bookmarkId: string, updateData: Partial<Omit<UserBookmark, 'id' | 'userId'>>): Promise<UserBookmark | null> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+         console.error("Cannot update bookmark: Offline.");
+         // TODO: Queue action if offline?
+         return null;
+     }
+    await new Promise(resolve => setTimeout(resolve, 200)); // Simulate delay
+    if (!updateData.label) throw new Error("Bookmark label is required.");
+
+    let foundBookmark: UserBookmark | null = null;
+    let userId: string | null = null;
+
+    // Find the bookmark across all users (in mock data)
+    for (const uid in userBookmarks) {
+        const index = userBookmarks[uid].findIndex(bm => bm.id === bookmarkId);
+        if (index !== -1) {
+            userId = uid;
+            userBookmarks[uid][index] = { ...userBookmarks[uid][index], ...updateData };
+            foundBookmark = userBookmarks[uid][index];
+            break;
+        }
+    }
+
+    if (foundBookmark && userId) {
+         // Invalidate cache for the specific user
+         const cacheKey = BOOKMARKS_CACHE_KEY_PREFIX + userId;
+         const timestampKey = cacheKey + BOOKMARKS_CACHE_TIMESTAMP_KEY_SUFFIX;
+          if (typeof window !== 'undefined') {
+             localStorage.removeItem(cacheKey);
+             localStorage.removeItem(timestampKey);
+          }
+         console.log(`Updated bookmark "${foundBookmark.label}" (ID: ${bookmarkId}).`);
+         return foundBookmark;
+    } else {
+         console.warn(`Bookmark not found for update: ${bookmarkId}`);
+         return null;
+    }
+}
+
+/**
+ * Deletes a bookmark (requires online). Invalidates cache.
+ * @param bookmarkId The ID of the bookmark to delete.
+ * @returns A promise resolving to true if successful, false otherwise (or if offline).
+ */
+export async function deleteBookmark(bookmarkId: string): Promise<boolean> {
+     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+     if (!isOnline) {
+         console.error("Cannot delete bookmark: Offline.");
+         // TODO: Queue action if offline?
+         return false;
+     }
+    await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
+
+    let deleted = false;
+    let userId: string | null = null;
+
+    for (const uid in userBookmarks) {
+        const initialLength = userBookmarks[uid].length;
+        userBookmarks[uid] = userBookmarks[uid].filter(bm => bm.id !== bookmarkId);
+        if (userBookmarks[uid].length < initialLength) {
+            deleted = true;
+            userId = uid;
+            break;
+        }
+    }
+
+    if (deleted && userId) {
+         // Invalidate cache for the specific user
+         const cacheKey = BOOKMARKS_CACHE_KEY_PREFIX + userId;
+         const timestampKey = cacheKey + BOOKMARKS_CACHE_TIMESTAMP_KEY_SUFFIX;
+          if (typeof window !== 'undefined') {
+             localStorage.removeItem(cacheKey);
+             localStorage.removeItem(timestampKey);
+          }
+         console.log(`Deleted bookmark (ID: ${bookmarkId}).`);
+    } else {
+         console.warn(`Bookmark not found for deletion: ${bookmarkId}`);
+    }
+    return deleted;
+}
+
+// --- User Preferences Functions ---
+
+/**
+ * Saves user preferences (like favorite locations) to localStorage.
+ * @param userId The ID of the user.
+ * @param preferences The preferences object to save.
+ */
+export function saveUserPreferences(userId: string, preferences: UserPreferences): void {
+    if (typeof window !== 'undefined') {
+        try {
+            const key = `userPreferences_${userId}`;
+            localStorage.setItem(key, JSON.stringify(preferences));
+            console.log(`Saved preferences for user ${userId}.`);
+        } catch (e) {
+            console.error("Failed to save user preferences:", e);
+        }
+    }
+}
+
+/**
+ * Loads user preferences from localStorage.
+ * @param userId The ID of the user.
+ * @returns The loaded preferences object or null if not found or invalid.
+ */
+export function loadUserPreferences(userId: string): UserPreferences | null {
+    if (typeof window !== 'undefined') {
+        try {
+            const key = `userPreferences_${userId}`;
+            const storedPrefs = localStorage.getItem(key);
+            if (storedPrefs) {
+                return JSON.parse(storedPrefs) as UserPreferences;
+            }
+        } catch (e) {
+            console.error("Failed to load or parse user preferences:", e);
+             localStorage.removeItem(`userPreferences_${userId}`); // Clear invalid data
+        }
+    }
+    return null; // Return null if not found or error
+}
+
+// --- Referral Functions ---
 
 /**
  * Fetches the referral history for a user.
- * @param userId The ID of the user whose referrals to fetch.
- * @returns A promise resolving to an array of referral records.
+ * @param userId The ID of the referring user.
+ * @returns A promise resolving to an array of Referral objects.
  */
 export async function getReferralHistory(userId: string): Promise<Referral[]> {
     await new Promise(resolve => setTimeout(resolve, 200));
     return referrals.filter(r => r.referringUserId === userId);
 }
 
-/**
- * Simulates applying a referral code during signup.
- * In a real app, this would happen server-side during user creation.
- * @param referredUserId The ID of the new user signing up.
- * @param referralCode The referral code entered.
- * @param referredUserName The name of the new user (optional).
- * @returns A promise resolving to true if the code was valid and applied, false otherwise.
- */
-export async function applyReferralCode(referredUserId: string, referralCode: string, referredUserName?: string): Promise<boolean> {
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    // Find the user whose referral code this is
-    const referringUserEntry = Object.entries(userGamificationData).find(([_, data]) => data.referralCode === referralCode.toUpperCase());
-
-    if (!referringUserEntry) {
-        console.warn(`Referral code ${referralCode} not found.`);
-        return false; // Code not valid
-    }
-
-    const referringUserId = referringUserEntry[0];
-
-    if (referringUserId === referredUserId) {
-        console.warn(`User ${referredUserId} cannot refer themselves.`);
-        return false; // Cannot refer self
-    }
-
-    // Check if this user was already referred
-    if (referrals.some(r => r.referredUserId === referredUserId)) {
-        console.warn(`User ${referredUserId} was already referred.`);
-        return false; // Already referred
-    }
-
-    // Record the successful referral
-    const newReferral: Referral = {
-        referringUserId,
-        referredUserId,
-        referredUserName,
-        signupTimestamp: new Date().toISOString(),
-        bonusAwarded: false, // Bonus awarded after first action (e.g., parking)
-    };
-    referrals.push(newReferral);
-    console.log(`Recorded referral: ${referringUserId} referred ${referredUserId}`);
-
-    // Optional: Give the new user an initial bonus for using a code
-    await awardPoints(referredUserId, 25, "Signup Referral Bonus"); // Example: 25 points for signing up with code
-
-    return true;
-}
-
-/**
- * Simulates awarding a bonus to the referrer after the referred user takes an action (e.g., first parking).
- * @param referredUserId The ID of the user who completed the action.
- */
-export async function processReferralBonus(referredUserId: string): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const referral = referrals.find(r => r.referredUserId === referredUserId && !r.bonusAwarded);
-    if (referral) {
-        const referringUserId = referral.referringUserId;
-        const bonusPoints = 50; // Example bonus amount
-
-        // Award points to referrer
-        await awardPoints(referringUserId, bonusPoints, `Bonus for referring ${referral.referredUserName || referredUserId}`);
-        // Award badge to referrer
-        await awardBadge(referringUserId, 'badge_referrer');
-
-        // Update referral record
-        referral.bonusAwarded = true;
-
-        // Update referrer's completed count
-        if (userGamificationData[referringUserId]) {
-             userGamificationData[referringUserId].referralsCompleted = (userGamificationData[referringUserId].referralsCompleted || 0) + 1;
-        }
-
-        console.log(`Awarded ${bonusPoints} points and badge to ${referringUserId} for referring ${referredUserId}.`);
-    }
-}
-
-/**
- * Simulates applying a promo code.
- * In a real app, this would check validity, usage limits, applicability, etc.
- * @param promoCode The promo code entered.
- * @param userId The ID of the user applying the code.
- * @param context Optional context (e.g., 'parking_fee', 'pass_purchase', 'top_up')
- * @returns A promise resolving to an object indicating success and the discount/bonus details, or failure.
- */
-export async function applyPromoCode(promoCode: string, userId: string, context?: string): Promise<{ success: boolean; message: string; discountAmount?: number; pointsAwarded?: number }> {
-    await new Promise(resolve => setTimeout(resolve, 400));
+// Function to simulate applying a promo code (replace with real API)
+export async function applyPromoCode(promoCode: string, userId: string): Promise<{ success: boolean; message: string, pointsAwarded?: number }> {
+    await new Promise(resolve => setTimeout(resolve, 500));
     const codeUpper = promoCode.toUpperCase();
 
-    // Mock promo codes
+    // Check if user already used this type of code (e.g., only one welcome bonus)
+    // (Add more complex validation based on backend rules)
+
     if (codeUpper === 'WELCOME10') {
-        // Award points directly (example)
+        // For the sake of example, we will award points directly
         const points = 10;
-        await awardPoints(userId, points, "Promo Code: WELCOME10");
-        return { success: true, message: `Promo code applied! ${points} bonus points added to your account.`, pointsAwarded: points };
-    } else if (codeUpper === 'PARKFREE5') {
-        // Apply discount to next parking (example, needs integration with cost calculation)
-        const discount = 5.00; // Example: K 5.00 discount
-        return { success: true, message: `Promo code applied! K ${discount.toFixed(2)} discount will be applied to your next parking session.`, discountAmount: discount };
-    } else if (codeUpper === 'SUMMER24' && context === 'pass_purchase') {
-        // Specific discount for pass purchase (needs integration)
-        const discount = 10.00;
-        return { success: true, message: `Promo code applied! K ${discount.toFixed(2)} discount applied to pass purchase.`, discountAmount: discount };
+        // Award points only if user doesn't have a specific badge/flag indicating they already got welcome bonus
+        const gamification = await getUserGamification(userId);
+        if (!gamification.badges.some(b => b.id === 'badge_welcome_bonus_used')) { // Assume such a badge exists
+             const newTotal = await awardPoints(userId, points, "Signup Promo Code");
+             if (newTotal !== null) {
+                // Optional: Award a badge to prevent reuse
+                // await awardBadge(userId, 'badge_welcome_bonus_used');
+                return { success: true, message: `Promo code applied! +${points} points awarded!`, pointsAwarded: points };
+             } else {
+                 return { success: false, message: "Could not award points (maybe offline?)." };
+             }
+        } else {
+            return { success: false, message: "Welcome promo code already used." };
+        }
     }
+     if (codeUpper === 'PARKFREE5') {
+          // Simulate a discount for next parking (would need backend logic)
+          return { success: true, message: "Code applied! K5 discount on your next parking session." };
+     }
 
     return { success: false, message: "Invalid or expired promo code." };
+}
+
+// --- Mock User Data for Searches ---
+const mockUserData = [
+     { userId: 'user_abc123', userName: 'Alice Smith', phone: '0977123456', role: 'User' },
+     { userId: 'user_def456', userName: 'Bob Johnson', phone: '0966789012', role: 'ParkingLotOwner' },
+     { userId: 'user_ghi789', userName: 'Charlie Brown', phone: '0955111222', role: 'User' },
+     { userId: 'user_jkl012', userName: 'Diana Prince', phone: '0971000000', role: 'Admin' },
+     { userId: 'user_premium_test', userName: 'Premium Tester', phone: '0977777777', role: 'Premium' },
+     { userId: 'attendant_001', userName: 'Attendant One', phone: '0955001001', role: 'ParkingAttendant' },
+];
+
+const mockVehicleData = [
+     { userId: 'user_abc123', plate: 'ABC 123', make: 'Toyota', model: 'Corolla' },
+     { userId: 'user_abc123', plate: 'XYZ 789', make: 'Nissan', model: 'Hardbody' },
+     { userId: 'user_def456', plate: 'BDE 456', make: 'Honda', model: 'CRV' }, // Corrected plate for Bob
+     { userId: 'user_ghi789', plate: 'CGE 789', make: 'Mazda', model: 'Demio' },
+     { userId: 'user_jkl012', plate: 'ADE 012', make: 'Mercedes', model: 'C-Class' },
+     { userId: 'user_premium_test', plate: 'PREMIUM 1', make: 'BMW', model: 'X5' },
+      { userId: 'attendant_001', plate: 'ATT 001', make: 'Ford', model: 'Ranger' }, // Attendant might have a car
+];
+
+/**
+ * Searches for users or vehicles by query (plate or phone) - for Attendant Dashboard.
+ * @param query The search query (license plate or phone number).
+ * @returns A promise resolving to an array of search results.
+ */
+export async function searchUserOrVehicleByAttendant(query: string): Promise<AttendantSearchResult[]> {
+    await new Promise(resolve => setTimeout(resolve, 400)); // Simulate search delay
+    const normalizedQuery = query.replace(/\s+/g, '').toUpperCase();
+    const results: AttendantSearchResult[] = [];
+
+    // Search by Plate
+    mockVehicleData.forEach(vehicle => {
+        if (vehicle.plate.replace(/\s+/g, '').toUpperCase().includes(normalizedQuery)) {
+            const user = mockUserData.find(u => u.userId === vehicle.userId);
+            results.push({
+                userId: vehicle.userId,
+                userName: user?.userName || 'Unknown User',
+                phone: user?.phone,
+                vehiclePlate: vehicle.plate,
+                vehicleMake: vehicle.make,
+                vehicleModel: vehicle.model,
+            });
+        }
+    });
+
+    // Search by Phone (if query looks like a phone number)
+    const phoneQuery = query.replace(/\D/g, ''); // Remove non-digits
+    if (phoneQuery.length >= 5) { // Basic check if it might be a phone number part
+         mockUserData.forEach(user => {
+             if (user.phone && user.phone.replace(/\D/g, '').includes(phoneQuery)) {
+                 // Find vehicles associated with this user
+                 mockVehicleData.forEach(vehicle => {
+                      if (vehicle.userId === user.userId) {
+                           // Avoid duplicate entries if already found via plate
+                          if (!results.some(r => r.userId === user.userId && r.vehiclePlate === vehicle.plate)) {
+                              results.push({
+                                  userId: user.userId,
+                                  userName: user.userName,
+                                  phone: user.phone,
+                                  vehiclePlate: vehicle.plate,
+                                  vehicleMake: vehicle.make,
+                                  vehicleModel: vehicle.model,
+                              });
+                          }
+                      }
+                 });
+                 // If user has no vehicles listed, add user info anyway
+                  if (!mockVehicleData.some(v => v.userId === user.userId)) {
+                       if (!results.some(r => r.userId === user.userId)) { // Avoid duplicates if user has multiple phones matching?
+                           results.push({
+                               userId: user.userId,
+                               userName: user.userName,
+                               phone: user.phone,
+                               vehiclePlate: 'N/A', // Indicate no vehicle found for this match
+                           });
+                       }
+                  }
+             }
+        });
+    }
+
+    return results;
 }

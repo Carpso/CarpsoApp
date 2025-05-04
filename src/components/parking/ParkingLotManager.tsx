@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { ParkingLot, ParkingLotService } from '@/services/parking-lot'; // Import service type
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardDescription
 import { Badge } from "@/components/ui/badge"; // Import Badge
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon } from 'lucide-react'; // Added Phone, GlobeIcon
 import AuthModal from '@/components/auth/AuthModal';
@@ -16,13 +16,15 @@ import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider'; // Import context
 import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
-import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service'; // Import gamification service and bookmark/preference functions/type
+// Import getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole from '@/services/user-service';
+import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service'; // Ensure addBookmark is imported
 import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
 import { cn } from '@/lib/utils';
-import ReportIssueModal from '@/components/profile/ReportIssueModal'; // Import ReportIssueModal
+import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useVisibilityChange } from '@/hooks/useVisibilityChange'; // Import visibility hook
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"; // Import Alert
 
 // Interface for pinned location data, now includes coordinates
 interface PinnedLocationData {
@@ -89,6 +91,98 @@ export default function ParkingLotManager() {
 
    // --- Voice Assistant Integration ---
     const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle'); // Track voice assistant state for UI
+
+   // Define fetchRecommendations here, before it's used in the useEffect dependency array
+   const fetchRecommendations = useCallback(async (destinationLabel?: string) => { // Changed parameter to label
+      // Clear recommendations if offline or prerequisites not met
+      if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) {
+          setRecommendations([]);
+          setIsLoadingRecommendations(false); // Ensure loading state is reset
+          return;
+      }
+      setIsLoadingRecommendations(true);
+      setRecommendations([]); // Clear previous recommendations before fetching new ones
+      try {
+          // Simulate getting user location (replace with actual data)
+          const currentCoords = { latitude: -15.4167, longitude: 28.2833 }; // Example: Lusaka
+
+           // Try to get coords from bookmarks if destinationLabel matches
+           let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
+            // Use state which should have been loaded from cache or fetched
+            const currentBookmarks = userBookmarks;
+
+           if (destinationLabel) {
+                const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
+               if (matchedBookmark) {
+                   destinationCoords = { latitude: matchedBookmark.latitude, longitude: matchedBookmark.longitude };
+                   console.log(`Using coordinates from bookmark "${matchedBookmark.label}" for recommendation.`);
+               } else {
+                   console.log(`Destination label "${destinationLabel}" not found in bookmarks. Trying geocoding (not implemented).`);
+                   // TODO: Implement geocoding for addresses or general labels if needed
+               }
+           }
+
+          // Prepare input for the recommendation flow
+          // Convert locations to JSON string with essential details
+           let nearbyLotsJson = "[]";
+           try {
+                // Filter out external lots without pricing capability before sending to AI
+               const carpsoLocations = locations.filter(loc => loc.isCarpsoManaged);
+                const locationsWithPrice = await Promise.all(carpsoLocations.map(async loc => {
+                   // Use cached pricing rules or fetch only if necessary
+                   const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic');
+                   return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost, latitude: loc.latitude, longitude: loc.longitude }; // Include lat/lon
+               }));
+               nearbyLotsJson = JSON.stringify(locationsWithPrice);
+           } catch (error) {
+               console.error("Error preparing nearbyLots JSON:", error);
+               // Proceed with empty array if pricing calculation fails for some lots
+           }
+
+
+           let bookmarksJson = "[]";
+           try {
+               bookmarksJson = JSON.stringify(currentBookmarks); // Pass current/cached bookmarks to the flow
+           } catch (error) {
+                console.error("Error preparing bookmarks JSON:", error);
+                // Proceed with empty array
+           }
+
+
+          const input = {
+              userId: userId,
+              currentLatitude: currentCoords.latitude,
+              currentLongitude: currentCoords.longitude,
+              destinationLabel: destinationLabel, // Pass the label
+              destinationLatitude: destinationCoords?.latitude, // Pass derived coords if available
+              destinationLongitude: destinationCoords?.longitude,
+              preferredServices: userPreferredServices,
+              nearbyParkingLots: nearbyLotsJson,
+              userHistorySummary: userHistorySummary,
+              userBookmarks: bookmarksJson, // Pass bookmarks
+              // maxDistanceKm: 5, // Optional: Add distance constraint
+          };
+
+          console.log("Calling recommendParking with input:", JSON.stringify(input, null, 2)); // Log input for debugging
+
+          const result = await recommendParking(input);
+          console.log("Received recommendations:", result); // Log result
+          setRecommendations(result.recommendations || []);
+
+      } catch (err) {
+          console.error("Failed to fetch recommendations:", err);
+           // Only show error toast if online
+          if (isOnline) toast({
+              title: "Recommendation Error",
+              description: "Could not fetch personalized parking recommendations. Please try again later.",
+              variant: "destructive",
+          });
+          setRecommendations([]); // Clear recommendations on error
+      } finally {
+          setIsLoadingRecommendations(false);
+      }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline]); // Add isOnline, userBookmarks dependency
 
     // Define handleVoiceCommandResult first
     const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput, speakFn: (text: string) => void) => {
@@ -369,7 +463,7 @@ export default function ParkingLotManager() {
                break;
        }
    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient]); // Removed fetchRecommendations, fetchUserBookmarks, speakFn
+   }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient, fetchRecommendations]); // Removed speakFn
 
 
    // Handle command processing logic here, using `speak` from the hook result
@@ -402,106 +496,18 @@ export default function ParkingLotManager() {
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [handleVoiceCommandResult, toast, userBookmarks, isOnline, isClient]);
 
-   // Define fetchRecommendations here, before it's used in the useEffect dependency array
-   const fetchRecommendations = useCallback(async (destinationLabel?: string) => { // Changed parameter to label
-      // Clear recommendations if offline or prerequisites not met
-      if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) {
-          setRecommendations([]);
-          setIsLoadingRecommendations(false); // Ensure loading state is reset
-          return;
-      }
-      setIsLoadingRecommendations(true);
-      setRecommendations([]); // Clear previous recommendations before fetching new ones
-      try {
-          // Simulate getting user location (replace with actual data)
-          const currentCoords = { latitude: -15.4167, longitude: 28.2833 }; // Example: Lusaka
-
-           // Try to get coords from bookmarks if destinationLabel matches
-           let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
-            // Use state which should have been loaded from cache or fetched
-            const currentBookmarks = userBookmarks;
-
-           if (destinationLabel) {
-                const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
-               if (matchedBookmark) {
-                   destinationCoords = { latitude: matchedBookmark.latitude, longitude: matchedBookmark.longitude };
-                   console.log(`Using coordinates from bookmark "${matchedBookmark.label}" for recommendation.`);
-               } else {
-                   console.log(`Destination label "${destinationLabel}" not found in bookmarks. Trying geocoding (not implemented).`);
-                   // TODO: Implement geocoding for addresses or general labels if needed
-               }
-           }
-
-          // Prepare input for the recommendation flow
-          // Convert locations to JSON string with essential details
-           let nearbyLotsJson = "[]";
-           try {
-                // Filter out external lots without pricing capability before sending to AI
-               const carpsoLocations = locations.filter(loc => loc.isCarpsoManaged);
-                const locationsWithPrice = await Promise.all(carpsoLocations.map(async loc => {
-                   // Use cached pricing rules or fetch only if necessary
-                   const { cost: estimatedCost } = await calculateEstimatedCost(loc, 60, userId, userRole === 'PremiumUser' || userRole === 'Premium' ? 'Premium' : 'Basic');
-                   return { id: loc.id, name: loc.name, address: loc.address, capacity: loc.capacity, currentOccupancy: loc.currentOccupancy, services: loc.services, estimatedCost, latitude: loc.latitude, longitude: loc.longitude }; // Include lat/lon
-               }));
-               nearbyLotsJson = JSON.stringify(locationsWithPrice);
-           } catch (error) {
-               console.error("Error preparing nearbyLots JSON:", error);
-               // Proceed with empty array if pricing calculation fails for some lots
-           }
-
-
-           let bookmarksJson = "[]";
-           try {
-               bookmarksJson = JSON.stringify(currentBookmarks); // Pass current/cached bookmarks to the flow
-           } catch (error) {
-                console.error("Error preparing bookmarks JSON:", error);
-                // Proceed with empty array
-           }
-
-
-          const input = {
-              userId: userId,
-              currentLatitude: currentCoords.latitude,
-              currentLongitude: currentCoords.longitude,
-              destinationLabel: destinationLabel, // Pass the label
-              destinationLatitude: destinationCoords?.latitude, // Pass derived coords if available
-              destinationLongitude: destinationCoords?.longitude,
-              preferredServices: userPreferredServices,
-              nearbyParkingLots: nearbyLotsJson,
-              userHistorySummary: userHistorySummary,
-              userBookmarks: bookmarksJson, // Pass bookmarks
-              // maxDistanceKm: 5, // Optional: Add distance constraint
-          };
-
-          console.log("Calling recommendParking with input:", JSON.stringify(input, null, 2)); // Log input for debugging
-
-          const result = await recommendParking(input);
-          console.log("Received recommendations:", result); // Log result
-          setRecommendations(result.recommendations || []);
-
-      } catch (err) {
-          console.error("Failed to fetch recommendations:", err);
-           // Only show error toast if online
-          if (isOnline) toast({
-              title: "Recommendation Error",
-              description: "Could not fetch personalized parking recommendations. Please try again later.",
-              variant: "destructive",
-          });
-          setRecommendations([]); // Clear recommendations on error
-      } finally {
-          setIsLoadingRecommendations(false);
-      }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline]); // Add isOnline, userBookmarks dependency
-
-
-     const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError } = useVoiceAssistant({
+   // Define useVoiceAssistant hook usage and dependencies
+    const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError, state: currentVoiceState } = useVoiceAssistant({
        onCommand: (transcript) => handleVoiceCommand(transcript, speak), // Pass the speak function
        onStateChange: (newState) => {
-           console.log("Voice Assistant State (Manager):", newState);
-           setVoiceAssistantState(newState);
+           console.log("Voice Assistant State Changed:", newState);
+           setVoiceAssistantState(newState); // Update local state for UI
        }
     });
+    // Update the local state whenever the hook's state changes
+    useEffect(() => {
+       setVoiceAssistantState(currentVoiceState);
+    }, [currentVoiceState]);
 
    // --- End Voice Assistant Integration ---
 
@@ -611,6 +617,7 @@ export default function ParkingLotManager() {
     const cacheTimestampKey = `${cacheKey}Timestamp`;
     const maxCacheAge = isVisible ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 mins active, 1 hour inactive
     let needsServerFetch = true; // Assume we need to fetch unless valid cache found
+    let allLots: ParkingLot[] = []; // Define allLots here
 
     // 1. Try loading from cache first (unless forceRefresh)
     if (!forceRefresh && typeof window !== 'undefined') {
@@ -618,11 +625,11 @@ export default function ParkingLotManager() {
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
              try {
-                fetchedLocations = JSON.parse(cachedData);
+                allLots = JSON.parse(cachedData); // Assign to allLots
                 console.log("Using valid cached parking lots.");
                 needsServerFetch = false; // Cache is valid, no need to fetch initially
-             } catch (e) {
-                 console.error("Failed to parse cached locations, will fetch fresh.", e);
+             } catch (err: any) { // Catch specific error
+                 console.error("Failed to parse cached locations, will fetch fresh.", err);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
                  needsServerFetch = true;
@@ -638,6 +645,16 @@ export default function ParkingLotManager() {
 
             // --- Simulate fetching BOTH Carpso lots AND External Lots ---
             // In a real backend, this might involve two separate queries/API calls
+             // Make sure sampleCarpsoLots is accessible here or defined globally/imported
+             const sampleCarpsoLots: ParkingLot[] = [
+                // Copy sample data here or import if it's defined elsewhere
+                 { id: 'lot_A', name: 'Downtown Garage (Carpso)', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
+                 { id: 'lot_B', name: 'Airport Lot B (Carpso Partner)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() + 15 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' },
+                 { id: 'lot_C', name: 'East Park Mall Deck (Carpso)', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() - 5 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' }, // Expired trial
+                 { id: 'lot_D', name: 'Levy Junction Upper Level (Carpso)', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
+                 { id: 'lot_E', name: 'Arcades Park & Shop (Carpso)', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso'},
+                 { id: 'lot_F', name: 'UTH Parking Zone 1 (Carpso)', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive', isCarpsoManaged: true, dataSource: 'carpso' },
+             ];
             const carpsoLotsData = sampleCarpsoLots.map(lot => {
                // Simulate live status updates for Carpso lots
                let updatedStatus = lot.subscriptionStatus;
@@ -653,9 +670,20 @@ export default function ParkingLotManager() {
             let externalLotsData: ParkingLot[] = [];
             if (googleApiKey) {
                 try {
-                     externalLotsData = await fetchGooglePlacesParking("Zambia", googleApiKey, 50); // Fetch more (simulated)
-                } catch (googleError) {
-                     console.error("Failed to fetch from Google Places API:", googleError);
+                     // Fetch a larger number to simulate 'unending' list (in reality, needs pagination)
+                     // This should call the actual helper function (ensure it's defined or imported)
+                     // Example call: externalLotsData = await fetchGooglePlacesParking("Zambia", googleApiKey, 100);
+                     console.warn("Using simulated external lots, replace with actual API call.");
+                     // --- Simulate fetchGooglePlacesParking for now ---
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        const simulatedExternal: ParkingLot[] = [
+                           { id: 'g_sim_1', name: 'Simulated External Lot 1', address: 'Sim Address 1', capacity: 50, latitude: -15.41, longitude: 28.28, subscriptionStatus: 'external', isCarpsoManaged: false, dataSource: 'google_simulated' },
+                           { id: 'g_sim_2', name: 'Simulated External Lot 2', address: 'Sim Address 2', capacity: 100, latitude: -15.42, longitude: 28.29, subscriptionStatus: 'external', isCarpsoManaged: false, dataSource: 'google_simulated' },
+                       ];
+                        externalLotsData = simulatedExternal;
+                     // --- End Simulation ---
+                } catch (googleError: any) { // Add type annotation for googleError
+                     console.error("Failed to fetch from Google Places API:", googleError.message);
                      // Decide if you want to proceed without external data or show an error
                 }
             } else {
@@ -669,7 +697,7 @@ export default function ParkingLotManager() {
                     combinedLotsMap.set(lot.id, lot);
                 }
             });
-            allLots = Array.from(combinedLotsMap.values());
+            allLots = Array.from(combinedLotsMap.values()); // Assign to allLots
 
             // Cache the combined data if on client
             if (typeof window !== 'undefined') {
@@ -677,28 +705,29 @@ export default function ParkingLotManager() {
                 localStorage.setItem(cacheKey, JSON.stringify(allLots));
                 localStorage.setItem(cacheTimestampKey, Date.now().toString());
                 console.log("Cached combined parking lots.");
-              } catch (e) {
-                console.error("Failed to cache parking lots:", e);
+              } catch (e: any) { // Add type annotation for e
+                console.error("Failed to cache parking lots:", e.message);
               }
             }
-        } catch (fetchError) {
-            console.error("Online fetch failed, using potentially stale/empty cache:", error);
+        } catch (fetchError: any) { // Add type annotation for fetchError
+            console.error("Online fetch failed, using potentially stale/empty cache:", fetchError.message); // Log error message
             // If fetch fails but we had cached data from earlier, keep it
-            if (!fetchedLocations) {
+            if (allLots.length === 0) { // Check if allLots is still empty (cache was invalid/empty)
                 setError("Could not load parking locations. Please check connection.");
+                 setLocations([]); // Explicitly clear locations on fetch error + no cache
             } else {
                  console.warn("Online fetch failed, continuing with previously cached data.");
-                  // Only update state if data is different
-                  if (JSON.stringify(fetchedLocations) !== JSON.stringify(locations)) {
-                       setLocations(fetchedLocations);
+                  // Only update state if cached data is different from current state
+                  if (JSON.stringify(allLots) !== JSON.stringify(locations)) {
+                       setLocations(allLots); // Update state with cached data
                   }
             }
         }
-    } else if (fetchedLocations) {
+    } else if (allLots.length > 0) { // Changed from fetchedLocations to allLots
         // Using cache (either online and cache is fresh, or offline with valid cache)
          // Only update state if data is different
-         if (JSON.stringify(fetchedLocations) !== JSON.stringify(locations)) {
-               setLocations(fetchedLocations);
+         if (JSON.stringify(allLots) !== JSON.stringify(locations)) {
+               setLocations(allLots);
          }
     } else if (!isOnline) {
         // Offline and no valid cache
@@ -727,7 +756,8 @@ export default function ParkingLotManager() {
     setIsLoadingLocations(false);
     setIsRefreshing(false); // Stop refresh indicator
 
-  }, [isOnline, isVisible, userRole, userId, locations, error]); // Added 'error' to dependencies
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, isVisible, userRole, userId]); // Removed locations and error from dependencies
 
 
   // Manual refresh handler
@@ -855,8 +885,8 @@ export default function ParkingLotManager() {
       if (typeof window !== 'undefined') {
            try {
               localStorage.setItem('pinnedCarLocation', JSON.stringify(pinData));
-           } catch (e) {
-               console.error("Failed to cache pinned location:", e);
+           } catch (e: any) { // Add type annotation
+               console.error("Failed to cache pinned location:", e.message);
            }
       }
 
@@ -865,9 +895,10 @@ export default function ParkingLotManager() {
           title: "Car Location Pinned",
           description: `Your car's location at ${spotId} (${location?.name || locationId}) has been temporarily saved.`,
       });
-      if (userId && isOnline) {
-         // await awardPoints(userId, 5); // Example gamification call - only if online
-      }
+      // Optional: Award points/badge (only if online)
+      // if (userId && isOnline) {
+      //   await awardPoints(userId, 5, 'Pinned Car Location');
+      // }
   };
 
    // Load pinned location from cache on mount
@@ -905,9 +936,10 @@ export default function ParkingLotManager() {
       } else {
           // Automatically pin location after successful reservation
           simulatePinCar(spotId, locationId);
-          if (userId && isOnline) {
-               // awardBadge(userId, 'badge_first_booking'); // Example gamification call - only if online
-          }
+          // Optional: Award badge (only if online)
+          // if (userId && isOnline) {
+          //      awardBadge(userId, 'badge_first_booking');
+          // }
           // TODO: Add reservation to an offline queue if !isOnline
           if (!isOnline) {
                console.log("Offline: Queuing reservation (Simulation)...", { userId, spotId, locationId });
@@ -1108,7 +1140,13 @@ export default function ParkingLotManager() {
                             </iframe>
                         ) : (
                             <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-sm">
-                                Google Maps API Key missing. Map cannot be displayed. (Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env)
+                                <Alert variant="warning" className="max-w-md mx-auto">
+                                     <AlertTriangle className="h-4 w-4" />
+                                     <AlertTitle>Map Unavailable</AlertTitle>
+                                     <AlertDescription>
+                                         Google Maps API Key is missing. Map cannot be displayed. (Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env)
+                                     </AlertDescription>
+                                </Alert>
                             </div>
                         )}
                     </div>
@@ -1265,8 +1303,8 @@ export default function ParkingLotManager() {
          ) : error ? (
             <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4"/>
-                <CardTitle>Error Loading Locations</CardTitle>
-                <CardDescription>{error}</CardDescription>
+                <AlertTitle>Error Loading Locations</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
             </Alert>
          ) : locations.length === 0 && isOnline ? ( // Only show 'no locations' if online and empty
              <p className="text-muted-foreground text-center py-4">No parking locations available at the moment.</p>
@@ -1424,54 +1462,3 @@ export default function ParkingLotManager() {
    </div>
  );
 }
-
-// Sample Carpso lots data (moved outside component)
-const sampleCarpsoLots: ParkingLot[] = [
-    { id: 'lot_A', name: 'Downtown Garage (Carpso)', address: '123 Main St, Lusaka', capacity: 50, latitude: -15.4167, longitude: 28.2833, services: ['EV Charging', 'Mobile Money Agent', 'Wifi', 'Restroom'], ownerUserId: 'usr_1', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
-    { id: 'lot_B', name: 'Airport Lot B (Carpso Partner)', address: '456 Airport Rd, Lusaka', capacity: 150, latitude: -15.3300, longitude: 28.4522, services: ['Restroom', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() + 15 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' },
-    { id: 'lot_C', name: 'East Park Mall Deck (Carpso)', address: '789 Great East Rd, Lusaka', capacity: 200, latitude: -15.4000, longitude: 28.3333, services: ['Car Wash', 'Valet', 'Mobile Money Agent', 'Restroom', 'EV Charging'], ownerUserId: 'usr_5', subscriptionStatus: 'trial', trialEndDate: new Date(Date.now() - 5 * 86400000).toISOString(), isCarpsoManaged: true, dataSource: 'carpso' }, // Expired trial
-    { id: 'lot_D', name: 'Levy Junction Upper Level (Carpso)', address: '101 Church Rd, Lusaka', capacity: 80, latitude: -15.4150, longitude: 28.2900, services: ['Valet', 'Wifi'], ownerUserId: 'usr_2', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso' },
-    { id: 'lot_E', name: 'Arcades Park & Shop (Carpso)', address: '200 Great East Rd, Lusaka', capacity: 120, latitude: -15.4050, longitude: 28.3200, services: ['Mobile Money Agent', 'Restroom', 'Car Wash'], ownerUserId: 'usr_admin', subscriptionStatus: 'active', isCarpsoManaged: true, dataSource: 'carpso'},
-    { id: 'lot_F', name: 'UTH Parking Zone 1 (Carpso)', address: 'Hospital Rd, Lusaka', capacity: 60, latitude: -15.4200, longitude: 28.3000, services: ['Restroom'], ownerUserId: 'usr_admin', subscriptionStatus: 'inactive', isCarpsoManaged: true, dataSource: 'carpso' },
-];
-
-// --- Google Places API Helper (Conceptual & Simulated) ---
-async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 20): Promise<ParkingLot[]> {
-    console.log(`SIMULATING Google Places parking search for region: ${region} (Max: ${maxResults})`);
-    if (!apiKey) {
-         console.warn("Google API Key missing - simulation will proceed but real fetch would fail.");
-    }
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    const zambiaLatRange = [-18.0, -8.0];
-    const zambiaLonRange = [22.0, 34.0];
-    const simulatedResults: ParkingLot[] = [];
-    const names = ["Central", "North", "South", "East", "West", "Plaza", "Tower", "Square", "Junction", "Heights"];
-    const suffixes = ["Parking", "Garage", "Lot", "Parkade", "Deck"];
-    const cities = ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Livingstone", "Chipata", "Kasama"];
-    for (let i = 0; i < maxResults; i++) {
-        const lat = Math.random() * (zambiaLatRange[1] - zambiaLatRange[0]) + zambiaLatRange[0];
-        const lon = Math.random() * (zambiaLonRange[1] - zambiaLonRange[0]) + zambiaLonRange[0];
-        const city = cities[Math.floor(Math.random() * cities.length)];
-        const namePart1 = names[Math.floor(Math.random() * names.length)];
-        const namePart2 = suffixes[Math.floor(Math.random() * suffixes.length)];
-        const place_id = `g_sim_${city.toLowerCase()}_${i}_${Date.now().toString().slice(-4)}`;
-        simulatedResults.push({
-            id: place_id,
-            name: `${namePart1} ${city} ${namePart2} #${i + 1}`,
-            address: `${Math.floor(100 + Math.random() * 900)} ${namePart1} Rd, ${city}, ${region}`,
-            capacity: Math.floor(20 + Math.random() * 280),
-            latitude: parseFloat(lat.toFixed(6)),
-            longitude: parseFloat(lon.toFixed(6)),
-            services: Math.random() > 0.8 ? ['Restroom'] : [],
-            subscriptionStatus: 'external',
-            isCarpsoManaged: false,
-            dataSource: 'google_places_simulated',
-            phoneNumber: Math.random() > 0.7 ? `+260 9${Math.floor(Math.random()*3)+5} XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
-            website: Math.random() > 0.8 ? `https://www.google.com/maps/search/?api=1&query_place_id=${place_id}` : undefined,
-            contactStatus: 'prospect',
-        });
-    }
-    return simulatedResults;
-}
-
-    

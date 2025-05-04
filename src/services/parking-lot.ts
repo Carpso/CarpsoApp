@@ -161,7 +161,8 @@ export async function getAvailableParkingLots(
       let externalLotsData: ParkingLot[] = [];
       if (googleApiKey) {
           try {
-               externalLotsData = await fetchGooglePlacesParking("Zambia", googleApiKey, 50); // Fetch more (simulated)
+               // Fetch a larger number to simulate 'unending' list (in reality, needs pagination)
+               externalLotsData = await fetchGooglePlacesParking("Zambia", googleApiKey, 100); // Fetch more (simulated)
           } catch (googleError) {
                console.error("Failed to fetch from Google Places API:", googleError);
                // Decide if you want to proceed without external data or show an error
@@ -189,8 +190,8 @@ export async function getAvailableParkingLots(
           console.error("Failed to cache parking lots:", e);
         }
       }
-    } catch (error) {
-      console.error("Online fetch failed, using potentially stale/empty cache:", error);
+    } catch (error: any) { // Add type annotation for error
+      console.error("Online fetch failed, using potentially stale/empty cache:", error.message); // Log error message
       // If fetch fails, `allLots` still holds the cached value (or is empty if cache was invalid)
        if (allLots.length === 0) { // Only throw if fetch fails AND cache was empty/invalid
            throw error; // Re-throw if fetch fails and no usable cache exists
@@ -208,7 +209,10 @@ export async function getAvailableParkingLots(
     visibleLots = allLots; // Admins see everything
   } else if (userRole === 'ParkingLotOwner' && userId) {
     // Owners see their lots + all external lots
-    visibleLots = allLots.filter(lot => (lot.isCarpsoManaged && lot.ownerUserId === userId) || !lot.isCarpsoManaged);
+    // Make sure associatedLots is correctly fetched or simulated for the owner
+    const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner'); // Using sampleUsers from admin page for simulation
+    const ownerLots = ownerUser?.associatedLots || [];
+    visibleLots = allLots.filter(lot => (ownerLots.includes('*')) || (lot.isCarpsoManaged && lot.ownerUserId === userId) || (lot.isCarpsoManaged && ownerLots.includes(lot.id)) || !lot.isCarpsoManaged);
   } else {
     // Regular users see active/trial Carpso lots + all external lots
     visibleLots = allLots.filter(lot =>
@@ -233,7 +237,7 @@ export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | 
 
    // In a real app, this might fetch from cache first, then backend/Google Places Details API
    // Combine Carpso and simulated external data for lookup
-   const allPossibleLots = [...sampleCarpsoLots, ...(await fetchGooglePlacesParking("Zambia", "dummy_key", 50))]; // Fetch simulated external again for details lookup
+   const allPossibleLots = [...sampleCarpsoLots, ...(await fetchGooglePlacesParking("Zambia", "dummy_key", 100))]; // Fetch simulated external again for details lookup
    let lot = allPossibleLots.find(l => l.id === lotId);
 
    if (lot) {
@@ -263,6 +267,12 @@ export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | 
 // (Note: This function inherently requires an online connection)
 export async function updateParkingLotServices(lotId: string, services: ParkingLotService[]): Promise<boolean> {
     console.log(`Simulating update services for lot ${lotId}:`, services);
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+       console.error("Cannot update services: Offline.");
+       // TODO: Queue update if offline
+       return false;
+    }
     await new Promise(resolve => setTimeout(resolve, 800));
     // In a real app, update the backend data source
     const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged); // Can only update managed lots
@@ -282,6 +292,12 @@ export async function updateParkingLotServices(lotId: string, services: ParkingL
 // Mock function to update subscription status (Admin)
 export async function updateLotSubscriptionStatus(lotId: string, status: ParkingLot['subscriptionStatus'], trialEndDate?: string): Promise<boolean> {
     console.log(`Simulating update subscription for lot ${lotId}:`, { status, trialEndDate });
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+       console.error("Cannot update subscription: Offline.");
+       // TODO: Queue update if offline
+       return false;
+    }
     await new Promise(resolve => setTimeout(resolve, 500));
     const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged); // Can only update managed lots
     if (lotIndex !== -1) {
@@ -317,7 +333,7 @@ export async function startLotTrial(lotId: string, trialDays: number = 14): Prom
  * @param maxResults Maximum number of simulated results to generate.
  * @returns A promise resolving to an array of ParkingLot objects derived from simulated Google Places data.
  */
-async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 20): Promise<ParkingLot[]> {
+async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 100): Promise<ParkingLot[]> { // Increased default maxResults
     console.log(`SIMULATING Google Places parking search for region: ${region} (Max: ${maxResults})`);
     if (!apiKey) {
          console.warn("Google API Key missing - simulation will proceed but real fetch would fail.");
@@ -331,21 +347,30 @@ async function fetchGooglePlacesParking(region: string, apiKey: string, maxResul
     const zambiaLatRange = [-18.0, -8.0];
     const zambiaLonRange = [22.0, 34.0];
     const simulatedResults: ParkingLot[] = [];
-    const names = ["Central", "North", "South", "East", "West", "Plaza", "Tower", "Square", "Junction", "Heights"];
-    const suffixes = ["Parking", "Garage", "Lot", "Parkade", "Deck"];
-    const cities = ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Livingstone", "Chipata", "Kasama"];
+    const names = ["Central", "North", "South", "East", "West", "Plaza", "Tower", "Square", "Junction", "Heights", "Park", "Complex", "Center"];
+    const suffixes = ["Parking", "Garage", "Lot", "Parkade", "Deck", "Area", "Spot"];
+    const cities = ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Livingstone", "Chipata", "Kasama", "Solwezi", "Chingola", "Mongu"];
 
-    for (let i = 0; i < maxResults; i++) {
+    // Simple deduplication helper (based on name and city)
+    const generatedNames = new Set<string>();
+
+    for (let i = 0; i < maxResults * 1.5 && simulatedResults.length < maxResults; i++) { // Generate more initially to allow for duplicates
         const lat = Math.random() * (zambiaLatRange[1] - zambiaLatRange[0]) + zambiaLatRange[0];
         const lon = Math.random() * (zambiaLonRange[1] - zambiaLonRange[0]) + zambiaLonRange[0];
         const city = cities[Math.floor(Math.random() * cities.length)];
         const namePart1 = names[Math.floor(Math.random() * names.length)];
         const namePart2 = suffixes[Math.floor(Math.random() * suffixes.length)];
+        const name = `${namePart1} ${city} ${namePart2} #${i % 10 + 1}`; // Keep number small to increase potential duplicates for demo
+        const nameKey = `${name}-${city}`;
+
+        if (generatedNames.has(nameKey)) continue; // Skip duplicate name/city combo
+
+        generatedNames.add(nameKey);
         const place_id = `g_sim_${city.toLowerCase()}_${i}_${Date.now().toString().slice(-4)}`;
 
         simulatedResults.push({
             id: place_id,
-            name: `${namePart1} ${city} ${namePart2} #${i + 1}`,
+            name: name,
             address: `${Math.floor(100 + Math.random() * 900)} ${namePart1} Rd, ${city}, ${region}`,
             capacity: Math.floor(20 + Math.random() * 280), // Random capacity
             latitude: parseFloat(lat.toFixed(6)),
@@ -355,8 +380,8 @@ async function fetchGooglePlacesParking(region: string, apiKey: string, maxResul
             isCarpsoManaged: false,
             dataSource: 'google_places_simulated',
             // Simulate contact details occasionally
-            phoneNumber: Math.random() > 0.7 ? `+260 9${Math.floor(Math.random()*3)+5} XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
-            website: Math.random() > 0.8 ? `https://www.google.com/maps/search/?api=1&query_place_id=${place_id}` : undefined,
+            phoneNumber: Math.random() > 0.5 ? `+260 9${Math.floor(Math.random()*3)+5} XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
+            website: Math.random() > 0.6 ? `https://www.google.com/maps/search/?api=1&query_place_id=${place_id}` : undefined,
             contactStatus: 'prospect', // Mark as prospect
         });
     }
@@ -364,28 +389,67 @@ async function fetchGooglePlacesParking(region: string, apiKey: string, maxResul
 
     // --- Real API Call Placeholder ---
     // try {
-    //   const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=parking+in+${encodeURIComponent(region)}&key=${apiKey}&pagetoken=NEXT_PAGE_TOKEN_IF_ANY`;
-    //   const response = await fetch(searchUrl);
-    //   if (!response.ok) throw new Error(`Google Places API error: ${response.statusText}`);
-    //   const data = await response.json();
-    //   // TODO: Process data.results, potentially call Place Details API for phone/website
-    //   // Handle pagination using data.next_page_token
-    //   const externalLots: ParkingLot[] = data.results.map((place: any) => ({
+    //   // --- Google Places Text Search API Call ---
+    //   // NOTE: This usually requires enabling billing on your Google Cloud project.
+    //   let nextPageToken: string | undefined = undefined;
+    //   let allPlaces: any[] = [];
+    //   const MAX_API_RESULTS = 60; // Google limits to ~60 results total even with pagination for nearby/text search
+    //   const BATCH_SIZE = 20; // Max per page token usually
+    //
+    //   while (allPlaces.length < MAX_API_RESULTS) {
+    //       let searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=parking+in+${encodeURIComponent(region)}&key=${apiKey}`;
+    //       if (nextPageToken) {
+    //           searchUrl += `&pagetoken=${nextPageToken}`;
+    //           await new Promise(resolve => setTimeout(resolve, 2000)); // Required delay before using next_page_token
+    //       }
+    //
+    //       const response = await fetch(searchUrl);
+    //       if (!response.ok) throw new Error(`Google Places Text Search API error: ${response.statusText}`);
+    //       const data = await response.json();
+    //
+    //       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+    //            throw new Error(`Google Places Text Search API Status: ${data.status} - ${data.error_message || ''}`);
+    //       }
+    //
+    //       allPlaces.push(...(data.results || []));
+    //       nextPageToken = data.next_page_token;
+    //
+    //       if (!nextPageToken || data.results?.length === 0) break; // Exit loop if no more pages
+    //   }
+    //
+    //   // --- Optional: Fetch Details for Each Place (Expensive!) ---
+    //   // This significantly increases cost and time. Only fetch details if absolutely necessary (e.g., for phone/website).
+    //   const detailedPlaces = await Promise.all(allPlaces.map(async (place) => {
+    //       try {
+    //           const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=place_id,name,formatted_address,vicinity,geometry/location,formatted_phone_number,website&key=${apiKey}`;
+    //           const detailsResponse = await fetch(detailsUrl);
+    //           if (!detailsResponse.ok) throw new Error(`Details API error: ${detailsResponse.statusText}`);
+    //           const detailsData = await detailsResponse.json();
+    //           if (detailsData.status !== 'OK') throw new Error(`Details API Status: ${detailsData.status}`);
+    //           return { ...place, details: detailsData.result }; // Combine original place with details
+    //       } catch (detailsError) {
+    //           console.error(`Failed to fetch details for place ${place.place_id}:`, detailsError);
+    //           return place; // Return original place data on details error
+    //       }
+    //   }));
+    //
+    //   // --- Map to ParkingLot Structure ---
+    //   const externalLots: ParkingLot[] = detailedPlaces.map((place: any) => ({
     //     id: place.place_id,
     //     name: place.name,
-    //     address: place.formatted_address || place.vicinity,
-    //     capacity: 0, // Usually unknown
+    //     address: place.details?.formatted_address || place.formatted_address || place.vicinity || 'Address unavailable',
+    //     capacity: 0, // Usually unknown from Places API
     //     latitude: place.geometry.location.lat,
     //     longitude: place.geometry.location.lng,
-    //     // Fetch phone/website using Place Details API if needed
-    //     // phoneNumber: placeDetails.formatted_phone_number,
-    //     // website: placeDetails.website,
-    //     services: [],
+    //     phoneNumber: place.details?.formatted_phone_number,
+    //     website: place.details?.website,
+    //     services: [], // Cannot reliably get services from Places API
     //     subscriptionStatus: 'external',
     //     isCarpsoManaged: false,
     //     dataSource: 'google_places',
     //     contactStatus: 'prospect',
     //   }));
+    //
     //   return externalLots;
     // } catch (error) {
     //   console.error("Error contacting Google Places API:", error);
@@ -393,5 +457,15 @@ async function fetchGooglePlacesParking(region: string, apiKey: string, maxResul
     // }
     // --- End Real API Call Placeholder ---
 
+    // Return simulated results
     return simulatedResults;
 }
+
+// Added sampleUsers definition from admin page for filtering logic
+const sampleUsers = [
+  { id: 'usr_1', name: 'Alice Smith', email: 'alice@example.com', role: 'User', associatedLots: ['lot_A'] },
+  { id: 'usr_2', name: 'Bob Johnson', email: 'bob@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_B', 'lot_D'] }, // Owns B and D
+  { id: 'usr_3', name: 'Charlie Brown', email: 'charlie@example.com', role: 'User', associatedLots: ['lot_A', 'lot_C'] },
+  { id: 'usr_4', name: 'Diana Prince', email: 'diana@example.com', role: 'Admin', associatedLots: ['*'] }, // '*' means all lots
+  { id: 'usr_5', name: 'Eve Adams', email: 'eve@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_C'] }, // Owns C
+];

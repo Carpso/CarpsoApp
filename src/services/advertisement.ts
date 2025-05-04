@@ -56,6 +56,11 @@ export interface Advertisement {
    status?: 'active' | 'inactive' | 'draft';
 }
 
+// Cache key for advertisements
+const AD_CACHE_KEY = 'cachedAdvertisements';
+const AD_CACHE_TIMESTAMP_KEY = `${AD_CACHE_KEY}Timestamp`;
+const AD_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour
+
 // Sample data store - Replace with actual database interaction
 let sampleAdvertisements: Advertisement[] = [
   {
@@ -95,41 +100,90 @@ let sampleAdvertisements: Advertisement[] = [
 ];
 
 /**
- * Simulates fetching advertisements.
- * @param locationId Optional filter by target location ID. If undefined, returns all ads.
- * @returns A promise resolving to an array of advertisements.
+ * Retrieves advertisements, attempting to use cache when offline or within cache age.
+ * Fetches fresh data when online and cache is stale or missing.
+ * NOTE: Does not filter by locationId in this version for simplicity, filtering should be done by the caller if needed.
+ * @param forceRefresh Bypasses cache and fetches fresh data if true.
+ * @returns A promise resolving to an array of all advertisements (active or inactive).
  */
-export async function getAdvertisements(locationId?: string): Promise<Advertisement[]> {
-  await new Promise(resolve => setTimeout(resolve, 400)); // Simulate network delay
-  console.log(`Fetching ads for locationId: ${locationId}`);
-
-  let filteredAds: Advertisement[];
-
-  if (locationId) {
-    // Filter ads that target the specific location OR are global (no targetLocationId)
-    filteredAds = sampleAdvertisements.filter(ad => ad.targetLocationId === locationId || !ad.targetLocationId);
-  } else {
-    // If no locationId is specified, return all ads (for admin or potentially global views)
-    filteredAds = [...sampleAdvertisements];
+export async function getAdvertisements(forceRefresh: boolean = false): Promise<Advertisement[]> {
+  let isOnline = true;
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+    isOnline = navigator.onLine;
   }
 
-  // Filter by status - only return 'active' ads unless maybe in admin context?
-  // For Explore page, we likely only want active ads.
-  // For Admin page, we might want all statuses.
-  // Let's assume this function is generic for now and returns based on location filter primarily.
-  // Filtering by status can happen in the component calling this service if needed.
+  let allAds: Advertisement[] = [];
+  let needsServerFetch = true;
 
-  // Return sorted by creation date (newest first)
-  return filteredAds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // 1. Try loading from cache first (unless forceRefresh)
+  if (!forceRefresh && typeof window !== 'undefined') {
+    const cachedTimestamp = localStorage.getItem(AD_CACHE_TIMESTAMP_KEY);
+    const cachedData = localStorage.getItem(AD_CACHE_KEY);
+    if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < AD_CACHE_MAX_AGE) {
+      try {
+        allAds = JSON.parse(cachedData);
+        console.log("Using valid cached advertisements.");
+        needsServerFetch = false; // Cache is valid
+      } catch (e) {
+        console.error("Failed to parse cached advertisements, will fetch fresh.", e);
+        localStorage.removeItem(AD_CACHE_KEY);
+        localStorage.removeItem(AD_CACHE_TIMESTAMP_KEY);
+        needsServerFetch = true;
+      }
+    }
+  }
+
+  // 2. Fetch from server if needed (online and cache invalid/missing/forced)
+  if (needsServerFetch && isOnline) {
+    try {
+      console.log("Fetching fresh advertisements...");
+      await new Promise(resolve => setTimeout(resolve, 400)); // Simulate network delay
+
+      // Simulate fetching ALL ads from backend (active, inactive, etc.)
+      allAds = [...sampleAdvertisements]; // In real app, replace with API call
+
+      // Cache the fresh data
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(AD_CACHE_KEY, JSON.stringify(allAds));
+          localStorage.setItem(AD_CACHE_TIMESTAMP_KEY, Date.now().toString());
+          console.log("Cached fresh advertisements.");
+        } catch (e) {
+          console.error("Failed to cache advertisements:", e);
+        }
+      }
+    } catch (error) {
+      console.error("Online ad fetch failed, using potentially stale/empty cache:", error);
+      // If fetch fails but we had cached data, `allAds` still holds it.
+      if (allAds.length === 0) {
+        throw error; // Re-throw if fetch fails and no usable cache exists
+      }
+    }
+  } else if (needsServerFetch && !isOnline) {
+    // Offline and cache was invalid/missing
+    console.warn("Offline and no valid ad cache available.");
+    return []; // Return empty if offline and no valid cache
+  }
+
+  // Return all fetched/cached ads, sorted by creation date (newest first)
+  return allAds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 
 /**
- * Simulates creating a new advertisement.
+ * Simulates creating a new advertisement (requires online).
+ * Invalidates cache on success.
  * @param adData Data for the new advertisement (excluding id, createdAt, updatedAt).
- * @returns A promise resolving to the newly created advertisement.
+ * @returns A promise resolving to the newly created advertisement or null if offline.
  */
-export async function createAdvertisement(adData: Partial<Omit<Advertisement, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Advertisement | null> {
+export async function createAdvertisement(adData: Partial<Omit<Advertisement, 'id' | 'createdAt' | 'updatedAt' | 'targetLotName'>>): Promise<Advertisement | null> {
+   let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+   if (!isOnline) {
+       console.error("Cannot create advertisement: Offline.");
+       // TODO: Add to offline queue if needed
+       return null;
+   }
+
   await new Promise(resolve => setTimeout(resolve, 600)); // Simulate network delay
   const newAd: Advertisement = {
     id: `ad_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -145,17 +199,32 @@ export async function createAdvertisement(adData: Partial<Omit<Advertisement, 'i
     status: adData.status || 'active', // Default to active
   };
   sampleAdvertisements.push(newAd);
+
+  // Invalidate cache
+  if (typeof window !== 'undefined') {
+     localStorage.removeItem(AD_CACHE_KEY);
+     localStorage.removeItem(AD_CACHE_TIMESTAMP_KEY);
+  }
+
   console.log("Created ad:", newAd);
   return newAd;
 }
 
 /**
- * Simulates updating an existing advertisement.
+ * Simulates updating an existing advertisement (requires online).
+ * Invalidates cache on success.
  * @param adId The ID of the advertisement to update.
  * @param updateData The fields to update.
- * @returns A promise resolving to the updated advertisement or null if not found.
+ * @returns A promise resolving to the updated advertisement or null if not found or offline.
  */
 export async function updateAdvertisement(adId: string, updateData: Partial<Omit<Advertisement, 'id' | 'createdAt' | 'targetLotName'>>): Promise<Advertisement | null> {
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+       console.error("Cannot update advertisement: Offline.");
+       // TODO: Add to offline queue if needed
+       return null;
+    }
+
   await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
   const adIndex = sampleAdvertisements.findIndex(ad => ad.id === adId);
   if (adIndex === -1) {
@@ -169,23 +238,43 @@ export async function updateAdvertisement(adId: string, updateData: Partial<Omit
     targetLotName: undefined,
   };
   sampleAdvertisements[adIndex] = updatedAd;
+
+   // Invalidate cache
+   if (typeof window !== 'undefined') {
+      localStorage.removeItem(AD_CACHE_KEY);
+      localStorage.removeItem(AD_CACHE_TIMESTAMP_KEY);
+   }
+
   console.log("Updated ad:", updatedAd);
   return updatedAd;
 }
 
 
 /**
- * Simulates deleting an advertisement.
+ * Simulates deleting an advertisement (requires online).
+ * Invalidates cache on success.
  * @param adId The ID of the advertisement to delete.
- * @returns A promise resolving to true if successful, false otherwise.
+ * @returns A promise resolving to true if successful, false otherwise (or if offline).
  */
 export async function deleteAdvertisement(adId: string): Promise<boolean> {
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+       console.error("Cannot delete advertisement: Offline.");
+       // TODO: Add to offline queue if needed
+       return false;
+    }
+
   await new Promise(resolve => setTimeout(resolve, 400)); // Simulate network delay
   const initialLength = sampleAdvertisements.length;
   sampleAdvertisements = sampleAdvertisements.filter(ad => ad.id !== adId);
   const success = sampleAdvertisements.length < initialLength;
   if (success) {
       console.log("Deleted ad:", adId);
+       // Invalidate cache
+       if (typeof window !== 'undefined') {
+          localStorage.removeItem(AD_CACHE_KEY);
+          localStorage.removeItem(AD_CACHE_TIMESTAMP_KEY);
+       }
   } else {
        console.warn("Ad not found for deletion:", adId);
   }
