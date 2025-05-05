@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, Link as LinkIcon, Award } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, LinkIcon, Award
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'; // Import Recharts components
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'; // Import ShadCN chart components
+import { getLinkedLoyaltyPrograms, linkLoyaltyProgram, unlinkLoyaltyProgram, LinkedLoyaltyProgram } from '@/services/loyalty-service'; // Import loyalty service
 
 // Sample user data - replace with actual authentication and user management
 const sampleUsers = [
@@ -132,6 +133,8 @@ export default function AdminDashboardPage() {
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false); // State for subscription modal
   const [currentSubscription, setCurrentSubscription] = useState(initialSubscriptionFormState); // State for editing subscription
   const [isSavingSubscription, setIsSavingSubscription] = useState(false);
+  const [linkedLoyalty, setLinkedLoyalty] = useState<LinkedLoyaltyProgram[]>([]); // State for loyalty programs
+  const [isLoadingLoyalty, setIsLoadingLoyalty] = useState(true); // Loading state for loyalty programs
   const { toast } = useToast();
   const { userRole, userId } = useContext(AppStateContext)!;
   const [reportData, setReportData] = useState<any[]>([]); // State for report data
@@ -239,6 +242,26 @@ export default function AdminDashboardPage() {
           setIsLoadingRules(false);
       }
   }, [isParkingLotOwner, isAdmin, userId, parkingLots, toast]); // Added isAdmin
+
+    // Fetch Linked Loyalty Programs
+    const fetchLinkedLoyalty = useCallback(async (currentUserId: string) => {
+        setIsLoadingLoyalty(true);
+        try {
+            const programs = await getLinkedLoyaltyPrograms(currentUserId);
+            setLinkedLoyalty(programs);
+        } catch (err) {
+            console.error("Failed to fetch linked loyalty programs:", err);
+            toast({ title: "Error", description: "Could not fetch loyalty program data.", variant: "destructive" });
+        } finally {
+            setIsLoadingLoyalty(false);
+        }
+    }, [toast]);
+
+    useEffect(() => {
+        if (userId) { // Only fetch if userId is available
+            fetchLinkedLoyalty(userId);
+        }
+    }, [userId, fetchLinkedLoyalty]);
 
 
   useEffect(() => {
@@ -358,6 +381,14 @@ export default function AdminDashboardPage() {
              setIsDownloading(false);
          }
          // downloadCSV handles setting isDownloading to false on completion/error
+    };
+     // Handler for Loyalty Programs Download
+    const handleDownloadLoyalty = () => {
+        // In admin, might need to fetch ALL linked programs, or filter based on scope?
+        // Assuming download for current view (all if admin, or filtered by user if context allows)
+        // For now, downloading the currently loaded `linkedLoyalty` state
+        const dataToDownload = linkedLoyalty.map(lp => ({ ...lp, userName: sampleUsers.find(u => u.id === lp.userId)?.name || lp.userId })); // Add user name for clarity
+        downloadCSV(dataToDownload, `carpso-linked-loyalty-programs.csv`);
     };
     // --- End Report Download Handlers ---
 
@@ -712,13 +743,14 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
            <Tabs defaultValue="users" className="w-full">
-             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 md:grid-cols-8 mb-6 overflow-x-auto"> {/* Adjusted grid cols */}
+             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 mb-6 overflow-x-auto"> {/* Adjusted grid cols */}
                <TabsTrigger value="users"><UserCog className="mr-2 h-4 w-4"/>Users</TabsTrigger>
                <TabsTrigger value="lots"><LayoutDashboard className="mr-2 h-4 w-4"/>Lots</TabsTrigger>
                <TabsTrigger value="services"><Sparkles className="mr-2 h-4 w-4"/>Services</TabsTrigger>
                <TabsTrigger value="ads"><Megaphone className="mr-2 h-4 w-4"/>Ads</TabsTrigger>
                <TabsTrigger value="pricing"><DollarSign className="mr-2 h-4 w-4"/>Pricing</TabsTrigger>
                <TabsTrigger value="records"><History className="mr-2 h-4 w-4"/>Records</TabsTrigger> {/* Added Records Tab */}
+               <TabsTrigger value="loyalty"><Award className="mr-2 h-4 w-4"/>Loyalty</TabsTrigger> {/* Added Loyalty Tab */}
                <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
                <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings</TabsTrigger>
              </TabsList>
@@ -745,14 +777,14 @@ export default function AdminDashboardPage() {
                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                        displayedUsers.length > 0 ? (
                            <Table>
-                             <TableHeader> <TableRow> <TableHead>Name</TableHead> <TableHead>Email</TableHead> <TableHead>Role</TableHead> {selectedLotId === 'all' && <TableHead>Associated Lots</TableHead>} <TableHead className="text-right">Actions</TableHead> </TableRow> </TableHeader>
+                             <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead>{selectedLotId === 'all' && <TableHead>Associated Lots</TableHead>}<TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                              <TableBody>
                                {displayedUsers.map((user) => (
                                  <TableRow key={user.id}>
-                                   <TableCell className="font-medium">{user.name}</TableCell> <TableCell>{user.email}</TableCell> <TableCell>{user.role}</TableCell>
+                                   <TableCell className="font-medium">{user.name}</TableCell><TableCell>{user.email}</TableCell><TableCell>{user.role}</TableCell>
                                    {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
                                    <TableCell className="text-right space-x-1">
-                                     <Button variant="ghost" size="sm" disabled={!isAdmin}>Edit</Button>
+                                     <Button variant="ghost" size="sm" disabled={!isAdmin && !(isParkingLotOwner && user.associatedLots.includes(selectedLotId!))}>Edit</Button> {/* Allow owner to edit users for their lot */}
                                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={!isAdmin}> <Trash2 className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Delete</span> </Button>
                                    </TableCell>
                                  </TableRow>
@@ -788,7 +820,7 @@ export default function AdminDashboardPage() {
                      : errorLoadingLots ? ( <p className="text-destructive text-center py-4">{errorLoadingLots}</p> )
                      : getDisplayLots().length > 0 ? (
                        <Table>
-                         <TableHeader> <TableRow> <TableHead>Lot Name</TableHead> <TableHead>Owner</TableHead> <TableHead>Capacity</TableHead> <TableHead>Occupancy</TableHead> <TableHead>Subscription</TableHead> <TableHead>Services</TableHead> <TableHead className="text-right">Actions</TableHead> </TableRow> </TableHeader>
+                         <TableHeader><TableRow><TableHead>Lot Name</TableHead><TableHead>Owner</TableHead><TableHead>Capacity</TableHead><TableHead>Occupancy</TableHead><TableHead>Subscription</TableHead><TableHead>Services</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                          <TableBody>
                            {getDisplayLots().map((lot) => {
                                const owner = sampleUsers.find(u => u.id === lot.ownerUserId);
@@ -799,7 +831,7 @@ export default function AdminDashboardPage() {
                                    <TableCell className="font-medium">{lot.name}</TableCell>
                                    <TableCell className="text-xs text-muted-foreground">{owner?.name || 'N/A'}</TableCell>
                                    <TableCell>{lot.capacity}</TableCell>
-                                   <TableCell>{lot.currentOccupancy ?? 'N/A'} ({lot.currentOccupancy !== undefined ? `${((lot.currentOccupancy / lot.capacity) * 100).toFixed(0)}%` : 'N/A'})</TableCell>
+                                   <TableCell>{lot.currentOccupancy ?? 'N/A'} ({lot.currentOccupancy !== undefined && lot.capacity > 0 ? `${((lot.currentOccupancy / lot.capacity) * 100).toFixed(0)}%` : 'N/A'})</TableCell>
                                    <TableCell>{getSubscriptionStatusBadge(displayStatus, lot.trialEndDate)} {displayStatus === 'trial' && lot.trialEndDate ? `(Ends ${new Date(lot.trialEndDate).toLocaleDateString()})` : displayStatus === 'expired' && lot.trialEndDate ? `(Ended ${new Date(lot.trialEndDate).toLocaleDateString()})` : ''}</TableCell>
                                    <TableCell>
                                        <div className="flex flex-wrap gap-1">
@@ -824,7 +856,7 @@ export default function AdminDashboardPage() {
              {/* Services Management Tab */}
               <TabsContent value="services">
                 <Card>
-                  <CardHeader> <CardTitle>Manage Lot Services {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : ''}</CardTitle> <CardDescription> {selectedLotId !== 'all' && selectedLot ? `Enable or disable services offered at ${selectedLot.name}.` : 'Please select a specific parking lot to manage its services.'} </CardDescription> </CardHeader>
+                  <CardHeader><CardTitle>Manage Lot Services {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : ''}</CardTitle><CardDescription>{selectedLotId !== 'all' && selectedLot ? `Enable or disable services offered at ${selectedLot.name}.` : 'Please select a specific parking lot to manage its services.'}</CardDescription></CardHeader>
                   <CardContent>
                       {isLoadingLots ? ( <Skeleton className="h-24 w-full" /> )
                       : errorLoadingLots ? ( <p className="text-destructive text-center py-4">{errorLoadingLots}</p> )
@@ -880,7 +912,7 @@ export default function AdminDashboardPage() {
                    : errorLoadingAds ? ( <p className="text-destructive text-center py-4">{errorLoadingAds}</p> )
                    : advertisements.length > 0 ? (
                         <Table>
-                            <TableHeader> <TableRow> <TableHead className="w-[80px]">Image</TableHead> <TableHead>Title</TableHead> {selectedLotId === 'all' && <TableHead>Target Location</TableHead>} <TableHead>Runs</TableHead> <TableHead>Associated Service</TableHead> <TableHead>Status</TableHead> <TableHead className="text-right">Actions</TableHead> </TableRow> </TableHeader>
+                            <TableHeader><TableRow><TableHead className="w-[80px]">Image</TableHead><TableHead>Title</TableHead>{selectedLotId === 'all' && <TableHead>Target Location</TableHead>}<TableHead>Runs</TableHead><TableHead>Associated Service</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                             <TableBody>
                                 {advertisements.map((ad) => {
                                      const targetLotName = ad.targetLotName; // Already calculated
@@ -944,7 +976,7 @@ export default function AdminDashboardPage() {
                     : errorLoadingRules ? ( <p className="text-destructive text-center py-4">{errorLoadingRules}</p> )
                     : displayedPricingRules.length > 0 ? (
                         <Table>
-                           <TableHeader> <TableRow> <TableHead>Description</TableHead> {selectedLotId === 'all' && <TableHead>Lot Scope</TableHead>} <TableHead>Rate/Discount</TableHead> <TableHead>Conditions</TableHead> <TableHead>Priority</TableHead> <TableHead className="text-right">Actions</TableHead> </TableRow> </TableHeader>
+                           <TableHeader><TableRow><TableHead>Description</TableHead>{selectedLotId === 'all' && <TableHead>Lot Scope</TableHead>}<TableHead>Rate/Discount</TableHead><TableHead>Conditions</TableHead><TableHead>Priority</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                            <TableBody>
                              {displayedPricingRules.map((rule) => {
                                 const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
@@ -1025,6 +1057,52 @@ export default function AdminDashboardPage() {
                 </Card>
              </TabsContent>
 
+            {/* Loyalty Programs Tab */}
+            <TabsContent value="loyalty">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Linked Loyalty Programs</CardTitle>
+                        <CardDescription>View loyalty programs linked by users across the platform.</CardDescription>
+                        <div className="flex flex-wrap items-center gap-2 pt-4">
+                            <Input placeholder="Search by User ID or Program..." className="max-w-sm" /> <Button>Search</Button>
+                             <div className="ml-auto flex gap-2">
+                                <Button variant="outline" onClick={handleDownloadLoyalty} disabled={isLoadingLoyalty || isDownloading}>
+                                    {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />} Download List
+                                </Button>
+                                 {/* Maybe add ability to manage partner configurations */}
+                             </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                         {isLoadingLoyalty ? (
+                             <Skeleton className="h-32 w-full" />
+                         ) : linkedLoyalty.length > 0 ? (
+                             <Table>
+                                <TableHeader><TableRow><TableHead>User</TableHead><TableHead>Program Name</TableHead><TableHead>Membership ID</TableHead><TableHead>Linked Date</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                    {linkedLoyalty.map((lp) => {
+                                        const user = sampleUsers.find(u => u.id === lp.userId); // Find user for display name
+                                        return (
+                                             <TableRow key={lp.id}>
+                                                 <TableCell className="font-medium">{user?.name || lp.userId}</TableCell>
+                                                 <TableCell>{lp.programName}</TableCell>
+                                                 <TableCell>{lp.membershipId}</TableCell>
+                                                 <TableCell>{new Date(lp.linkedDate).toLocaleDateString()}</TableCell>
+                                             </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                             </Table>
+                         ) : (
+                              <div className="text-center py-10 text-muted-foreground">
+                                  <Award className="mx-auto h-10 w-10 mb-2" />
+                                  <p>No loyalty programs have been linked by users yet.</p>
+                              </div>
+                         )}
+                    </CardContent>
+                </Card>
+            </TabsContent>
+
 
              {/* Analytics Tab */}
              <TabsContent value="analytics">
@@ -1102,7 +1180,7 @@ export default function AdminDashboardPage() {
              {/* Settings Tab */}
              <TabsContent value="settings">
                <Card>
-                 <CardHeader> <CardTitle>System Settings {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Global' : '')}</CardTitle> <CardDescription>Configure application settings, integrations, and defaults {selectedLotId !== 'all' && selectedLot ? `specific to ${selectedLot.name}` : (isAdmin ? 'globally' : '')}.</CardDescription> </CardHeader>
+                 <CardHeader><CardTitle>System Settings {selectedLotId !== 'all' && selectedLot ? ` - ${selectedLot.name}` : (isAdmin ? ' - Global' : '')}</CardTitle><CardDescription>Configure application settings, integrations, and defaults {selectedLotId !== 'all' && selectedLot ? `specific to ${selectedLot.name}` : (isAdmin ? 'globally' : '')}.</CardDescription></CardHeader>
                  <CardContent>
                      {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
                          <div className="mt-4 space-y-4">
@@ -1137,13 +1215,26 @@ export default function AdminDashboardPage() {
                                      <Button size="sm" variant="outline" disabled>Configure (Set Env Vars)</Button>
                                 </div>
                             )}
-                            {/* External App Integration Placeholder */}
+                             {/* External App Integration Placeholder */}
                              {isAdmin && (
-                                <div className="flex items-center justify-between p-4 border rounded-md">
-                                    <div> <p className="font-medium">External App Integration</p> <p className="text-sm text-muted-foreground">Manage connections with Waze, Google Maps etc.</p> </div>
-                                    <Button size="sm" variant="outline" disabled>Manage (Coming Soon)</Button>
-                                </div>
-                            )}
+                                 <div className="flex items-center justify-between p-4 border rounded-md">
+                                     <div>
+                                         <p className="font-medium flex items-center gap-2"><LinkIcon className="h-4 w-4" /> External App Integration</p>
+                                         <p className="text-sm text-muted-foreground">Manage connections with Waze, Google Maps etc.</p>
+                                     </div>
+                                     <Button size="sm" variant="outline" disabled>Manage (Coming Soon)</Button>
+                                 </div>
+                             )}
+                              {/* Loyalty Partner Integration Placeholder */}
+                              {isAdmin && (
+                                  <div className="flex items-center justify-between p-4 border rounded-md">
+                                      <div>
+                                         <p className="font-medium flex items-center gap-2"><Award className="h-4 w-4" /> Loyalty Partner Integration</p>
+                                         <p className="text-sm text-muted-foreground">Manage API keys and configurations for loyalty partners.</p>
+                                      </div>
+                                      <Button size="sm" variant="outline" disabled>Manage Partners (Coming Soon)</Button>
+                                  </div>
+                              )}
                         </div>
                      ) : ( <p className="text-muted-foreground text-center py-4">Settings are available for specific lots or globally by Admins.</p> )}
                  </CardContent>
