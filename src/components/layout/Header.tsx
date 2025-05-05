@@ -2,12 +2,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Car, ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon } from 'lucide-react'; // Added UserIcon
+import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon } from 'lucide-react'; // Keep other icons
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet'; // Added SheetClose, SheetHeader, SheetTitle
-import { AppStateContext } from '@/context/AppStateProvider'; // Import context
+import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { AppStateContext } from '@/context/AppStateProvider';
 import { useContext } from 'react';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import CarpsoLogo from '@/components/icons/CarpsoLogo'; // Import the new logo component
 
 export default function Header() {
   const { isAuthenticated, userRole, userName, userAvatarUrl, logout } = useContext(AppStateContext)!;
@@ -33,15 +34,17 @@ export default function Header() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
-             {/* Added SheetHeader and visually hidden SheetTitle */}
              <SheetHeader className="p-4 pb-2">
-               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
              </SheetHeader>
-             {/* Ensure no whitespace around the Link component */}
-             <SheetClose asChild><Link href="/" className="flex items-center space-x-2 mb-4 px-4">
-                <Car className="h-6 w-6 text-primary" />
-                <span className="font-bold">Carpso</span>
-            </Link></SheetClose>
+             <SheetClose asChild>
+                 <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
+                    {/* Use CarpsoLogo component */}
+                    <CarpsoLogo className="h-6 w-auto text-primary" />
+                    {/* Optionally keep text if logo doesn't include it */}
+                    <span className="font-bold sr-only">Carpso</span>
+                 </Link>
+             </SheetClose>
             <nav className="flex flex-col space-y-1 px-2 flex-grow">
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
@@ -105,7 +108,8 @@ export default function Header() {
          {/* Desktop Logo/Title */}
         <div className="flex items-center mr-4">
           <Link href="/" className="flex items-center space-x-2">
-            <Car className="h-6 w-6 text-primary" />
+             {/* Use CarpsoLogo component */}
+            <CarpsoLogo className="h-6 w-auto text-primary" />
             <span className="hidden sm:inline-block font-bold">
               Carpso
             </span>
@@ -147,10 +151,8 @@ export default function Header() {
                      </Button>
                  </Link>
             ) : (
-                 // The Auth button is now handled within ParkingLotManager, so nothing needed here for desktop if that's the only place it appears.
-                 // If you want a desktop sign-in button here:
-                 // <Button onClick={() => { /* Need access to modal control */ }}>Sign In</Button>
-                 null // Keep it clean if auth is handled elsewhere
+                 // Auth button is handled elsewhere (ParkingLotManager for now)
+                 null
             )}
         </div>
       </div>
