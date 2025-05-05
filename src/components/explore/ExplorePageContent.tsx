@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Fuel, CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Building, Send, Info, ExternalLink } from "lucide-react";
+import { Fuel, CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Building, Send, Info, ExternalLink, WifiOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -109,11 +109,11 @@ export default function ExplorePageContent() {
                     setIsLoadingLots(false);
                 }
              } else {
-                 // Offline and no cache
-                  console.warn("Offline: No cached explore data available.");
-                  setIsLoadingAds(false);
-                  setIsLoadingLots(false);
-             }
+                  // Offline and no cache
+                   console.warn("Offline: No cached explore data available.");
+                   setIsLoadingAds(false);
+                   setIsLoadingLots(false);
+              }
         };
         fetchExploreData();
     }, [isOnline, toast, userId, userRole]);
@@ -236,8 +236,7 @@ export default function ExplorePageContent() {
                                     {(ad.startDate || ad.endDate) && (
                                         <p className="text-xs text-muted-foreground flex items-center gap-1">
                                             <CalendarDays className="h-3 w-3" />
-                                            Runs: {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'Ongoing'} - {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}
-                                        </p>
+                                            Runs: {ad.startDate ? new Date(ad.startDate).toLocaleDateString() : 'N/A'} - {ad.endDate ? new Date(ad.endDate).toLocaleDateString() : 'Ongoing'}</p>
                                     )}
                                 </CardContent>
                             </Card>
