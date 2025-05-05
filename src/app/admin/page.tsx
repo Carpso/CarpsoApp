@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, Link as LinkIcon, Award } from "lucide-react"; // Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, LinkIcon, Award
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart as BarChartIcon, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, Link as LinkIcon, Award } from "lucide-react"; // Renamed BarChart to BarChartIcon to avoid conflict, Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, LinkIcon, Award
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,7 +29,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
-import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'; // Import Recharts components
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, LineChart, Line } from 'recharts'; // Import Recharts components, aliased BarChart and Tooltip/Legend
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'; // Import ShadCN chart components
 import { getLinkedLoyaltyPrograms, linkLoyaltyProgram, unlinkLoyaltyProgram, LinkedLoyaltyProgram } from '@/services/loyalty-service'; // Import loyalty service
 
@@ -751,7 +751,7 @@ export default function AdminDashboardPage() {
                <TabsTrigger value="pricing"><DollarSign className="mr-2 h-4 w-4"/>Pricing</TabsTrigger>
                <TabsTrigger value="records"><History className="mr-2 h-4 w-4"/>Records</TabsTrigger> {/* Added Records Tab */}
                <TabsTrigger value="loyalty"><Award className="mr-2 h-4 w-4"/>Loyalty</TabsTrigger> {/* Added Loyalty Tab */}
-               <TabsTrigger value="analytics"><BarChart className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
+               <TabsTrigger value="analytics"><BarChartIcon className="mr-2 h-4 w-4"/>Analytics</TabsTrigger>
                <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4"/>Settings</TabsTrigger>
              </TabsList>
 
@@ -1125,18 +1125,20 @@ export default function AdminDashboardPage() {
                                 <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> {displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader></Card>
                                 <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><CalendarClock className="h-5 w-5 text-orange-600"/> {displayedAnalytics.activeReservations}</CardTitle><CardDescription>Active Reservations</CardDescription></CardHeader></Card>
                            </div>
-                            {selectedLotId === 'all' && isAdmin && (
+                            {selectedLotId === 'all' && isAdmin && displayedAnalytics.userSignups && (
                                  <Card className="mb-6">
                                     <CardHeader><CardTitle className="text-lg flex items-center gap-2"><UsersRound className="h-5 w-5 text-purple-600"/> User Signups (Last 7 Days)</CardTitle></CardHeader>
                                     <CardContent className="h-[250px] w-full">
                                         <ChartContainer config={chartConfigBase} className="h-full w-full">
-                                            <BarChart data={displayedAnalytics.userSignups}>
+                                            {/* Use aliased RechartsBarChart */}
+                                            <RechartsBarChart data={displayedAnalytics.userSignups}>
                                                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                                                 {/* Use ChartTooltip instead of RechartsTooltip */}
                                                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                                  <Bar dataKey="signups" fill="var(--color-signups)" radius={4} />
-                                            </BarChart>
+                                            </RechartsBarChart>
                                         </ChartContainer>
                                     </CardContent>
                                  </Card> )}
@@ -1149,6 +1151,7 @@ export default function AdminDashboardPage() {
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                              <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                              <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `$${value}`} />
+                                             {/* Use ChartTooltip */}
                                              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                                              <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} dot={false} />
                                         </LineChart>
@@ -1160,13 +1163,15 @@ export default function AdminDashboardPage() {
                                 <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> Peak Hour Occupancy</CardTitle></CardHeader>
                                 <CardContent className="h-[250px] w-full">
                                      <ChartContainer config={chartConfigBase} className="h-full w-full">
-                                         <BarChart data={displayedAnalytics.peakHours} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                                         {/* Use aliased RechartsBarChart */}
+                                         <RechartsBarChart data={displayedAnalytics.peakHours} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                              <XAxis dataKey="hour" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                              <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `${value}%`} domain={[0, 100]} />
+                                             {/* Use ChartTooltip */}
                                              <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                              <Bar dataKey="occupancy" fill="var(--color-occupancy)" radius={4} />
-                                        </BarChart>
+                                        </RechartsBarChart>
                                     </ChartContainer>
                                 </CardContent>
                              </Card>
