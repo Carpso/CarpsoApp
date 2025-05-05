@@ -4,24 +4,23 @@
 /**
  * @fileOverview Provides personalized parking recommendations using AI.
  *
- * - recommendParking - A function that generates parking recommendations.
- * - RecommendParkingInput - The input type for the recommendParking function.
- * - RecommendParkingOutput - The return type for the recommendParking function.
  */
 
 import { ai } from '@/ai/ai-instance';
 import { z } from 'genkit';
 import type { ParkingLot } from '@/services/parking-lot'; // Import type for context
-import type { UserBookmark } from '@/services/user-service'; // Import bookmark type
 
 // Define input schema
 const RecommendParkingInputSchema = z.object({
   userId: z.string().describe('The ID of the user requesting recommendations.'),
   currentLatitude: z.number().optional().describe('User\'s current latitude (optional).'),
   currentLongitude: z.number().optional().describe('User\'s current longitude (optional).'),
-  destinationLabel: z.string().optional().describe('User\'s destination label (e.g., "Home", "Work", or address string).'), // Changed to label
-  destinationLatitude: z.number().optional().describe('User\'s destination latitude (optional, derived from label if needed).'),
-  destinationLongitude: z.number().optional().describe('User\'s destination longitude (optional, derived from label if needed).'),
+
+  destinationLabel: z.string().optional().describe('User\'s destination label (e.g., "Home", "Work").  If provided, prioritize this over destinationAddress.'),
+  destinationAddress: z.string().optional().describe('User\'s destination address (optional, used if no bookmark). Provide with destinationLatitude and destinationLongitude.'),
+  destinationLatitude: z.number().optional().describe('User\'s destination latitude (optional, must be provided if destinationAddress is provided).'),
+  destinationLongitude: z.number().optional().describe('User\'s destination longitude (optional, must be provided if destinationAddress is provided).'),
+
   preferredServices: z.array(z.string()).optional().describe('List of preferred parking lot services (e.g., EV Charging, Car Wash).'),
   maxDistanceKm: z.number().optional().describe('Maximum distance from destination in kilometers (optional).'),
   // Simulate passing relevant context data that the flow itself cannot easily fetch
@@ -64,7 +63,16 @@ const recommendParkingPrompt = ai.definePrompt({
 User Information:
 - User ID: {{{userId}}}
 - Current Location: {{#if currentLatitude}}Lat: {{{currentLatitude}}}, Lon: {{{currentLongitude}}}{{else}}Current location unknown.{{/if}}
-- Destination: {{#if destinationLabel}}Label: "{{destinationLabel}}"{{#if destinationLatitude}} (Lat: {{{destinationLatitude}}}, Lon: {{{destinationLongitude}}}){{/if}}{{else}}Destination not specified. Recommend based on current location or user history/bookmarks (e.g., near 'Work' on weekday morning).{{/if}}
+- Destination: 
+{{#if destinationLabel}}
+  Label: "{{destinationLabel}}" 
+  {{#if destinationLatitude}} (Lat: {{{destinationLatitude}}}, Lon: {{{destinationLongitude}}}){{/if}}
+{{else if destinationAddress}}
+  Address: "{{destinationAddress}}"
+  {{#if destinationLatitude}} (Lat: {{{destinationLatitude}}}, Lon: {{{destinationLongitude}}}){{/if}}
+{{else}}
+    Destination not specified. Recommend based on current location or user history/bookmarks (e.g., near 'Work' on weekday morning).
+{{/if}}
 - Preferences: {{#if preferredServices}}Prefers lots with: {{{json preferredServices}}}{{else}}No specific service preferences.{{/if}}{{#if maxDistanceKm}} Max distance: {{{maxDistanceKm}}}km.{{/if}}
 - Past Behavior Summary: {{{userHistorySummary}}}
 {{#if userBookmarks}}
@@ -77,10 +85,11 @@ Available Nearby Parking Lots Context (JSON array of objects with id, name, addr
 Instructions:
 1.  **Parse Context:** Carefully parse the 'Available Nearby Parking Lots Context' and 'Saved Locations' JSON strings. If parsing fails for either, state this in the reasoning for potentially less accurate recommendations, but still proceed if possible using other data.
 2.  **Determine Target Coordinates:**
-    *   If 'destinationLatitude'/'Longitude' are provided, use them as the primary target.
-    *   If only 'destinationLabel' is provided:
+    *   If 'destinationLatitude' and 'destinationLongitude' are provided, use them as the primary target.
+    *   Otherwise, if 'destinationLabel' is provided:
         *   Attempt to find a matching label in the 'Saved Locations' JSON. If found, use its 'latitude' and 'longitude' as the target.
-        *   If the label doesn't match a saved location, treat it as a general area (e.g., "downtown", "airport"). Recommend lots generally associated with that area if possible, or state that the exact location is unknown.
+        *   If the label doesn't match a saved location, state that the exact location is unknown and do not recommend based on a label, fall back to other recommendations
+    *   If a 'destinationAddress' is provided but no coordinates, state that the exact location is unknown and do not recommend based on the address, fall back to other recommendations.
     *   If NO destination is provided:
         *   If 'currentLatitude'/'Longitude' are available, recommend lots near the user's current location.
         *   If current location is also unknown, recommend lots based on 'userHistorySummary' or frequently used 'Saved Locations' (e.g., 'Work' if it's a weekday morning, 'Home' if evening).
