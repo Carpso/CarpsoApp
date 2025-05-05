@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  /* Use project-specific font if defined via CSS variables, otherwise fallback */
+  font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
 }
 
 @layer base {
@@ -79,7 +80,7 @@ body {
     --popover: 218 40% 12%;
     --popover-foreground: 210 20% 98%;
 
-    --primary: 218 90% 65%; /* Lighter Blue for dark mode */
+    --primary: 207 90% 61%; /* Light Blue */
     --primary-foreground: 218 100% 10%; /* Dark Text for contrast */
 
     --secondary: 218 30% 20%; /* Darker Blue-Gray */
@@ -96,23 +97,23 @@ body {
 
     --border: 218 30% 25%; /* Darker Border */
     --input: 218 30% 25%;
-    --ring: 218 90% 65%; /* Lighter Blue Ring */
+    --ring: 207 90% 61%; /* Light Blue Ring */
 
-    --chart-1: 218 90% 65%; /* Lighter Blue */
+    --chart-1: 207 90% 61%; /* Light Blue */
     --chart-2: 122 40% 60%; /* Lighter Green */
-    --chart-3: 207 80% 70%; /* Even Lighter Blue */
+    --chart-3: 218 90% 65%; /* Lighter Deep Blue variant */
     --chart-4: 36 90% 60%;  /* Lighter Orange */
     --chart-5: 210 15% 70%;  /* Lighter Blue-Gray */
 
     /* Dark Sidebar specific variables */
     --sidebar-background: 218 40% 12%; /* Match card */
     --sidebar-foreground: 210 20% 98%;
-    --sidebar-primary: 218 90% 65%;
+    --sidebar-primary: 207 90% 61%; /* Light Blue */
     --sidebar-primary-foreground: 218 100% 10%;
-    --sidebar-accent: 122 40% 60%;
+    --sidebar-accent: 122 40% 60%; /* Lighter Green */
     --sidebar-accent-foreground: 122 100% 10%;
     --sidebar-border: 218 30% 25%; /* Match border */
-    --sidebar-ring: 218 90% 65%;
+    --sidebar-ring: 207 90% 61%;
   }
 }
 

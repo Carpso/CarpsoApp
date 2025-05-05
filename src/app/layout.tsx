@@ -1,29 +1,28 @@
-
+// src/app/layout.tsx
 'use client'; // Required for useEffect and useState
 
-import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+// import { GeistSans } from 'geist/font/sans'; // Assuming Geist fonts are installed
+// import { GeistMono } from 'geist/font/mono'; // Assuming Geist fonts are installed
 import Header from '@/components/layout/Header';
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from "@/components/ui/toaster"; // Ensure Toaster is imported
 import AppStateProvider from '@/context/AppStateProvider'; // Import the provider
 import React, { useEffect, useState } from 'react'; // Import useEffect, useState
 import { useToast } from '@/hooks/use-toast'; // Import useToast
+import Head from 'next/head'; // Import Head for meta tags
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
+// If using Geist fonts, uncomment these lines and ensure the package is installed
+// const geistSans = GeistSans({
+//   variable: '--font-geist-sans',
+//   subsets: ['latin'],
+// });
+// const geistMono = GeistMono({
+//   variable: '--font-geist-mono',
+//   subsets: ['latin'],
+// });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
-
-// Metadata should ideally be defined in a server component parent or the page itself.
-// export const metadata: Metadata = {
-//   title: 'Carpso - Smart Parking',
-//   description: 'Find, predict, and reserve parking spots.',
-// };
+// Define fallback font variables if Geist is not used
+const fallbackFontVariables = ''; // Or define fallback fonts like Inter here if needed
 
 export default function RootLayout({
   children,
@@ -32,8 +31,15 @@ export default function RootLayout({
 }>) {
   const { toast } = useToast();
   const [chatError, setChatError] = useState<string | null>(null); // State for chat errors
+  const [isClient, setIsClient] = useState(false); // Track client-side mount
 
   useEffect(() => {
+      setIsClient(true); // Component has mounted
+  }, []);
+
+  useEffect(() => {
+      if (!isClient) return; // Only run Tawk.to logic on client-side
+
     // --- Tawk.to Chat Widget ---
     // IMPORTANT: Ensure NEXT_PUBLIC_TAWKTO_PROPERTY_ID and NEXT_PUBLIC_TAWKTO_WIDGET_ID
     //            are set in your .env file for the chat to work.
@@ -43,7 +49,7 @@ export default function RootLayout({
 
     setChatError(null); // Clear previous errors on effect run
 
-    if (typeof window !== 'undefined' && !isConfigured) {
+    if (!isConfigured) {
       console.warn('Tawk.to environment variables (NEXT_PUBLIC_TAWKTO_PROPERTY_ID, NEXT_PUBLIC_TAWKTO_WIDGET_ID) are not set correctly. Live chat will be disabled.');
       setChatError('Live chat is currently unavailable (Configuration missing).');
       // Optionally show a toast to the user if config is missing (might be annoying)
@@ -51,7 +57,7 @@ export default function RootLayout({
     }
 
     // Ensure we run this only once on the client after mount
-    if (typeof window !== 'undefined' && isConfigured) {
+    if (isConfigured) {
       // Prevent duplicate script injection
       if (document.getElementById('tawkto-script')) {
         console.log("Tawk.to script already exists.");
@@ -102,21 +108,25 @@ export default function RootLayout({
     // Cleanup function is generally not needed for Tawk.to standard embed
     // return () => { ... };
 
-  }, [toast]); // Add toast to dependency array
+  }, [isClient, toast]); // Add isClient and toast to dependency array
 
   return (
     // No whitespace before <html>
     <html lang="en" className="light">
-      <head>
-        {/* Moved meta tags and title to head for proper HTML structure */}
-        <meta charSet="utf-8"/>
-        <meta name="viewport" content="width=device-width, initial-scale=1"/>
-        <title>Carpso - Smart Parking</title>
-        <meta name="description" content="Find, predict, and reserve parking spots."/>
-        {/* Add favicon link here if needed */}
-        {/* <link rel="icon" href="/favicon.ico" sizes="any" /> */}
-      </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background font-sans`}>
+      <Head>
+        {/* Favicon link - Replace with your actual logo icon path if different */}
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        {/* Add other sizes/formats like apple-touch-icon if needed */}
+        {/* <link rel="apple-touch-icon" href="/apple-touch-icon.png" /> */}
+        {/* <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" /> */}
+        {/* <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" /> */}
+        {/* <link rel="manifest" href="/site.webmanifest" /> */}
+         <title>Carpso - Smart Parking</title>
+         <meta name="description" content="Find, predict, and reserve parking spots." />
+      </Head>
+      {/* Apply font variables if using Geist, otherwise use fallback */}
+      <body className={`${fallbackFontVariables} antialiased min-h-screen bg-background font-sans`}>
+      {/* <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background font-sans`}> */}
          <AppStateProvider>{/* Wrap with the provider */}
             <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">{/* Add padding-bottom for BottomNavBar on mobile */}
                <Header />
