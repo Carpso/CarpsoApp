@@ -1,5 +1,7 @@
 // src/services/parking-lot.ts
 
+import type { UserRole } from './user-service'; // Import UserRole for filtering
+
 /**
  * Represents a service offered at a parking lot.
  */
@@ -98,13 +100,13 @@ let sampleCarpsoLots: ParkingLot[] = [
  * Includes basic offline caching support using localStorage.
  * Filters visibility based on user role and lot status/source.
  *
- * @param userRole The role of the user requesting the lots ('User', 'Admin', 'ParkingLotOwner').
+ * @param userRole The role of the user requesting the lots ('User', 'Admin', 'ParkingLotOwner', 'ParkingAttendant', 'Premium').
  * @param userId The ID of the user requesting the lots.
  * @param forceRefresh Bypasses cache and fetches fresh data if true.
  * @returns A promise that resolves to an array of ParkingLot objects.
  */
 export async function getAvailableParkingLots(
-    userRole: string = 'User',
+    userRole: UserRole = 'User',
     userId?: string,
     forceRefresh: boolean = false
 ): Promise<ParkingLot[]> {
@@ -214,7 +216,7 @@ export async function getAvailableParkingLots(
     const ownerLots = ownerUser?.associatedLots || [];
     visibleLots = allLots.filter(lot => (ownerLots.includes('*')) || (lot.isCarpsoManaged && lot.ownerUserId === userId) || (lot.isCarpsoManaged && ownerLots.includes(lot.id)) || !lot.isCarpsoManaged);
   } else {
-    // Regular users see active/trial Carpso lots + all external lots
+    // Regular users & attendants see active/trial Carpso lots + all external lots
     visibleLots = allLots.filter(lot =>
       (lot.isCarpsoManaged && (lot.subscriptionStatus === 'active' || (lot.subscriptionStatus === 'trial' && (!lot.trialEndDate || new Date(lot.trialEndDate) >= new Date())))) ||
       !lot.isCarpsoManaged
@@ -283,11 +285,12 @@ export async function updateParkingLotServices(lotId: string, services: ParkingL
             localStorage.removeItem('cachedParkingLotsWithExternal_v2');
             localStorage.removeItem('cachedParkingLotsWithExternal_v2Timestamp');
         }
-        return true;
+        return true; // Indicate success
     }
     console.warn(`Cannot update services for non-Carpso managed lot or lot not found: ${lotId}`);
-    return false;
+    return false; // Indicate failure
 }
+
 
 // Mock function to update subscription status (Admin)
 export async function updateLotSubscriptionStatus(lotId: string, status: ParkingLot['subscriptionStatus'], trialEndDate?: string): Promise<boolean> {
