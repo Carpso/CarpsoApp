@@ -444,7 +444,11 @@ export default function AdminDashboardPage() {
        setCurrentAd(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
     const handleAdSelectChange = (name: keyof Advertisement, value: string) => {
-       setCurrentAd(prev => ({ ...prev, [name]: value }));
+        // Treat 'none' value as undefined for the associatedService
+        setCurrentAd(prev => ({
+            ...prev,
+            [name]: value === 'none' ? undefined : value
+        }));
     };
     const handleSaveAd = async () => {
         if (!currentAd.title || !currentAd.description) { toast({ title: "Missing Info", description: "Title and description required.", variant: "destructive" }); return; }
@@ -457,7 +461,12 @@ export default function AdminDashboardPage() {
          }
         setIsSavingAd(true);
         try {
-            const adDataToSave = { ...currentAd, targetLocationId: targetLocation, targetLotName: undefined };
+             // Ensure associatedService is correctly passed (should be undefined if 'none' was selected)
+             const adDataToSave = {
+                 ...currentAd,
+                 targetLocationId: targetLocation,
+                 targetLotName: undefined // Remove transient property before saving
+             };
             const savedAd = currentAd.id ? await updateAdvertisement(currentAd.id, adDataToSave) : await createAdvertisement(adDataToSave);
             if (savedAd) {
                  await fetchAds(selectedLotId);
@@ -519,7 +528,7 @@ export default function AdminDashboardPage() {
     };
     const handleRuleTimeConditionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), [name]: value } } as Partial<PricingRule>));
+        setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), [name]: value } }));
     };
     const handleRuleDaysOfWeekChange = (selectedDays: string[]) => {
         setCurrentRule(prev => ({ ...prev, timeCondition: { ...(prev?.timeCondition || {}), daysOfWeek: selectedDays as any } }));
@@ -1129,24 +1138,24 @@ export default function AdminDashboardPage() {
                                  <Card className="mb-6">
                                     <CardHeader><CardTitle className="text-lg flex items-center gap-2"><UsersRound className="h-5 w-5 text-purple-600"/> User Signups (Last 7 Days)</CardTitle></CardHeader>
                                     <CardContent className="h-[250px] w-full">
-                                        <ChartContainer config={chartConfigBase} className="h-full w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
                                             {/* Use aliased RechartsBarChart */}
                                             <RechartsBarChart data={displayedAnalytics.userSignups}>
                                                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                                                 {/* Use ChartTooltip instead of RechartsTooltip */}
+                                                 {/* Use ChartTooltip */}
                                                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                                  <Bar dataKey="signups" fill="var(--color-signups)" radius={4} />
                                             </RechartsBarChart>
-                                        </ChartContainer>
+                                        </ResponsiveContainer>
                                     </CardContent>
                                  </Card> )}
                             {/* Daily Revenue Chart */}
                              <Card className="mb-6">
                                 <CardHeader><CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-5 w-5 text-green-600"/> Daily Revenue (Last 7 Days)</CardTitle></CardHeader>
                                 <CardContent className="h-[250px] w-full">
-                                    <ChartContainer config={chartConfigBase} className="h-full w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
                                          <LineChart data={displayedAnalytics.dailyRevenue} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                              <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
@@ -1155,14 +1164,14 @@ export default function AdminDashboardPage() {
                                              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                                              <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} dot={false} />
                                         </LineChart>
-                                    </ChartContainer>
+                                    </ResponsiveContainer>
                                 </CardContent>
                              </Card>
                              {/* Peak Hours Chart */}
                             <Card className="mb-6">
                                 <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> Peak Hour Occupancy</CardTitle></CardHeader>
                                 <CardContent className="h-[250px] w-full">
-                                     <ChartContainer config={chartConfigBase} className="h-full w-full">
+                                     <ResponsiveContainer width="100%" height="100%">
                                          {/* Use aliased RechartsBarChart */}
                                          <RechartsBarChart data={displayedAnalytics.peakHours} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -1172,7 +1181,7 @@ export default function AdminDashboardPage() {
                                              <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                              <Bar dataKey="occupancy" fill="var(--color-occupancy)" radius={4} />
                                         </RechartsBarChart>
-                                    </ChartContainer>
+                                    </ResponsiveContainer>
                                 </CardContent>
                              </Card>
                            <p className="text-muted-foreground mt-6 text-center text-xs">More detailed analytics coming soon.</p>
@@ -1264,7 +1273,7 @@ export default function AdminDashboardPage() {
                                 { (isAdmin || (isParkingLotOwner && sampleUsers.find(u => u.id === userId)?.associatedLots.includes('*'))) && <SelectItem value="all">All Locations (Global)</SelectItem> }
                                 {getDisplayLots().map(lot => (<SelectItem key={lot.id} value={lot.id}>{lot.name}</SelectItem>))}
                            </SelectContent> </Select> </div>
-                   <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-associatedService" className="text-right">Link Service</Label><Select name="associatedService" value={currentAd.associatedService || ''} onValueChange={(value) => handleAdSelectChange('associatedService', value as ParkingLotService | '' )} disabled={isSavingAd}><SelectTrigger id="ad-associatedService" className="col-span-3"><SelectValue placeholder="Link to a specific service..." /></SelectTrigger><SelectContent><SelectItem value="">None</SelectItem>{allAvailableServices.map(service => (<SelectItem key={service} value={service}><span className="flex items-center gap-2">{getServiceIcon(service, "h-4 w-4 mr-2")} {service}</span></SelectItem>))}</SelectContent></Select></div>
+                    <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-associatedService" className="text-right">Link Service</Label><Select name="associatedService" value={currentAd.associatedService || 'none'} onValueChange={(value) => handleAdSelectChange('associatedService', value )} disabled={isSavingAd}><SelectTrigger id="ad-associatedService" className="col-span-3"><SelectValue placeholder="Link to a specific service..." /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{allAvailableServices.map(service => (<SelectItem key={service} value={service}><span className="flex items-center gap-2">{getServiceIcon(service, "h-4 w-4 mr-2")} {service}</span></SelectItem>))}</SelectContent></Select></div>
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-startDate" className="text-right">Start Date</Label><Input id="ad-startDate" name="startDate" type="date" value={currentAd.startDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-endDate" className="text-right">End Date</Label><Input id="ad-endDate" name="endDate" type="date" value={currentAd.endDate || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-status" className="text-right">Status</Label><Select name="status" value={currentAd.status || 'active'} onValueChange={(value) => handleAdSelectChange('status', value as 'active' | 'inactive' | 'draft')} disabled={isSavingAd}><SelectTrigger id="ad-status" className="col-span-3"><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent></Select></div>
@@ -1356,3 +1365,5 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
+    
