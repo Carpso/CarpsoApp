@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins } from 'lucide-react'; // Added Coins
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins, Facebook, Twitter } from 'lucide-react'; // Added Coins, Facebook, Twitter
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode, awardPoints, redeemPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions, redeemPoints
@@ -327,10 +327,12 @@ const getCurrencySymbol = (currencyCode: string): string => {
 // WhatsApp Support Numbers (adjust country code as needed)
 const WHATSAPP_NUMBER_1 = "+260955202036"; // +260 is Zambia's code
 const WHATSAPP_NUMBER_2 = "+260968551110";
-// You can construct the WhatsApp click-to-chat link
-// Example: https://wa.me/<number_without_plus_or_spaces>
-// Using a primary number for the main link for simplicity:
 const WHATSAPP_CHAT_LINK_1 = `https://wa.me/${WHATSAPP_NUMBER_1.replace(/\D/g, '')}`;
+
+// Social Media & Website Links
+const FACEBOOK_LINK = "https://web.facebook.com/Carpso2020";
+const TWITTER_LINK = "https://twitter.com/CarpsoApp"; // Replace with actual Twitter/X link
+const WEBSITE_LINK = "https://carpso.app"; // Replace with actual website link
 
 // This defines the main React component for the profile page
 export default function ProfilePage() {
@@ -1990,7 +1992,7 @@ export default function ProfilePage() {
 
                         {/* Support Section */}
                          <section className="mb-6">
-                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support</h3>
+                             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Contact className="h-5 w-5" /> Support & Socials</h3>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   {/* Live Chat Button */}
                                    <Button variant="outline" onClick={handleOpenChat} className="w-full justify-start text-left h-auto py-3">
@@ -2006,7 +2008,7 @@ export default function ProfilePage() {
                                           <MessageSquare className="mr-3 h-5 w-5 text-green-600" /> {/* Can reuse icon or use specific WhatsApp icon */}
                                           <div>
                                              <p className="font-medium">WhatsApp Chat</p>
-                                             <p className="text-xs text-muted-foreground">Via WhatsApp (+260 95...).</p>
+                                             <p className="text-xs text-muted-foreground">Via WhatsApp ({WHATSAPP_NUMBER_1}).</p>
                                           </div>
                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
                                        </a>
@@ -2017,7 +2019,7 @@ export default function ProfilePage() {
                                           <Smartphone className="mr-3 h-5 w-5" />
                                           <div>
                                              <p className="font-medium">Call Support</p>
-                                             <p className="text-xs text-muted-foreground">(+260 96...).</p>
+                                             <p className="text-xs text-muted-foreground">({WHATSAPP_NUMBER_2}).</p>
                                           </div>
                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
                                        </a>
@@ -2033,6 +2035,39 @@ export default function ProfilePage() {
                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
                                        </a>
                                    </Button>
+                                     {/* Facebook Link */}
+                                    <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                        <a href={FACEBOOK_LINK} target="_blank" rel="noopener noreferrer">
+                                           <Facebook className="mr-3 h-5 w-5 text-blue-700" />
+                                           <div>
+                                               <p className="font-medium">Facebook</p>
+                                               <p className="text-xs text-muted-foreground">Connect with us on Facebook.</p>
+                                           </div>
+                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                        </a>
+                                    </Button>
+                                     {/* Twitter/X Link */}
+                                    <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                        <a href={TWITTER_LINK} target="_blank" rel="noopener noreferrer">
+                                           <Twitter className="mr-3 h-5 w-5 text-sky-500" />
+                                           <div>
+                                               <p className="font-medium">Twitter / X</p>
+                                               <p className="text-xs text-muted-foreground">Follow us on X.</p>
+                                           </div>
+                                           <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                        </a>
+                                    </Button>
+                                     {/* Website Link */}
+                                     <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3 col-span-1 md:col-span-2">
+                                         <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer">
+                                            <Globe className="mr-3 h-5 w-5 text-primary" />
+                                            <div>
+                                                <p className="font-medium">Official Website</p>
+                                                <p className="text-xs text-muted-foreground">Visit carpso.app for more info.</p>
+                                            </div>
+                                            <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                         </a>
+                                     </Button>
                              </div>
                          </section>
 
@@ -2279,3 +2314,4 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
+
