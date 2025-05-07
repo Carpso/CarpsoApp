@@ -9,7 +9,7 @@ import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon } from 'lucide-react';
+import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon, LocateFixed } from 'lucide-react';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -21,7 +21,7 @@ import { calculateEstimatedCost } from '@/services/pricing-service';
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant';
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow';
 import { cn } from '@/lib/utils';
-import ReportIssueModalComponent from '@/components/profile/ReportIssueModal';
+import ReportIssueModal from '@/components/profile/ReportIssueModal';
 import { useVisibilityChange } from '@/hooks/useVisibilityChange';
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import ParkingLotMap from '@/components/map/ParkingLotMap';
@@ -83,7 +83,45 @@ export default function ParkingLotManager() {
   const [destinationForRecommendation, setDestinationForRecommendation] = useState<{ label?: string, address?: string, latitude?: number, longitude?: number } | null>(null);
 
   const mapPinLocationRef = useRef<{ lat: number, lng: number, address?: string } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [geolocationError, setGeolocationError] = useState<string | null>(null);
 
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+          setGeolocationError(null);
+        },
+        (error) => {
+          console.error("Error getting user location:", error);
+          const message = `Error getting location: ${error.message}. Please ensure location services are enabled.`;
+          setGeolocationError(message);
+          // Display toast only if it's a new error or if it hasn't been shown recently.
+          if (geolocationError !== message) { // Basic check to avoid repeated toasts
+            toast({ title: "Location Error", description: message, variant: "destructive" });
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000, // Increased timeout
+          maximumAge: 0, 
+        }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    } else {
+      const noGeoMessage = "Geolocation is not supported by this browser.";
+      setGeolocationError(noGeoMessage);
+       if (geolocationError !== noGeoMessage) {
+         toast({ title: "Location Unavailable", description: noGeoMessage, variant: "destructive" });
+       }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // Removed geolocationError from deps to avoid loop with toast
 
   const fetchUserBookmarks = useCallback(async () => {
     if (typeof window !== 'undefined') {
@@ -123,7 +161,7 @@ export default function ParkingLotManager() {
     setIsLoadingRecommendations(true);
     setRecommendations([]);
     try {
-        const currentCoords = { latitude: -15.4167, longitude: 28.2833 };
+        const currentCoords = userLocation ? { latitude: userLocation.lat, longitude: userLocation.lng } : { latitude: -15.4167, longitude: 28.2833 }; // Use user location if available
         const currentBookmarks = userBookmarks;
 
          let resolvedDestinationLabel = destinationLabel;
@@ -193,7 +231,7 @@ export default function ParkingLotManager() {
     } finally {
         setIsLoadingRecommendations(false);
     }
-  }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline]);
+  }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline, userLocation]);
 
 
   const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput, speakFn: (text: string) => void) => {
@@ -362,7 +400,18 @@ export default function ParkingLotManager() {
                  let lat: number | undefined;
                  let lon: number | undefined;
                  let addr: string | undefined;
-                 if (entities.bookmarkLocation?.toLowerCase().includes('current') || entities.bookmarkLocation?.toLowerCase().includes('here')) addr = "Current Location (Detected)";
+                 if (entities.bookmarkLocation?.toLowerCase().includes('current') || entities.bookmarkLocation?.toLowerCase().includes('here')) {
+                     if (userLocation) {
+                        lat = userLocation.lat;
+                        lon = userLocation.lng;
+                        addr = "Current Location (Detected)";
+                     } else {
+                         if(isOnline && isClient && speakFn) speakFn("Sorry, I can't get your current location to save it. Please try again or provide an address.");
+                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                         toast({ title: "Location Error", description: "Could not get current location for bookmark.", variant: "destructive"});
+                         break;
+                     }
+                 }
                  else addr = entities.bookmarkLocation;
 
                  try {
@@ -385,7 +434,7 @@ export default function ParkingLotManager() {
         case 'unknown':
             break;
     }
-  }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient, fetchRecommendations, fetchUserBookmarks]);
+  }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient, fetchRecommendations, fetchUserBookmarks, userLocation]);
 
 
    const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError, state: currentVoiceState } = useVoiceAssistant({
@@ -413,9 +462,9 @@ export default function ParkingLotManager() {
    }, [isClient, voiceError, toast]);
 
    useEffect(() => {
-       let currentOfflineToastId: string | null = null; // Temporary variable to manage toast ID within this effect
+       let currentOfflineToastId: string | null = null; 
        if (!isOnline && isClient) {
-           if (offlineToastId) dismiss(offlineToastId); // Dismiss previous if any
+           if (offlineToastId) dismiss(offlineToastId); 
            const { id } = toast({
                title: "Offline Mode", description: "App functionality is limited. Displaying cached data.",
                variant: "destructive", duration: Infinity,
@@ -430,7 +479,7 @@ export default function ParkingLotManager() {
            fetchLocationsData(true);
            fetchUserBookmarks();
        }
-       return () => { // Cleanup if component unmounts while offline toast is shown
+       return () => { 
            if (currentOfflineToastId) dismiss(currentOfflineToastId);
        }
    // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,7 +491,7 @@ export default function ParkingLotManager() {
 
     const cacheKey = 'cachedParkingLotsWithExternal_v2';
     const cacheTimestampKey = `${cacheKey}Timestamp`;
-    const maxCacheAge = isVisible ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 mins visible, 1hr background
+    const maxCacheAge = isVisible ? 5 * 60 * 1000 : 60 * 60 * 1000; 
     let allLots: ParkingLot[] = [];
 
     if (!forceRefresh && typeof window !== 'undefined') {
@@ -452,29 +501,26 @@ export default function ParkingLotManager() {
              try {
                 allLots = JSON.parse(cachedData);
                 console.log("Using valid cached parking lots.");
-                setLocations(allLots); // Update state with cached data first
-                // Decide if a background refresh is still needed if online
+                setLocations(allLots); 
                 if (isOnline) {
                     console.log("Cache valid, but scheduling a background refresh check.");
-                    // Potentially trigger a non-blocking background refresh here
-                    // For now, we just use cache and let periodic refresh handle it.
                 }
              } catch (parseError: any) {
                  console.error("Failed to parse cached locations, will fetch fresh.", parseError.message);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
-                 allLots = []; // Ensure allLots is empty if cache fails
+                 allLots = []; 
              }
         }
     }
 
-    // Fetch from server if cache was invalid/missing/forced, or if allLots is still empty (initial load)
+    
     if ((allLots.length === 0 || forceRefresh) && isOnline) {
         try {
             console.log("Fetching fresh parking lots (including external simulation)...");
             const fetchedLots = await getAvailableParkingLots(userRole || 'User', userId, true);
-            allLots = fetchedLots; // Update allLots with fetched data
-            setLocations(allLots); // Update state
+            allLots = fetchedLots; 
+            setLocations(allLots); 
             if (typeof window !== 'undefined') {
                 localStorage.setItem(cacheKey, JSON.stringify(allLots));
                 localStorage.setItem(cacheTimestampKey, Date.now().toString());
@@ -489,10 +535,10 @@ export default function ParkingLotManager() {
         setLocations([]);
     }
 
-    // Update selectedLocationId based on the new 'locations'
+    
     if (allLots.length > 0) {
         const currentSelectionValid = allLots.some(loc => loc.id === selectedLocationId);
-        if (!currentSelectionValid || !selectedLocationId) { // If no selection or current is invalid
+        if (!currentSelectionValid || !selectedLocationId) { 
             const firstCarpso = allLots.find(l => l.isCarpsoManaged);
             const newSelection = firstCarpso ? firstCarpso.id : allLots[0]?.id;
             if (newSelection) setSelectedLocationId(newSelection);
@@ -503,7 +549,7 @@ export default function ParkingLotManager() {
 
     setIsLoadingLocations(false);
     setIsRefreshing(false);
-  }, [isOnline, isVisible, userRole, userId, selectedLocationId]); // Added selectedLocationId
+  }, [isOnline, isVisible, userRole, userId, selectedLocationId]); 
 
   const handleManualRefresh = () => {
       if (!isOnline) {
@@ -529,13 +575,13 @@ export default function ParkingLotManager() {
            } else console.log("Offline, clearing location refresh interval.");
        };
 
-       // Initial fetch on component mount
+       
        fetchLocationsData();
        startInterval();
 
        return () => { if (intervalId) clearInterval(intervalId); };
    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [isOnline, isVisible]); // Removed fetchLocationsData from here to avoid re-creating interval on every fetchLocationsData change
+   }, [isOnline, isVisible]); 
 
    useEffect(() => {
        if (isAuthenticated && userId) fetchUserBookmarks();
@@ -605,20 +651,6 @@ export default function ParkingLotManager() {
            }
        }
    }, []);
-
- const handleSpotReserved = (spotId: string, locationId: string) => {
-     console.log(`Spot ${spotId} at location ${locationId} reserved by user ${userId || 'guest'}`);
-      if (!isAuthenticated) {
-          toast({
-              title: "Sign In Required",
-              description: "Please sign in or create an account to manage reservations and pin your car location.",
-              action: <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>,
-          });
-      } else {
-          simulatePinCar(spotId, locationId);
-          if (!isOnline) console.log("Offline: Queuing reservation (Simulation)...", { userId, spotId, locationId });
-      }
- };
 
  const clearPinnedLocation = () => {
      setPinnedSpot(null);
@@ -741,6 +773,16 @@ export default function ParkingLotManager() {
            </p>
        )}
 
+      {/* Display Geolocation Error */}
+      {geolocationError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Location Access Error</AlertTitle>
+          <AlertDescription>{geolocationError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Pinned Car Location */}
        {pinnedSpot && (
           <Card className="mb-6 border-primary bg-primary/5">
                <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -769,6 +811,7 @@ export default function ParkingLotManager() {
        )}
        {isPinning && <div className="flex items-center justify-center text-muted-foreground text-sm mb-4"> <Loader2 className="h-4 w-4 mr-2 animate-spin"/> Pinning car location... </div>}
 
+      {/* Favorite Locations */}
        {isAuthenticated && favoriteLocationObjects.length > 0 && (
             <Card className="mb-6 border-yellow-500 bg-yellow-500/5">
                 <CardHeader> <CardTitle className="flex items-center gap-2 text-yellow-700"> <Star className="h-5 w-5 text-yellow-600 fill-yellow-500" /> Your Favorite Locations </CardTitle> </CardHeader>
@@ -795,14 +838,15 @@ export default function ParkingLotManager() {
             </Card>
         )}
 
+      {/* Recommendation Destination Map */}
         {isAuthenticated && (
           <Card className="mb-6 border-blue-500 bg-blue-500/5">
               <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                      <Sparkles className="h-5 w-5" /> Recommendation Destination
+                      <LocateFixed className="h-5 w-5" /> Parking Destination Map
                   </CardTitle>
                   <CardDescription>
-                      Pin a location on the map below or enter an address to get parking recommendations.
+                      Pan and click the map to set a destination, or enter an address to get parking recommendations.
                       You can also use voice commands like "Hey Carpso, find parking near [place/address]".
                   </CardDescription>
               </CardHeader>
@@ -810,10 +854,12 @@ export default function ParkingLotManager() {
                   {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? (
                       <ParkingLotMap
                           apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-                          defaultLatitude={-15.4167}
-                          defaultLongitude={28.2833}
+                          defaultLatitude={userLocation?.lat || -15.4167} // Use user location or Lusaka default
+                          defaultLongitude={userLocation?.lng || 28.2833}
                           onPinLocation={handleMapPin}
                           customClassName="rounded-md shadow"
+                          userLocation={userLocation} // Pass user location
+                          showUserCar={true} // Enable showing user's car/current location
                       />
                   ) : (
                       <Alert variant="warning">
@@ -829,7 +875,7 @@ export default function ParkingLotManager() {
           </Card>
         )}
 
-
+      {/* Recommendations */}
        {isAuthenticated && !isLoadingLocations && (
            <Card className="mb-6 border-accent bg-accent/5">
                <CardHeader> <CardTitle className="flex items-center gap-2"> <Sparkles className="h-5 w-5 text-accent" /> Recommended Carpso Parking </CardTitle>
@@ -876,6 +922,7 @@ export default function ParkingLotManager() {
            </Card>
        )}
 
+      {/* Location Selection */}
      <Card className="mb-6">
         <CardHeader> <CardTitle className="flex items-center gap-2"> <MapPin className="h-5 w-5 text-primary" /> Select Parking Location </CardTitle>
             <CardDescription>Choose a location to view availability or get directions.</CardDescription>
@@ -901,6 +948,7 @@ export default function ParkingLotManager() {
        </CardContent>
      </Card>
 
+      {/* Parking Grid */}
       {selectedLocation ? (
           selectedLocation.isCarpsoManaged ? (
                <div id="parking-grid-section">
@@ -925,7 +973,7 @@ export default function ParkingLotManager() {
 
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
        {isClient && <BottomNavBar onAuthClick={() => setIsAuthModalOpen(true)} />}
-        <ReportIssueModalComponent
+        <ReportIssueModal
              isOpen={isReportModalOpen}
              onClose={() => {
                  setIsReportModalOpen(false);
