@@ -1,7 +1,7 @@
 // src/components/map/ParkingLotMap.tsx
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react'; // Added useRef
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey || "YOUR_FALLBACK_API_KEY_OR_EMPTY_STRING", // Provide a fallback or handle if apiKey is truly optional
+    googleMapsApiKey: apiKey || "", // Ensure it's always a string, even if empty
     libraries: ['places'],
     preventGoogleFontsLoading: true,
   });
@@ -162,9 +162,9 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Google Maps API Key Missing</AlertTitle>
           <AlertDescription>
-            The Google Maps API key is not configured. Map functionality is disabled.
-            Please set the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` environment variable.
-            Refer to the README.md for setup instructions.
+            The Google Maps API key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) is not configured in your environment variables.
+            Map functionality is disabled. Please set the key and ensure it's correctly prefixed with `NEXT_PUBLIC_` to be available on the client-side.
+            Refer to the `README.md` file for detailed setup and troubleshooting instructions.
           </AlertDescription>
         </Alert>
       </div>
@@ -172,17 +172,33 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
   }
 
   if (loadError) {
+    const isKeyError = loadError.message.includes('InvalidKeyMapError') ||
+                       loadError.message.includes('ApiNotActivatedMapError') ||
+                       loadError.message.includes('MissingKeyMapError') ||
+                       loadError.message.includes('RefererNotAllowedMapError');
     return (
       <div className={cn("w-full", customClassName)}>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Google Maps Error</AlertTitle>
           <AlertDescription>
-            Could not load Google Maps. This might be due to an invalid or misconfigured API key (InvalidKeyMapError),
-            billing issues with your Google Cloud project, or network problems.
-            Please check your API key configuration, ensure the Maps JavaScript API & Places API are enabled,
-            and that billing is active on your project. Refer to README.md for detailed troubleshooting.
-            Error: {loadError.message}
+            Could not load Google Maps.
+            {isKeyError ? (
+              <>
+                This appears to be an issue with your Google Maps API key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`).
+                Common causes include:
+                <ul className="list-disc pl-5 mt-2 text-xs">
+                  <li>The API key is incorrect or missing.</li>
+                  <li>The **Maps JavaScript API** and/or **Places API** are not enabled for your project in the Google Cloud Console.</li>
+                  <li>Billing is not enabled for your Google Cloud Project.</li>
+                  <li>API key restrictions (HTTP referrers or API restrictions) are misconfigured.</li>
+                </ul>
+                <p className="mt-2">Please **CAREFULLY review the "Google Maps API Key" section in the `README.md` file** for detailed troubleshooting steps. Restart your development server after making changes to `.env`.</p>
+              </>
+            ) : (
+              "This might be due to network problems or other configuration issues. Please check your internet connection and the browser console for more details."
+            )}
+            <p className="text-xs mt-2">Original error: {loadError.message}</p>
           </AlertDescription>
         </Alert>
       </div>
@@ -212,9 +228,10 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
                     value={address}
                     onChange={handleAddressChange}
                     className="mt-1"
+                    disabled={!isLoaded}
                 />
             </div>
-            <Button size="sm" onClick={handlePinByAddress} className="w-full md:w-auto">Pin from Address</Button>
+            <Button size="sm" onClick={handlePinByAddress} className="w-full md:w-auto" disabled={!isLoaded || !address}>Pin from Address</Button>
         </div>
 
        <div className="rounded-md overflow-hidden border shadow-sm" style={containerStyle}>
@@ -229,6 +246,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
                  streetViewControl: true,
                  mapTypeControl: true,
                  fullscreenControl: false,
+                 mapId: 'CARPSO_MAP_ID' // Optional: For Cloud-based map styling
                 }}
            >
                 <Marker
@@ -240,7 +258,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
         <p className="text-xs text-muted-foreground mt-1 text-center">Click on the map to set a pin manually.</p>
 
         <div className="flex justify-end mt-3">
-            <Button size="default" onClick={handleConfirmPin}>
+            <Button size="default" onClick={handleConfirmPin} disabled={!isLoaded}>
                 Use This Pinned Location
             </Button>
         </div>
