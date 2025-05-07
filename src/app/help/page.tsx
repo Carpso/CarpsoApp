@@ -9,7 +9,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LifeBuoy, Search } from 'lucide-react';
+import { LifeBuoy, Search, Mic, Square, CheckSquare } from 'lucide-react'; // Added Mic, Square, CheckSquare
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -176,7 +176,7 @@ const faqs: FAQItem[] = [
           <li>Participating in promotions (e.g., applying promo codes).</li>
           <li>Completing certain actions like your first booking or reporting issues.</li>
         </ul>
-        <p className="mt-2">You can redeem your points for wallet credit (e.g., K0.10 per point). You can also transfer points to other Carpso users. Manage points in your <strong>Profile</strong> under 'Rewards & Referrals'.</p>
+        <p className="mt-2">You can redeem your points for wallet credit (e.g., K 0.10 per point). You can also transfer points to other Carpso users. Manage points in your <strong>Profile</strong> under 'Rewards & Referrals'.</p>
       </>
     ),
   },
