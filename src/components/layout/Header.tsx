@@ -2,13 +2,14 @@
 'use client';
 
 import Link from 'next/link';
-import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy } from 'lucide-react'; // Keep other icons, Added LifeBuoy
+import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useContext } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import CarpsoLogo from '@/components/icons/CarpsoLogo'; // Import the new logo component
+import CarpsoLogo from '@/components/icons/CarpsoLogo';
+import { ThemeToggle } from '@/components/theme/ThemeToggle'; // Import ThemeToggle
 
 export default function Header() {
   const { isAuthenticated, userRole, userName, userAvatarUrl, logout } = useContext(AppStateContext)!;
@@ -35,13 +36,11 @@ export default function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
              <SheetHeader className="p-4 pb-2">
-               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title for accessibility */}
              </SheetHeader>
              <SheetClose asChild>
                  <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
-                    {/* Use CarpsoLogo component */}
                     <CarpsoLogo className="h-6 w-auto text-primary" />
-                    {/* Optionally keep text if logo doesn't include it */}
                     <span className="font-bold sr-only">Carpso</span>
                  </Link>
              </SheetClose>
@@ -67,8 +66,7 @@ export default function Header() {
                      </Link>
                    </Button>
                 </SheetClose>
-              {/* Conditionally show Admin/Owner link */}
-               {isAuthenticated && isAdminOrOwner && (
+              {isAuthenticated && isAdminOrOwner && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
                            <Link href="/admin" className="flex items-center gap-1">
@@ -78,18 +76,16 @@ export default function Header() {
                        </Button>
                    </SheetClose>
                )}
-                {/* Conditionally show Attendant link */}
                {isAuthenticated && isAttendant && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
                            <Link href="/attendant" className="flex items-center gap-1">
-                              <UserIcon className="h-4 w-4" /> {/* Use generic User icon */}
+                              <UserIcon className="h-4 w-4" />
                               Attendant Dashboard
                            </Link>
                        </Button>
                    </SheetClose>
                )}
-               {/* Conditionally show Profile link */}
                {isAuthenticated && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
@@ -101,7 +97,6 @@ export default function Header() {
                    </SheetClose>
                )}
             </nav>
-            {/* Logout button at the bottom of mobile menu */}
             {isAuthenticated && (
                  <div className="mt-auto p-4 border-t">
                     <SheetClose asChild>
@@ -112,10 +107,8 @@ export default function Header() {
           </SheetContent>
         </Sheet>
 
-         {/* Desktop Logo/Title */}
         <div className="flex items-center mr-4">
           <Link href="/" className="flex items-center space-x-2">
-             {/* Use CarpsoLogo component */}
             <CarpsoLogo className="h-6 w-auto text-primary" />
             <span className="hidden sm:inline-block font-bold">
               Carpso
@@ -123,7 +116,6 @@ export default function Header() {
           </Link>
         </div>
 
-         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium flex-1">
              <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
               <Home className="h-4 w-4" /> Home
@@ -134,13 +126,11 @@ export default function Header() {
              <Link href="/help" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <LifeBuoy className="h-4 w-4" /> Help
             </Link>
-            {/* Conditionally show Admin/Owner link */}
             {isAuthenticated && isAdminOrOwner && (
                 <Link href="/admin" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                    <ShieldCheck className="h-4 w-4" /> Admin
                 </Link>
             )}
-             {/* Conditionally show Attendant link */}
             {isAuthenticated && isAttendant && (
                 <Link href="/attendant" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                    <UserIcon className="h-4 w-4" /> Attendant
@@ -148,20 +138,19 @@ export default function Header() {
             )}
         </nav>
 
-        {/* Auth / Profile Button Area - Now managed here for desktop */}
         <div className="hidden md:flex items-center justify-end space-x-2 ml-auto">
+             <ThemeToggle /> {/* Added ThemeToggle button */}
             {isAuthenticated ? (
-                 <Link href="/profile">
+                 <Link href="/profile" aria-label="View Profile">
                      <Button variant="ghost" className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
-                              <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User'} className="object-cover" />
+                              <AvatarImage src={userAvatarUrl || undefined} alt={userName || 'User avatar'} className="object-cover" />
                               <AvatarFallback className="text-xs bg-muted">{userInitial}</AvatarFallback>
                           </Avatar>
                           <span className="text-sm font-medium">{userName || 'Profile'}</span>
                      </Button>
                  </Link>
             ) : (
-                 // Auth button is handled elsewhere (ParkingLotManager for now)
                  null
             )}
         </div>
