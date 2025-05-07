@@ -29,32 +29,42 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         GOOGLE_GENAI_API_KEY=YOUR_GOOGLE_AI_STUDIO_API_KEY
         ```
         Obtain this key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-    *   **Google Maps API Key:**
+    *   **Google Maps API Key (CRUCIAL FOR MAPS):**
         ```
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
         ```
-        This is **crucial** for map functionalities.
+        This is **essential** for all map functionalities. If you encounter `InvalidKeyMapError`, `ApiNotActivatedMapError`, or maps simply don't load, follow these steps meticulously:
         *   Go to the [Google Cloud Console](https://console.cloud.google.com/).
         *   Create a new project or select an existing one.
-        *   Enable the **Maps JavaScript API** and **Places API** for your project.
+        *   **Enable APIs:** Ensure that **BOTH** the **Maps JavaScript API** and the **Places API** are enabled for your project. This is a common cause of errors.
         *   Go to "APIs & Services" > "Credentials".
-        *   Create a new API key.
-        *   **Important:** Restrict the API key:
-            *   **Application restrictions:** Select "HTTP referrers (web sites)" and add your development (`http://localhost:9002/*`) and production domains.
-            *   **API restrictions:** Select "Restrict key" and choose "Maps JavaScript API" and "Places API".
-        *   Ensure **Billing is enabled** on your Google Cloud project. The Maps API requires a billing account, even for the free tier usage.
-        *   **Troubleshooting `InvalidKeyMapError` or `ApiNotActivatedMapError`:** If you see map errors, double-check:
-            1.  The API key is correctly copied into your `.env` file.
-            2.  The Maps JavaScript API and Places API are enabled in the Google Cloud Console.
-            3.  Your application/HTTP referrers are correctly set for the key.
-            4.  Billing is active on the Google Cloud project associated with the API key.
+        *   Create a new API key or use an existing one.
+        *   **Important: API Key Restrictions (Critical for Security & Functionality):**
+            *   **Application restrictions:** Select "HTTP referrers (web sites)".
+                *   Add your development domain (e.g., `http://localhost:9002/*` or your specific dev port).
+                *   Add your production domain(s) when you deploy (e.g., `https://your-carpso-app.com/*`).
+            *   **API restrictions:** Select "Restrict key".
+                *   In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API". If you miss one, parts of the map functionality might fail.
+        *   **Billing:** Ensure **Billing is enabled** on your Google Cloud project. The Google Maps Platform requires a billing account to be linked, even if your usage falls within the free tier. This is a very common cause of the `InvalidKeyMapError`.
+        *   **Copy Key Correctly:** Double-check that the API key is copied exactly into your `.env` file without extra spaces or characters.
+        *   **Wait for Propagation:** Sometimes, it can take a few minutes for API key changes or enabled APIs to propagate through Google's systems.
+
+        **Troubleshooting `InvalidKeyMapError`, `ApiNotActivatedMapError`, or `MissingKeyMapError`:**
+        If you see these errors in the browser console, or if the map shows an error overlay:
+        1.  **Verify the Key:** Is `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set in your `.env` file and is it the exact key from the Google Cloud Console?
+        2.  **Enabled APIs:** Log in to Google Cloud Console and confirm that **Maps JavaScript API** and **Places API** are **ENABLED** for the project associated with your key.
+        3.  **HTTP Referrers:** Are your development (`http://localhost:PORT/*`) and (if applicable) production domains correctly listed in the "HTTP referrers" under application restrictions for the API key? Use wildcards appropriately (e.g., `http://localhost:9002/*`).
+        4.  **API Restrictions:** Did you restrict the key to only "Maps JavaScript API" and "Places API"?
+        5.  **BILLING ACCOUNT:** Is a valid billing account linked to your Google Cloud Project and enabled? This is mandatory.
+        6.  **Restart Development Server:** After making changes to `.env` file, restart your Next.js development server (`npm run dev`).
+
     *   **(Optional) Tawk.to Live Chat:** For live chat functionality:
         ```
         NEXT_PUBLIC_TAWKTO_PROPERTY_ID=YOUR_TAWKTO_PROPERTY_ID
         NEXT_PUBLIC_TAWKTO_WIDGET_ID=YOUR_TAWKTO_WIDGET_ID
         ```
         Obtain these from your [Tawk.to Dashboard](https://dashboard.tawk.to/).
-    *   **(Optional) Social Media Links:** For links in the user profile:
+    *   **(Optional) Social Media Links:** For links in the user profile (editable in Admin settings):
         ```
         NEXT_PUBLIC_FACEBOOK_LINK=YOUR_FACEBOOK_PAGE_URL
         NEXT_PUBLIC_TWITTER_LINK=YOUR_TWITTER_PROFILE_URL
