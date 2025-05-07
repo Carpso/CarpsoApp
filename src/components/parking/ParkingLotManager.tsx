@@ -14,16 +14,17 @@ import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider';
-import BottomNavBar from '@/components/layout/BottomNavBar';
-import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow';
-import { getUserGamification, getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service';
-import { calculateEstimatedCost } from '@/services/pricing-service';
-import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant';
-import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow';
+import BottomNavBar from '@/components/layout/BottomNavBar'; // Import BottomNavBar
+import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow'; // Import recommendation flow
+import { getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service'; // Import gamification service and bookmark/preference functions/type
+import { calculateEstimatedCost } from '@/services/pricing-service'; // Import pricing service
+import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant'; // Import voice assistant hook
+import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow'; // Import voice command processor
 import { cn } from '@/lib/utils';
 import ReportIssueModalComponent from '@/components/profile/ReportIssueModal';
 import { useVisibilityChange } from '@/hooks/useVisibilityChange';
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import ParkingLotMap from '@/components/map/ParkingLotMap'; // Import the map component
 
 interface PinnedLocationData {
     spotId: string;
@@ -79,8 +80,13 @@ export default function ParkingLotManager() {
   const [isClient, setIsClient] = useState(false);
   const isVisible = useVisibilityChange();
   const [voiceAssistantState, setVoiceAssistantState] = useState<VoiceAssistantState>('idle');
+  const [destinationForRecommendation, setDestinationForRecommendation] = useState<{ label?: string, address?: string, latitude?: number, longitude?: number } | null>(null); // For AI recommendations
 
-  const fetchRecommendations = useCallback(async (destinationLabel?: string) => {
+  // Refs for map interaction
+  const mapPinLocationRef = useRef<{ lat: number, lng: number, address?: string } | null>(null);
+
+
+  const fetchRecommendations = useCallback(async (destinationLabel?: string, destinationAddress?: string, destLat?: number, destLng?: number) => {
       if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) {
           setRecommendations([]);
           setIsLoadingRecommendations(false);
@@ -89,19 +95,30 @@ export default function ParkingLotManager() {
       setIsLoadingRecommendations(true);
       setRecommendations([]);
       try {
-          const currentCoords = { latitude: -15.4167, longitude: 28.2833 };
-          let destinationCoords: { latitude?: number; longitude?: number } | undefined = undefined;
+          // Use current user's actual location if available, otherwise default/mock
+          // For now, using a default mock location
+          const currentCoords = { latitude: -15.4167, longitude: 28.2833 }; // Lusaka default
           const currentBookmarks = userBookmarks;
+
+           let resolvedDestinationLabel = destinationLabel;
+           let resolvedDestinationAddress = destinationAddress;
+           let resolvedDestLat = destLat;
+           let resolvedDestLng = destLng;
 
            if (destinationLabel) {
                 const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
                if (matchedBookmark) {
-                   destinationCoords = { latitude: matchedBookmark.latitude, longitude: matchedBookmark.longitude };
+                   resolvedDestLat = matchedBookmark.latitude;
+                   resolvedDestLng = matchedBookmark.longitude;
+                   resolvedDestinationAddress = matchedBookmark.address || resolvedDestinationAddress; // Prefer bookmark address
                    console.log(`Using coordinates from bookmark "${matchedBookmark.label}" for recommendation.`);
                } else {
-                   console.log(`Destination label "${destinationLabel}" not found in bookmarks. Trying geocoding (not implemented).`);
+                   console.log(`Destination label "${destinationLabel}" not found in bookmarks.`);
+                   // If address was also provided with the label, use it. Otherwise, label is just a hint.
+                   if(!destinationAddress) resolvedDestinationAddress = destinationLabel; // Use label as address if no specific address given
                }
            }
+
 
            let nearbyLotsJson = "[]";
            try {
@@ -126,9 +143,10 @@ export default function ParkingLotManager() {
               userId: userId,
               currentLatitude: currentCoords.latitude,
               currentLongitude: currentCoords.longitude,
-              destinationLabel: destinationLabel,
-              destinationLatitude: destinationCoords?.latitude,
-              destinationLongitude: destinationCoords?.longitude,
+              destinationLabel: resolvedDestinationLabel,
+              destinationAddress: resolvedDestinationAddress,
+              destinationLatitude: resolvedDestLat,
+              destinationLongitude: resolvedDestLng,
               preferredServices: userPreferredServices,
               nearbyParkingLots: nearbyLotsJson,
               userHistorySummary: userHistorySummary,
@@ -169,7 +187,13 @@ export default function ParkingLotManager() {
                if (isOnline) {
                     if (entities.destination) {
                         toast({ title: "Finding Parking", description: `Looking for parking near ${entities.destination}. Recommendations updated.` });
-                        await fetchRecommendations(entities.destination);
+                         // Check if destination is a bookmark to get coords
+                        const matchedBookmark = userBookmarks.find(bm => bm.label.toLowerCase() === entities.destination?.toLowerCase());
+                        if (matchedBookmark) {
+                             await fetchRecommendations(entities.destination, matchedBookmark.address, matchedBookmark.latitude, matchedBookmark.longitude);
+                        } else {
+                             await fetchRecommendations(entities.destination, entities.destination); // Use destination as address if not a bookmark
+                        }
                     } else {
                         toast({ title: "Finding Parking", description: `Showing general recommendations.` });
                         await fetchRecommendations();
@@ -397,7 +421,8 @@ export default function ParkingLotManager() {
             fetchLocationsData(true);
             fetchUserBookmarks();
        }
-   }, [isOnline, isClient, toast, dismiss, offlineToastId]);
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [isOnline, isClient, toast, dismiss]); // Removed offlineToastId from deps as it causes loops
 
    const fetchUserBookmarks = useCallback(async () => {
       if (typeof window !== 'undefined') {
@@ -442,8 +467,8 @@ export default function ParkingLotManager() {
                 allLots = JSON.parse(cachedData);
                 console.log("Using valid cached parking lots.");
                 needsServerFetch = false;
-             } catch (err: any) {
-                 console.error("Failed to parse cached locations, will fetch fresh.", err);
+             } catch (parseError: any) {
+                 console.error("Failed to parse cached locations, will fetch fresh.", parseError);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
                  needsServerFetch = true;
@@ -475,7 +500,7 @@ export default function ParkingLotManager() {
            if (firstCarpso) return firstCarpso.id;
            const firstExternal = allLots!.find(l => !l.isCarpsoManaged);
            if (firstExternal) return firstExternal.id;
-           return null;
+           return allLots[0].id; // Fallback to first available lot if no preference
        });
     } else {
         setSelectedLocationId(null);
@@ -494,7 +519,7 @@ export default function ParkingLotManager() {
       setIsRefreshing(true);
       fetchLocationsData(true);
       fetchUserBookmarks();
-      if (isAuthenticated && userId) setTimeout(() => fetchRecommendations(), 500);
+      if (isAuthenticated && userId) setTimeout(() => fetchRecommendations(destinationForRecommendation?.label, destinationForRecommendation?.address, destinationForRecommendation?.latitude, destinationForRecommendation?.longitude), 500);
   };
 
    useEffect(() => {
@@ -521,8 +546,11 @@ export default function ParkingLotManager() {
    }, [isAuthenticated, userId, fetchUserBookmarks]);
 
   useEffect(() => {
-       if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated) fetchRecommendations();
-   }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, fetchRecommendations]);
+       if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated) {
+           fetchRecommendations(destinationForRecommendation?.label, destinationForRecommendation?.address, destinationForRecommendation?.latitude, destinationForRecommendation?.longitude);
+       }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, locations.length]); // Removed fetchRecommendations from deps for initial load only
 
  const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
@@ -664,12 +692,27 @@ export default function ParkingLotManager() {
    const carpsoManagedLots = locations.filter(loc => loc.isCarpsoManaged);
    const externalLots = locations.filter(loc => !loc.isCarpsoManaged);
 
+   // --- Callback for ParkingLotMap ---
+   const handleMapPin = (latitude: number, longitude: number, address?: string) => {
+      console.log("Map pinned at:", { latitude, longitude, address });
+      mapPinLocationRef.current = { lat: latitude, lng: longitude, address };
+      // Update destination for recommendations
+      setDestinationForRecommendation({ label: address || "Pinned Location", address, latitude, longitude });
+      // Fetch new recommendations based on this pinned location
+      setTimeout(() => { // Add small delay to ensure state update propagation
+        fetchRecommendations(address || "Pinned Location", address, latitude, longitude);
+      }, 100);
+   };
+
  return (
    <div className="container py-8 px-4 md:px-6 lg:px-8">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
           <h1 className="text-3xl font-bold">Home</h1>
           <div className="flex items-center gap-2">
-               <Button variant="outline" size="icon" onClick={handleManualRefresh} disabled={isRefreshing || !isOnline} aria-label="Refresh Data" title="Refresh Data">
+               <Button
+                   variant="outline" size="icon" onClick={handleManualRefresh} disabled={isRefreshing || !isOnline}
+                   aria-label="Refresh Data" title="Refresh Data"
+               >
                    {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <RefreshCcw className="h-5 w-5" />}
                </Button>
                 <Button
@@ -751,6 +794,41 @@ export default function ParkingLotManager() {
                 </CardContent>
             </Card>
         )}
+
+        {isAuthenticated && (
+          <Card className="mb-6 border-blue-500 bg-blue-500/5">
+              <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                      <Sparkles className="h-5 w-5" /> Recommendation Destination
+                  </CardTitle>
+                  <CardDescription>
+                      Pin a location on the map below or enter an address to get parking recommendations.
+                      You can also use voice commands like "Hey Carpso, find parking near [place/address]".
+                  </CardDescription>
+              </CardHeader>
+              <CardContent>
+                  {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? (
+                      <ParkingLotMap
+                          apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                          defaultLatitude={-15.4167} // Lusaka default
+                          defaultLongitude={28.2833}
+                          onPinLocation={handleMapPin}
+                          customClassName="rounded-md shadow"
+                      />
+                  ) : (
+                      <Alert variant="warning">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Map Service Unavailable</AlertTitle>
+                          <AlertDescription>
+                              Google Maps API key is not configured. Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
+                              You can still get recommendations by typing a destination label or address, or using voice commands.
+                          </AlertDescription>
+                      </Alert>
+                  )}
+              </CardContent>
+          </Card>
+        )}
+
 
        {isAuthenticated && !isLoadingLocations && (
            <Card className="mb-6 border-accent bg-accent/5">
@@ -847,7 +925,16 @@ export default function ParkingLotManager() {
 
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
        {isClient && <BottomNavBar onAuthClick={() => setIsAuthModalOpen(true)} />}
-       <ReportIssueModalComponent isOpen={isReportModalOpen} onClose={() => { setIsReportModalOpen(false); setTimeout(() => setReportingReservation(null), 300); }} reservation={reportingReservation} userId={userId || ''} />
+        <ReportIssueModalComponent
+             isOpen={isReportModalOpen}
+             onClose={() => {
+                 setIsReportModalOpen(false);
+                 setTimeout(() => setReportingReservation(null), 300);
+             }}
+             reservation={reportingReservation as any} // Cast to any if type mismatch with ReportIssueModal's expected reservation type
+             userId={userId || ''}
+        />
    </div>
  );
 }
+
