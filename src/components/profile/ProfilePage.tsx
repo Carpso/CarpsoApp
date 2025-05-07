@@ -1,4 +1,4 @@
-// src/app/profile/page.tsx
+// src/components/profile/ProfilePage.tsx
 'use client';
 
 import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
@@ -1579,7 +1579,7 @@ export default function ProfilePage() {
                                                     {isPremium ? "Manage Plan" : "Upgrade to Premium"}
                                                 </Button>
                                             </CardTitle>
-                                        CardHeader>
+                                        </CardHeader>
                                         <CardContent>
                                             {isPremium && billingInfo?.guaranteedSpotsAvailable !== undefined ? (
                                                 <p className="text-sm text-muted-foreground flex items-center gap-1">
