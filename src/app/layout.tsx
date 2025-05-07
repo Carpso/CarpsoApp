@@ -8,9 +8,10 @@ import Header from '@/components/layout/Header';
 import { Toaster } from "@/components/ui/toaster";
 import AppStateProvider from '@/context/AppStateProvider';
 import React, { useEffect, useState } from 'react';
+import type { Metadata } from 'next';
 import { useToast } from '@/hooks/use-toast';
 import Head from 'next/head';
-import { ThemeProvider } from '@/components/theme/ThemeProvider'; // Import ThemeProvider
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
 
 // If using Geist fonts, uncomment these lines and ensure the package is installed
 // const geistSans = GeistSans({
@@ -24,6 +25,14 @@ import { ThemeProvider } from '@/components/theme/ThemeProvider'; // Import Them
 
 // Define fallback font variables if Geist is not used
 const fallbackFontVariables = '';
+
+
+// Metadata can still be exported from client components in App Router
+// export const metadata: Metadata = {
+//   title: 'Carpso - Smart Parking',
+//   description: 'Find, predict, and reserve parking spots.',
+// };
+
 
 export default function RootLayout({
   children,
@@ -96,7 +105,7 @@ export default function RootLayout({
   }, [isClient, toast]);
 
   return (
-    <html lang="en" suppressHydrationWarning> {/* Remove default class, add suppressHydrationWarning */}
+    <html lang="en" suppressHydrationWarning>
       <Head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <title>Carpso - Smart Parking</title>
