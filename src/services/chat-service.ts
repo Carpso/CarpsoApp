@@ -80,6 +80,10 @@ export async function createOrGetConversation(
   recipient: ConversationParticipant,
   context?: ChatConversation['context']
 ): Promise<string> {
+  if (!firestore) {
+    console.error("Firestore is not initialized. Cannot create or get conversation.");
+    throw new Error("Chat service unavailable: Firestore not initialized.");
+  }
   const conversationId = generateConversationId(initiator.userId, recipient.userId);
   const conversationRef = doc(firestore, CONVERSATIONS_COLLECTION, conversationId);
 
@@ -126,6 +130,10 @@ export async function sendMessage(
   senderRole: UserRole | undefined,
   text: string
 ): Promise<void> {
+  if (!firestore) {
+    console.error("Firestore is not initialized. Cannot send message.");
+    throw new Error("Chat service unavailable: Firestore not initialized.");
+  }
   if (!text.trim()) throw new Error('Message text cannot be empty.');
 
   const messagesColRef = collection(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION);
@@ -165,12 +173,17 @@ export async function sendMessage(
  * Subscribes to messages in a conversation.
  * @param conversationId The ID of the conversation.
  * @param callback Function to call with new messages.
- * @returns An unsubscribe function.
+ * @returns An unsubscribe function, or a no-op function if Firestore is not initialized.
  */
 export function subscribeToMessages(
   conversationId: string,
   callback: (messages: ChatMessage[]) => void
 ): Unsubscribe {
+  if (!firestore) {
+    console.error("Firestore is not initialized. Cannot subscribe to messages.");
+    // Return a no-op unsubscribe function
+    return () => {};
+  }
   const messagesQuery = query(
     collection(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION),
     orderBy('timestamp', 'asc') // Show oldest messages first
@@ -192,12 +205,17 @@ export function subscribeToMessages(
  * Subscribes to a user's conversations.
  * @param userId The ID of the user.
  * @param callback Function to call with the user's conversations.
- * @returns An unsubscribe function.
+ * @returns An unsubscribe function, or a no-op function if Firestore is not initialized.
  */
 export function subscribeToUserConversations(
   userId: string,
   callback: (conversations: ChatConversation[]) => void
 ): Unsubscribe {
+  if (!firestore) {
+    console.error("Firestore is not initialized. Cannot subscribe to user conversations.");
+    // Return a no-op unsubscribe function
+    return () => {};
+  }
   const conversationsQuery = query(
     collection(firestore, CONVERSATIONS_COLLECTION),
     where('participantIds', 'array-contains', userId),
@@ -221,6 +239,10 @@ export function subscribeToUserConversations(
  * @param userId The ID of the user reading the messages.
  */
 export async function markMessagesAsRead(conversationId: string, userId: string): Promise<void> {
+  if (!firestore) {
+    console.error("Firestore is not initialized. Cannot mark messages as read.");
+    throw new Error("Chat service unavailable: Firestore not initialized.");
+  }
   const conversationRef = doc(firestore, CONVERSATIONS_COLLECTION, conversationId);
   const conversationSnap = await getDoc(conversationRef);
 
