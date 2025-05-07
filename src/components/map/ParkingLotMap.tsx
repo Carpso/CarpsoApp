@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react'; // Added Loader2
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
@@ -66,7 +66,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
 
    // Geocoding function using Google's Geocoder
    const geocodeAddress = async (addressString: string): Promise<{ lat: number, lng: number } | null> => {
-        if (!isLoaded || !window.google || !window.google.maps || !window.google.maps.Geocoder) {
+        if (!isLoaded || typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Geocoder) {
             toast({ title: "Map Not Ready", description: "Geocoder service is not available yet.", variant: "destructive" });
             return null;
         }
