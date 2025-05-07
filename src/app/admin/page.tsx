@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, UserCog, LayoutDashboard, BarChart as BarChartIcon, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, Link as LinkIcon, Award } from "lucide-react"; // Renamed BarChart to BarChartIcon to avoid conflict, Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, LinkIcon, Award
+import { ShieldCheck, UserCog, LayoutDashboard, BarChart as BarChartIcon, Settings, MapPin, Loader2, Download, Sparkles, Fuel, SprayCan, Wifi, BadgeCent, PlusCircle, Trash2, Megaphone, Image as ImageIcon, Calendar, Bath, ConciergeBell, DollarSign, Clock, Users, Tag, FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, Link as LinkIcon, Award, Instagram, Youtube as TikTokIcon } from "lucide-react"; // Renamed BarChart to BarChartIcon to avoid conflict, Added FileSpreadsheet, PackageCheck, PackageX, History, CalendarClock, TrendingUp, UsersRound, Activity, MessageSquare, LinkIcon, Award, Instagram, TikTokIcon
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1247,6 +1247,32 @@ export default function AdminDashboardPage() {
                                       <Button size="sm" variant="outline" disabled>Manage Partners (Coming Soon)</Button>
                                   </div>
                               )}
+                               {/* Instagram Link Configuration */}
+                               {isAdmin && (
+                                   <div className="flex items-center justify-between p-4 border rounded-md">
+                                       <div>
+                                           <p className="font-medium flex items-center gap-2"><Instagram className="h-4 w-4" /> Instagram Link</p>
+                                           <p className="text-sm text-muted-foreground">Set the Instagram profile URL (NEXT_PUBLIC_INSTAGRAM_LINK in .env).</p>
+                                           <p className="text-xs text-muted-foreground">
+                                                Current Link: {process.env.NEXT_PUBLIC_INSTAGRAM_LINK ? <a href={process.env.NEXT_PUBLIC_INSTAGRAM_LINK} target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">{process.env.NEXT_PUBLIC_INSTAGRAM_LINK}</a> : "Not Set"}
+                                           </p>
+                                       </div>
+                                       <Button size="sm" variant="outline" disabled>Edit Env Var</Button>
+                                   </div>
+                               )}
+                               {/* TikTok Link Configuration */}
+                               {isAdmin && (
+                                   <div className="flex items-center justify-between p-4 border rounded-md">
+                                       <div>
+                                           <p className="font-medium flex items-center gap-2"><TikTokIcon className="h-4 w-4" /> TikTok Link</p>
+                                           <p className="text-sm text-muted-foreground">Set the TikTok profile URL (NEXT_PUBLIC_TIKTOK_LINK in .env).</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Current Link: {process.env.NEXT_PUBLIC_TIKTOK_LINK ? <a href={process.env.NEXT_PUBLIC_TIKTOK_LINK} target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">{process.env.NEXT_PUBLIC_TIKTOK_LINK}</a> : "Not Set"}
+                                           </p>
+                                       </div>
+                                       <Button size="sm" variant="outline" disabled>Edit Env Var</Button>
+                                   </div>
+                               )}
                         </div>
                      ) : ( <p className="text-muted-foreground text-center py-4">Settings are available for specific lots or globally by Admins.</p> )}
                  </CardContent>

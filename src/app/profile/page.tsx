@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins, Facebook, Twitter } from 'lucide-react'; // Added Coins, Facebook, Twitter
+import { List, DollarSign, Clock, AlertCircle, CheckCircle, Smartphone, CreditCard, Download, AlertTriangle, Car, Sparkles as SparklesIcon, Award, Users, Trophy, Star, Gift, Edit, Save, X, Loader2, Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, PlusCircle, QrCode, Info, CarTaxiFront, Flag, BookMarked, Home as HomeIcon, Briefcase, School as SchoolIcon, GraduationCap, Edit2, Trash2, WifiOff, UserPlus, Sparkles, Landmark, Globe, RefreshCcw, MessageSquare, Contact, Printer, UsersRound, Copy, Ticket, ExternalLink, Coins, Facebook, Twitter, Instagram, Youtube as TikTokIcon } from 'lucide-react'; // Added Instagram, TikTokIcon (using Youtube for now as TikTok isn't in Lucide)
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useToast } from '@/hooks/use-toast';
 import { getUserGamification, updateCarpoolEligibility, UserGamification, UserBadge, UserBookmark, getUserBookmarks, addBookmark, updateBookmark, deleteBookmark, getPointsTransactions, PointsTransaction, transferPoints, getReferralHistory, Referral, applyPromoCode, awardPoints, redeemPoints } from '@/services/user-service'; // Import bookmark types and functions, points transactions, transferPoints, referral functions, redeemPoints
@@ -330,9 +330,11 @@ const WHATSAPP_NUMBER_2 = "+260968551110";
 const WHATSAPP_CHAT_LINK_1 = `https://wa.me/${WHATSAPP_NUMBER_1.replace(/\D/g, '')}`;
 
 // Social Media & Website Links
-const FACEBOOK_LINK = "https://web.facebook.com/Carpso2020";
-const TWITTER_LINK = "https://twitter.com/CarpsoApp"; // Replace with actual Twitter/X link
-const WEBSITE_LINK = "https://carpso.app"; // Replace with actual website link
+const FACEBOOK_LINK = process.env.NEXT_PUBLIC_FACEBOOK_LINK || "https://web.facebook.com/Carpso2020";
+const TWITTER_LINK = process.env.NEXT_PUBLIC_TWITTER_LINK || "https://x.com/CarpsoApp";
+const WEBSITE_LINK = process.env.NEXT_PUBLIC_WEBSITE_LINK || "https://carpso.app";
+const INSTAGRAM_LINK = process.env.NEXT_PUBLIC_INSTAGRAM_LINK; // From .env
+const TIKTOK_LINK = process.env.NEXT_PUBLIC_TIKTOK_LINK;     // From .env
 
 // This defines the main React component for the profile page
 export default function ProfilePage() {
@@ -2057,6 +2059,32 @@ export default function ProfilePage() {
                                            <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
                                         </a>
                                     </Button>
+                                     {/* Instagram Link */}
+                                    {INSTAGRAM_LINK && (
+                                        <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                            <a href={INSTAGRAM_LINK} target="_blank" rel="noopener noreferrer">
+                                                <Instagram className="mr-3 h-5 w-5 text-pink-600" />
+                                                <div>
+                                                    <p className="font-medium">Instagram</p>
+                                                    <p className="text-xs text-muted-foreground">Follow us on Instagram.</p>
+                                                </div>
+                                                <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                            </a>
+                                        </Button>
+                                    )}
+                                    {/* TikTok Link */}
+                                    {TIKTOK_LINK && (
+                                        <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3">
+                                            <a href={TIKTOK_LINK} target="_blank" rel="noopener noreferrer">
+                                                 <TikTokIcon className="mr-3 h-5 w-5" /> {/* Using YouTube icon as placeholder */}
+                                                 <div>
+                                                    <p className="font-medium">TikTok</p>
+                                                    <p className="text-xs text-muted-foreground">Follow us on TikTok.</p>
+                                                 </div>
+                                                 <ExternalLink className="ml-auto h-4 w-4 text-muted-foreground" />
+                                            </a>
+                                        </Button>
+                                    )}
                                      {/* Website Link */}
                                      <Button variant="outline" asChild className="w-full justify-start text-left h-auto py-3 col-span-1 md:col-span-2">
                                          <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer">
@@ -2314,4 +2342,3 @@ const ProfileSkeleton = () => (
          </div>
     </div>
 );
-
