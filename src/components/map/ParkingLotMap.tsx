@@ -6,7 +6,7 @@ import { GoogleMap, Marker, Circle, useJsApiLoader } from '@react-google-maps/ap
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, Loader2, LocateFixed, MapPinIcon } from 'lucide-react';
+import { AlertCircle, Loader2, LocateFixed, MapPinIcon as CarIcon } from 'lucide-react'; // Renamed MapPinIcon to CarIcon for car representation
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface ParkingLotMapProps {
@@ -22,7 +22,7 @@ interface ParkingLotMapProps {
 
 const containerStyle = {
   width: '100%',
-  height: '300px',
+  height: '300px', // Default height, can be overridden by customClassName if needed
 };
 
 export default function ParkingLotMap({
@@ -40,8 +40,8 @@ export default function ParkingLotMap({
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey || "",
-    libraries: ['places'], // Keep places library for potential future use or if other components rely on it
+    googleMapsApiKey: apiKey || "", // Ensure it falls back to empty string if apiKey is undefined
+    libraries: ['places'],
     preventGoogleFontsLoading: true,
   });
 
@@ -68,7 +68,8 @@ export default function ParkingLotMap({
       }
     } else {
       setCurrentCenter({ lat: defaultLatitude, lng: defaultLongitude });
-      if (map && isLoaded) {
+      // Only panTo if map is already loaded, otherwise onLoad will handle it.
+      if (map && isLoaded && !centerCoordinates && !userLocation) {
         map.panTo({ lat: defaultLatitude, lng: defaultLongitude });
       }
     }
@@ -76,7 +77,7 @@ export default function ParkingLotMap({
 
   const onLoad = useCallback((mapInstance: google.maps.Map) => {
     setMap(mapInstance);
-    mapInstance.panTo(currentCenter);
+    mapInstance.panTo(currentCenter); // currentCenter is already updated by the useEffect above
   }, [currentCenter]);
 
   const onUnmount = useCallback(() => {
@@ -97,27 +98,31 @@ export default function ParkingLotMap({
     
     if (map && isLoaded) {
         map.panTo(targetCenter);
-        map.setZoom(16); // Adjusted zoom level
+        map.setZoom(16);
         toast({ title: "Map Recenter", description: toastMessage });
     }
   };
+
 
   if (!apiKey) {
     return (
       <div className={cn("w-full", customClassName)}>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Google Maps API Key Missing</AlertTitle>
+          <AlertTitle>Google Maps API Key Missing!</AlertTitle>
           <AlertDescription>
-            The Google Maps API key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) is not configured. Map functionality is disabled.
-            Please **CAREFULLY review the "Google Maps API Key" section in the `README.md` file** for setup instructions.
+            The `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is not configured in your environment variables (e.g., `.env.local` or `.env`).
+            Map functionality is disabled.
+            <br />
+            <strong>Please carefully review the &quot;Google Maps API Key Setup&quot; section in the `README.md` file</strong> for detailed setup instructions. This is crucial for the app to work.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
-
+  
   if (loadError) {
+    console.error("Google Maps Load Error:", loadError);
     const isKeyError = loadError.message.includes('InvalidKeyMapError') ||
                        loadError.message.includes('ApiNotActivatedMapError') ||
                        loadError.message.includes('MissingKeyMapError') ||
@@ -131,14 +136,20 @@ export default function ParkingLotMap({
             Could not load Google Maps.
             {isKeyError ? (
               <>
-                This seems to be an API key issue.
-                Ensure your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correct, billing is enabled, and necessary APIs (Maps JavaScript API, Places API) are activated.
-                Refer to `README.md` for troubleshooting.
+                This is likely an issue with your Google Maps API key setup.
+                <ul className="list-disc pl-5 mt-2 text-xs">
+                  <li>Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in your `.env.local` (or `.env`) file is correct and has no extra spaces.</li>
+                  <li>Verify that **Billing is enabled** for your Google Cloud Project.</li>
+                  <li>Ensure **Maps JavaScript API** and **Places API** are enabled in the Google Cloud Console.</li>
+                  <li>Check API key restrictions (HTTP referrers, API restrictions) in the Google Cloud Console.</li>
+                  <li>Restart your Next.js development server after any `.env` changes.</li>
+                </ul>
+                <strong>Please carefully review the &quot;Google Maps API Key Setup&quot; section in the `README.md` file</strong> for comprehensive troubleshooting.
               </>
             ) : (
-              "Check your internet connection and browser console for details."
+              "Check your internet connection and browser console for more details."
             )}
-            <p className="text-xs mt-2">Error: {loadError.message}</p>
+            <p className="text-xs mt-2">Error details: {loadError.message}</p>
           </AlertDescription>
         </Alert>
       </div>
@@ -170,28 +181,27 @@ export default function ParkingLotMap({
                  mapTypeControl: true,
                  fullscreenControl: false,
                  mapId: 'CARPSO_MAP_ID',
-                 clickableIcons: false, // Prevent clicking on default Google POIs
+                 clickableIcons: false,
                 }}
            >
-                {/* User's current location marker (blue dot with accuracy circle) */}
-                  {showUserCar && userLocation && (
+                {showUserCar && userLocation && (
                     <>
                       <Marker
                         position={userLocation}
                         icon={{
                           path: google.maps.SymbolPath.CIRCLE,
                           scale: 7,
-                          fillColor: '#4285F4',
+                          fillColor: '#4285F4', // Blue for user location
                           fillOpacity: 1,
                           strokeWeight: 2,
                           strokeColor: 'white',
                         }}
                         title="Your Location"
-                        zIndex={5} // Ensure it's above other markers if needed
+                        zIndex={5}
                       />
                        <Circle
                           center={userLocation}
-                          radius={50}
+                          radius={50} // Example accuracy radius
                           options={{
                             strokeColor: '#4285F4',
                             strokeOpacity: 0.3,
@@ -202,38 +212,32 @@ export default function ParkingLotMap({
                         />
                     </>
                   )}
-                  {/* Pinned car location marker */}
                   {pinnedCarLocation && (
                      <Marker
                          position={pinnedCarLocation}
+                         // Using a simple car-like SVG path for the icon
                          icon={{
-                            path: MapPinIcon, // Using Lucide MapPin as a path, requires custom function if lucide icons are not directly usable
-                            // For a simple car icon, you can use a URL to an image:
-                            // url: '/path/to/your/car-icon.png',
-                            // scaledSize: new google.maps.Size(30, 30),
-                            // anchor: new google.maps.Point(15, 30),
-                            // Or a more complex SVG path:
-                            // path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', // Example simple car-like shape
-                            fillColor: 'hsl(var(--primary))',
+                            path: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S18.33 16 17.5 16zM5 11l1.5-4.5h11L19 11H5z',
+                            fillColor: 'hsl(var(--primary))', // Use primary theme color
                             fillOpacity: 1,
                             strokeWeight: 1,
-                            strokeColor: 'hsl(var(--background))',
-                            scale: 1.5, // Adjust scale for MapPinIcon
-                            anchor: new google.maps.Point(12, 24) // Adjust anchor for MapPinIcon
+                            strokeColor: 'hsl(var(--background))', // Contrast with fill
+                            scale: 1.1, // Adjust scale
+                            anchor: new google.maps.Point(12, 12) // Center the icon
                          }}
                          label={{
                            text: `Car: ${pinnedCarLocation.spotId}`,
                            color: 'hsl(var(--primary-foreground))',
                            fontSize: '10px',
                            fontWeight: 'bold',
-                           className: 'bg-primary px-1 py-0.5 rounded-sm shadow-md'
+                           className: 'bg-primary px-1 py-0.5 rounded-sm shadow-md' // Ensure Tailwind classes for label styling are effective
                          }}
                          title={`Pinned Car at ${pinnedCarLocation.spotId}`}
-                         zIndex={10} // Ensure it's above user location accuracy circle
+                         zIndex={10}
                      />
                   )}
            </GoogleMap>
-           {(userLocation || pinnedCarLocation) && ( // Show recenter button if there's something to center on
+           {(userLocation || pinnedCarLocation) && (
              <Button
                  variant="outline"
                  size="icon"

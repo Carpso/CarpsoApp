@@ -1,7 +1,5 @@
 # Carpso - Smart Parking
 
-This is a NextJS application demonstrating a smart parking solution using IoT sensor data and AI predictions.
-
 ## **VERY IMPORTANT: Google Maps API Key Setup for Development & Production**
 
 The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application to work correctly. If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or `RefererNotAllowedMapError`, or if maps are simply not loading, it is **EXTREMELY LIKELY** due to an issue with your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` or its configuration in the Google Cloud Console.
@@ -34,9 +32,9 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
         *   In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API". Missing one will cause errors.
 
 6.  **Set Environment Variable (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`):**
-    *   **For Development:** Create a `.env.local` file (or `.env`) in the root directory of your project. Add the following line, replacing `YOUR_DEV_GOOGLE_MAPS_API_KEY` with your actual development key:
+    *   **For Development:** Create a `.env.local` file (or `.env`) in the root directory of your project. Add the following line, replacing `YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE` with your actual development key:
         ```
-        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE
         ```
     *   **For Production:** Set this environment variable in your production environment (e.g., Vercel, Netlify, Firebase Functions environment settings, Docker environment variables, etc.). **Do not commit your production API key to your Git repository.** Use your production-specific API key here.
         ```
@@ -65,7 +63,11 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
 7.  **Check the Browser Console:** Open your browser's developer console (usually F12) and look for more specific error messages from Google Maps.
 8.  **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues.
 
+If the map is still not working after these steps, please ensure there are no typos in the environment variable name in your code and that `process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is being correctly accessed.
+
 ---
+
+This is a NextJS application demonstrating a smart parking solution using IoT sensor data and AI predictions.
 
 ## Core Features (Current)
 
