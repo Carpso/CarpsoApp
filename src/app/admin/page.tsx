@@ -30,7 +30,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, LineChart, Line } from 'recharts'; // Import Recharts components, aliased BarChart and Tooltip/Legend
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'; // Import ShadCN chart components
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'; // Import ShadCN chart components
 import { getLinkedLoyaltyPrograms, linkLoyaltyProgram, unlinkLoyaltyProgram, LinkedLoyaltyProgram } from '@/services/loyalty-service'; // Import loyalty service
 
 // Sample user data - replace with actual authentication and user management
@@ -408,7 +408,10 @@ export default function AdminDashboardPage() {
                     lot.id === selectedLotId ? { ...lot, services: updatedServices } : lot
                 ));
                 toast({ title: "Services Updated", description: `${service} ${isChecked ? 'added to' : 'removed from'} ${selectedLot.name}.` });
-            } else { throw new Error("Backend update failed."); }
+            } else {
+                // Throw error if backend update fails
+                throw new Error("Backend update failed.");
+            }
         } catch (error) {
             console.error("Failed to update services:", error);
             toast({ title: "Update Failed", description: `Could not update services for ${selectedLot.name}.`, variant: "destructive" });
@@ -1128,7 +1131,7 @@ export default function AdminDashboardPage() {
                  </CardHeader>
                  <CardContent>
                     {(isAdmin || (isParkingLotOwner && selectedLotId !== 'all')) ? (
-                       <>
+                       <ChartContainer config={chartConfigBase} className="min-h-[200px] w-full">
                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                                <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><DollarSign className="h-5 w-5 text-green-600"/> ${displayedAnalytics.revenue.toFixed(2)}</CardTitle><CardDescription>Revenue Today</CardDescription></CardHeader></Card>
                                 <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> {displayedAnalytics.avgOccupancy}%</CardTitle><CardDescription>Avg. Occupancy (24h)</CardDescription></CardHeader></Card>
@@ -1139,12 +1142,10 @@ export default function AdminDashboardPage() {
                                     <CardHeader><CardTitle className="text-lg flex items-center gap-2"><UsersRound className="h-5 w-5 text-purple-600"/> User Signups (Last 7 Days)</CardTitle></CardHeader>
                                     <CardContent className="h-[250px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            {/* Use aliased RechartsBarChart */}
                                             <RechartsBarChart data={displayedAnalytics.userSignups}>
                                                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                                                 {/* Use ChartTooltip */}
                                                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                                  <Bar dataKey="signups" fill="var(--color-signups)" radius={4} />
                                             </RechartsBarChart>
@@ -1160,7 +1161,6 @@ export default function AdminDashboardPage() {
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                              <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                              <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `$${value}`} />
-                                             {/* Use ChartTooltip */}
                                              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                                              <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} dot={false} />
                                         </LineChart>
@@ -1172,12 +1172,10 @@ export default function AdminDashboardPage() {
                                 <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-5 w-5 text-blue-600"/> Peak Hour Occupancy</CardTitle></CardHeader>
                                 <CardContent className="h-[250px] w-full">
                                      <ResponsiveContainer width="100%" height="100%">
-                                         {/* Use aliased RechartsBarChart */}
                                          <RechartsBarChart data={displayedAnalytics.peakHours} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                              <XAxis dataKey="hour" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                                              <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} tickFormatter={(value) => `${value}%`} domain={[0, 100]} />
-                                             {/* Use ChartTooltip */}
                                              <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                                              <Bar dataKey="occupancy" fill="var(--color-occupancy)" radius={4} />
                                         </RechartsBarChart>
@@ -1185,7 +1183,7 @@ export default function AdminDashboardPage() {
                                 </CardContent>
                              </Card>
                            <p className="text-muted-foreground mt-6 text-center text-xs">More detailed analytics coming soon.</p>
-                       </>
+                       </ChartContainer>
                     ) : ( <p className="text-muted-foreground text-center py-4">Analytics are available for specific lots or by Admins for all locations.</p> )}
                  </CardContent>
                </Card>
@@ -1365,5 +1363,3 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
-
-    
