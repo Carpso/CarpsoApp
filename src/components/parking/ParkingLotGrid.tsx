@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription, // Use the main AlertDialogDescription here for the primary description
+  AlertDialogFooter, // Added missing import
 } from "@/components/ui/alert-dialog"
 import {
     Dialog,
@@ -37,7 +38,7 @@ import { useVisibilityChange } from '@/hooks/useVisibilityChange';
 import ParkingTicket from '@/components/common/ParkingTicket';
 import html2canvas from 'html2canvas';
 import { formatDistanceToNowStrict } from 'date-fns';
-import ReportIssueModal from '@/components/profile/ReportIssueModal';
+import ReportIssueModalComponent from '@/components/profile/ReportIssueModal';
 import { joinQueue, leaveQueue, getUserQueueStatus, getQueueLength } from '@/services/queue-service';
 import { getUserGamification, incrementParkingExtensions, UserGamification } from '@/services/user-service';
 
@@ -151,8 +152,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
 
         setSpots(spotStatuses);
         setLastFetchTimestamp(Date.now());
-      } catch (error) {
-        console.error("Failed to fetch parking spot statuses or queue lengths:", error);
+      } catch (error: any) {
+        console.error("Failed to fetch parking spot statuses or queue lengths:", error.message);
         if (isOnline) {
             toast({
               title: "Error Loading Spots",
@@ -176,8 +177,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
       try {
           const queueData = await getUserQueueStatus(userId);
           setUserQueueData(queueData);
-      } catch (error) {
-          console.error("Failed to fetch user queue status:", error);
+      } catch (error: any) {
+          console.error("Failed to fetch user queue status:", error.message);
            if (isOnline) toast({ title: "Queue Status Error", description: "Could not fetch your queue positions.", variant: "default" });
       } finally {
           setIsQueueLoading(false);
@@ -205,8 +206,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           const trends = `Time: ${new Date().toLocaleTimeString()}. Weather: Clear. Events: None. User Tier: ${userTier}`;
           const predictionResult = await predictParkingAvailability({ spotId: spot.spotId, historicalData, trends });
           setPrediction(predictionResult);
-      } catch (err) {
-          console.error('Prediction failed:', err);
+      } catch (err: any) {
+          console.error('Prediction failed:', err.message);
           if (isOnline) toast({ title: "Prediction Info", description: "Could not fetch prediction data.", variant: "default", duration: 3000 });
       } finally {
           setIsPredictionLoading(false);
@@ -216,8 +217,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
           const costResult = await calculateEstimatedCost(location, 60, userId, userTier);
           setEstimatedCost(costResult.cost);
           setCostRule(costResult.appliedRule);
-      } catch (err) {
-           console.error('Cost calculation failed:', err);
+      } catch (err: any) {
+           console.error('Cost calculation failed:', err.message);
            if (isOnline) toast({ title: "Pricing Info", description: "Could not calculate estimated cost.", variant: "default", duration: 3000 });
       } finally {
            setIsCostLoading(false);
@@ -296,7 +297,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                    } else {
                        occupiedMessage += ` Reservation time has passed; spot may be available soon.`;
                    }
-               } catch (e) { /* Ignore parsing errors */ }
+               } catch (e: any) { console.error("Error parsing reservation end time:", e.message); }
            }
            const isInQueue = userQueueData.some(q => q.spotId === spot.spotId);
            const queueLength = spotQueueLengths[spot.spotId] || 0;
@@ -348,8 +349,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             } else {
                  toast({ title: "Already in Queue", description: `You are already waiting for spot ${spotId}.`, variant: "default" });
             }
-        } catch (error) {
-             console.error("Failed to join queue:", error);
+        } catch (error: any) {
+             console.error("Failed to join queue:", error.message);
              toast({ title: "Error Joining Queue", variant: "destructive" });
         } finally {
              setIsQueueLoading(false);
@@ -368,8 +369,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             } else {
                  toast({ title: "Not in Queue", description: `You weren't in the queue for spot ${spotId}.`, variant: "default" });
             }
-        } catch (error) {
-             console.error("Failed to leave queue:", error);
+        } catch (error: any) {
+             console.error("Failed to leave queue:", error.message);
              toast({ title: "Error Leaving Queue", variant: "destructive" });
         } finally {
              setIsQueueLoading(false);
@@ -401,8 +402,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                 description: `Your parking for spot ${currentReservation.spotId} has been extended. Extensions used: ${newExtensionCount}/${isPremiumUser ? 'Unlimited' : MAX_PARKING_EXTENSIONS_BASIC}.`,
                 duration: 6000,
             });
-        } catch (error) {
-            console.error("Failed to extend parking:", error);
+        } catch (error: any) {
+            console.error("Failed to extend parking:", error.message);
             toast({ title: "Extension Failed", variant: "destructive" });
         } finally {
             setIsExtending(false);
@@ -410,6 +411,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
     };
 
     const findActiveReservationForCurrentUser = (): ParkingHistoryEntry | null => {
+        // This would normally fetch from user's active reservations
+        // For simulation, it will return null
         return null;
     }
     const activeReservation = findActiveReservationForCurrentUser();
@@ -474,7 +477,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
          onSpotReserved(selectedSpot.spotId, location.id);
          setSelectedSpot(null);
       } catch (error: any) {
-           console.error("Reservation failed:", error);
+           console.error("Reservation failed:", error.message);
            toast({
                title: "Reservation Failed",
                description: error.message || "Could not reserve the spot. Please try again.",
@@ -556,8 +559,8 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
             link.click();
             document.body.removeChild(link);
             toast({ title: "Ticket Downloaded", description: "Check your downloads folder." });
-        } catch (error) {
-            console.error("Failed to download ticket:", error);
+        } catch (error: any) {
+            console.error("Failed to download ticket:", error.message);
             toast({ title: "Download Failed", variant: "destructive" });
         }
     };
@@ -709,7 +712,7 @@ export default function ParkingLotGrid({ location, onSpotReserved, userTier = 'B
                 )}
 
                  <div className="text-sm border-t pt-3">
-                     <div className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</div>
+                    <div className="font-medium mb-1 flex items-center gap-1"><DollarSign className="h-4 w-4 text-green-600" /> Estimated Cost:</div>
                      {isCostLoading && isOnline ? (
                         <div className="flex items-center gap-2 text-muted-foreground"> <Loader2 className="h-4 w-4 animate-spin" /> Calculating cost... </div>
                      ) : !isOnline ? (
