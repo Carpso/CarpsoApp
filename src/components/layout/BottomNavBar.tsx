@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Compass, ShieldCheck, UserCircle, WifiOff, User as UserIcon } from 'lucide-react'; // Added UserIcon
+import { Home, Compass, ShieldCheck, UserCircle, WifiOff, User as UserIcon, LifeBuoy } from 'lucide-react'; // Added UserIcon, LifeBuoy
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import React, { useContext } from 'react'; // Added useContext
@@ -18,6 +18,7 @@ interface BottomNavBarProps {
 const navItemsBase = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/explore', label: 'Explore', icon: Compass },
+  { href: '/help', label: 'Help', icon: LifeBuoy }, // Added Help Centre link
 ];
 
 const adminItem = { href: '/admin', label: 'Admin', icon: ShieldCheck };
@@ -37,15 +38,22 @@ export default function BottomNavBar({ onAuthClick }: BottomNavBarProps) {
   // Add role-specific items
   if (isAuthenticated) {
     if (isAdminOrOwner) {
-        navItems.push(adminItem);
+        navItems.splice(2,0,adminItem); // Insert Admin link before Help for Admins/Owners
     } else if (isAttendant) {
-        navItems.push(attendantItem);
+        navItems.splice(2,0,attendantItem); // Insert Attendant link before Help
     }
   }
 
 
   const profileButtonLabel = isAuthenticated ? (userName ? userName.split(' ')[0] : 'Profile') : 'Sign In';
   const userInitial = userName ? userName.charAt(0).toUpperCase() : '?';
+
+  // Determine number of columns based on items + profile button
+  let gridColsClass = 'grid-cols-4'; // Default for (Home, Explore, Help) + Profile
+  if (navItems.length + 1 === 5) { // (Home, Explore, Admin/Attendant, Help) + Profile
+      gridColsClass = 'grid-cols-5';
+  }
+
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
@@ -57,10 +65,7 @@ export default function BottomNavBar({ onAuthClick }: BottomNavBarProps) {
        )}
       <div className={cn(
          "container mx-auto flex h-16 max-w-md items-center justify-around px-2",
-         // Adjust grid columns based on number of items + profile/auth
-         navItems.length + 1 === 5 ? "grid grid-cols-5" : // 4 nav + profile/auth
-         navItems.length + 1 === 4 ? "grid grid-cols-4" : // 3 nav + profile/auth
-         "grid grid-cols-3" // Default/fallback (2 nav + profile/auth)
+         gridColsClass
       )}>
         {/* Map Navigation Items */}
         {navItems.map((item) => {

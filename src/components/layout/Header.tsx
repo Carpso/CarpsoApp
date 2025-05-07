@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon } from 'lucide-react'; // Keep other icons
+import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy } from 'lucide-react'; // Keep other icons, Added LifeBuoy
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { AppStateContext } from '@/context/AppStateProvider';
@@ -35,7 +35,7 @@ export default function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
              <SheetHeader className="p-4 pb-2">
-               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
              </SheetHeader>
              <SheetClose asChild>
                  <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
@@ -60,6 +60,13 @@ export default function Header() {
                      </Link>
                    </Button>
                </SheetClose>
+                 <SheetClose asChild>
+                   <Button variant="ghost" className="justify-start" asChild>
+                     <Link href="/help" className="flex items-center gap-1">
+                        <LifeBuoy className="h-4 w-4" /> Help Centre
+                     </Link>
+                   </Button>
+                </SheetClose>
               {/* Conditionally show Admin/Owner link */}
                {isAuthenticated && isAdminOrOwner && (
                    <SheetClose asChild>
@@ -123,6 +130,9 @@ export default function Header() {
             </Link>
             <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <Compass className="h-4 w-4" /> Explore
+            </Link>
+             <Link href="/help" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+               <LifeBuoy className="h-4 w-4" /> Help
             </Link>
             {/* Conditionally show Admin/Owner link */}
             {isAuthenticated && isAdminOrOwner && (
