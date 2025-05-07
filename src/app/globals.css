@@ -5,7 +5,16 @@
 body {
   /* Use project-specific font if defined via CSS variables, otherwise fallback */
   font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  display: flex; /* Added for sticky footer */
+  flex-direction: column; /* Added for sticky footer */
+  min-height: 100vh; /* Added for sticky footer */
 }
+
+/* Define --header-height as a CSS variable if not already defined globally in JS/Head */
+:root {
+  --header-height: 4rem; /* Default, can be overridden by layout.tsx <style> tag */
+}
+
 
 @layer base {
   :root {

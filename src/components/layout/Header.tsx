@@ -2,14 +2,14 @@
 'use client';
 
 import Link from 'next/link';
-import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy } from 'lucide-react';
+import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy, MessageSquare } from 'lucide-react'; // Added MessageSquare
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { AppStateContext } from '@/context/AppStateProvider';
 import { useContext } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import CarpsoLogo from '@/components/icons/CarpsoLogo';
-import { ThemeToggle } from '@/components/theme/ThemeToggle'; // Import ThemeToggle
+import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
 export default function Header() {
   const { isAuthenticated, userRole, userName, userAvatarUrl, logout } = useContext(AppStateContext)!;
@@ -36,11 +36,11 @@ export default function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
              <SheetHeader className="p-4 pb-2">
-               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title for accessibility */}
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
              </SheetHeader>
              <SheetClose asChild>
                  <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
-                    <CarpsoLogo className="h-6 w-auto text-primary" />
+                    <CarpsoLogo className="h-8 w-auto text-primary" />
                     <span className="font-bold sr-only">Carpso</span>
                  </Link>
              </SheetClose>
@@ -59,6 +59,15 @@ export default function Header() {
                      </Link>
                    </Button>
                </SheetClose>
+               {isAuthenticated && (
+                <SheetClose asChild>
+                  <Button variant="ghost" className="justify-start" asChild>
+                    <Link href="/chat" className="flex items-center gap-1">
+                      <MessageSquare className="h-4 w-4" /> Messages
+                    </Link>
+                  </Button>
+                </SheetClose>
+               )}
                  <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
                      <Link href="/help" className="flex items-center gap-1">
@@ -109,7 +118,7 @@ export default function Header() {
 
         <div className="flex items-center mr-4">
           <Link href="/" className="flex items-center space-x-2">
-            <CarpsoLogo className="h-6 w-auto text-primary" />
+            <CarpsoLogo className="h-8 w-auto text-primary" /> {/* Increased size slightly */}
             <span className="hidden sm:inline-block font-bold">
               Carpso
             </span>
@@ -123,6 +132,11 @@ export default function Header() {
             <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <Compass className="h-4 w-4" /> Explore
             </Link>
+            {isAuthenticated && (
+              <Link href="/chat" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+                <MessageSquare className="h-4 w-4" /> Messages
+              </Link>
+            )}
              <Link href="/help" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
                <LifeBuoy className="h-4 w-4" /> Help
             </Link>
@@ -139,7 +153,7 @@ export default function Header() {
         </nav>
 
         <div className="hidden md:flex items-center justify-end space-x-2 ml-auto">
-             <ThemeToggle /> {/* Added ThemeToggle button */}
+             <ThemeToggle />
             {isAuthenticated ? (
                  <Link href="/profile" aria-label="View Profile">
                      <Button variant="ghost" className="flex items-center gap-2">

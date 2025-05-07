@@ -8,9 +8,8 @@ import Header from '@/components/layout/Header';
 import { Toaster } from "@/components/ui/toaster";
 import AppStateProvider from '@/context/AppStateProvider';
 import React, { useEffect, useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
-import Head from 'next/head';
-import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import Head from 'next/head'; // Import Head for metadata
+import { ThemeProvider } from '@/components/theme/ThemeProvider'; // Import ThemeProvider
 
 // If using Geist fonts, uncomment these lines and ensure the package is installed
 // const geistSans = GeistSans({
@@ -25,13 +24,15 @@ import { ThemeProvider } from '@/components/theme/ThemeProvider';
 // Define fallback font variables if Geist is not used
 const fallbackFontVariables = '';
 
+// Define a CSS variable for header height if not already globally available
+const HEADER_HEIGHT = '4rem'; // Example: 64px, adjust if your header height is different
+
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { toast } = useToast(); // This hook call needs to be within the component body or another hook
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -48,9 +49,6 @@ export default function RootLayout({
 
     if (!isConfigured) {
       console.warn('Tawk.to environment variables not set correctly. Live chat will be disabled.');
-      // Optionally, inform the user via a non-modal way or log this issue.
-      // For example, a small banner or a console message might be appropriate.
-      // Setting state here directly might cause issues if not handled carefully.
     }
 
     if (isConfigured) {
@@ -84,25 +82,23 @@ export default function RootLayout({
         };
         s1.onerror = (error) => {
             console.error("Error loading Tawk.to script:", error);
-            // Only toast if component is still mounted and toast context is available.
-            // This might be tricky if RootLayout itself is unmounting.
-            // Consider using a global error reporting service or context for critical errors.
-            // toast({ title: "Chat Error", description: "Could not load the live chat widget.", variant: "destructive" });
         };
 
         s0?.parentNode?.insertBefore(s1, s0);
         console.log("Tawk.to script injected.");
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClient]); // Removed toast from dependencies to avoid re-running this effect if toast object changes
+  }, [isClient]);
 
   return (
+    // No whitespace before <html>
     <html lang="en" suppressHydrationWarning>
       <Head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <title>Carpso - Smart Parking</title>
         <meta name="description" content="Find, predict, and reserve parking spots." />
+        {/* Define CSS variable for header height */}
+        <style>{`:root { --header-height: ${HEADER_HEIGHT}; }`}</style>
       </Head>
       <body className={`${fallbackFontVariables} antialiased min-h-screen bg-background font-sans`}>
         <ThemeProvider
@@ -112,9 +108,13 @@ export default function RootLayout({
             disableTransitionOnChange
         >
             <AppStateProvider>
-                <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">
+                {/* Adjust main div padding-bottom for BottomNavBar */}
+                <div className="relative flex min-h-screen flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
                     <Header />
-                    <main className="flex-1">{children}</main>
+                    {/* Main content takes remaining height, consider header height */}
+                    <main className="flex-1" style={{ minHeight: `calc(100vh - var(--header-height))` }}>
+                        {children}
+                    </main>
                 </div>
                 <Toaster />
             </AppStateProvider>
