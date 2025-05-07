@@ -1,43 +1,39 @@
 // src/components/map/ParkingLotMap.tsx
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react'; // Added useRef
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, Loader2, MapPinIcon } from 'lucide-react'; // Added Loader2, MapPinIcon
+import { AlertCircle, Loader2, MapPinIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 interface ParkingLotMapProps {
-    apiKey: string | undefined; // API key can be undefined if not set
+    apiKey: string | undefined;
     defaultLatitude: number;
     defaultLongitude: number;
-    onPinLocation?: (latitude: number, longitude: number, address?: string) => void; // Optional callback
+    onPinLocation?: (latitude: number, longitude: number, address?: string) => void;
     customClassName?: string;
 }
 
 const containerStyle = {
   width: '100%',
-  height: '300px',
+  height: '300px', // Default height, can be overridden by customClassName
 };
 
 export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitude, onPinLocation, customClassName }: ParkingLotMapProps) {
   const { toast } = useToast();
+  const isMounted = useRef(false); // To track if component is mounted
 
-  // Only attempt to load Google Maps if the API key is provided
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey || '', // Pass empty string if apiKey is undefined to avoid error, though guard below is better
+    googleMapsApiKey: apiKey || "YOUR_FALLBACK_API_KEY_OR_EMPTY_STRING", // Provide a fallback or handle if apiKey is truly optional
     libraries: ['places'],
-    preventGoogleFontsLoading: true, // Optional: if you handle fonts elsewhere
-    // Prevent loading if API key is explicitly not provided
-    // This hook will not run if apiKey is undefined due to the conditional rendering below.
-    // However, if it were to run, this check would be an additional safeguard.
-    // disabled: !apiKey,
+    preventGoogleFontsLoading: true,
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -50,10 +46,18 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
   });
 
   useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false; // Cleanup on unmount
+    };
+  }, []);
+
+
+  useEffect(() => {
     setLatitude(defaultLatitude);
     setLongitude(defaultLongitude);
     setMarkerPosition({ lat: defaultLatitude, lng: defaultLongitude });
-    if (map && isLoaded) {
+    if (map && isLoaded) { // Ensure map and API are loaded
         map.panTo({ lat: defaultLatitude, lng: defaultLongitude });
     }
   }, [defaultLatitude, defaultLongitude, map, isLoaded]);
@@ -62,8 +66,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
   const onLoad = useCallback(function callback(mapInstance: google.maps.Map) {
     setMap(mapInstance);
     mapInstance.panTo(markerPosition);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markerPosition]); // markerPosition ensures map pans to initial or updated marker
+  }, [markerPosition]);
 
   const onUnmount = useCallback(function callback() {
     setMap(null);
@@ -71,7 +74,9 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
 
    const geocodeAddress = async (addressString: string): Promise<{ lat: number, lng: number } | null> => {
         if (!isLoaded || typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Geocoder) {
-            toast({ title: "Map Not Ready", description: "Geocoder service is not available yet.", variant: "destructive" });
+            if (isMounted.current) { // Only toast if component is still mounted
+                 toast({ title: "Map Not Ready", description: "Geocoder service is not available yet.", variant: "destructive" });
+            }
             return null;
         }
         const geocoder = new window.google.maps.Geocoder();
@@ -83,9 +88,10 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
             } else {
                 return null;
             }
-        } catch (error: any) {
-            console.error("Geocoding error:", error);
-            throw new Error(error.message || "Failed to geocode address.");
+        } catch (error: any) { // Catch specific error
+            console.error("Geocoding error:", error.message); // Log error message
+            // Throw a new error or handle it, don't rely on the caught 'error' object structure if it's unknown
+            throw new Error("Failed to geocode address. Please check the address or try again.");
         }
     }
 
@@ -95,11 +101,11 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
 
    const handlePinByAddress = async () => {
        if (!address) {
-           toast({ title: "Missing Address", description: "Please enter an address to pin.", variant: "destructive" });
+           if (isMounted.current) toast({ title: "Missing Address", description: "Please enter an address to pin.", variant: "destructive" });
            return;
        }
        if (!isLoaded) {
-            toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
+            if (isMounted.current) toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
             return;
        }
        try {
@@ -109,14 +115,14 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
               setLongitude(coords.lng);
               setMarkerPosition(coords);
                map?.panTo(coords);
-               toast({ title: "Location Pinned", description: `Pinned to: ${address}.` });
+               if (isMounted.current) toast({ title: "Location Pinned", description: `Pinned to: ${address}.` });
                onPinLocation?.(coords.lat, coords.lng, address);
            } else {
-               toast({ title: "Address Not Found", description: "Could not find coordinates for the given address.", variant: "destructive" });
+               if (isMounted.current) toast({ title: "Address Not Found", description: "Could not find coordinates for the given address.", variant: "destructive" });
            }
        } catch (error: any) {
-           console.error("Geocoding error:", error);
-           toast({ title: "Geocoding Error", description: error.message || "Failed to find location from address.", variant: "destructive" });
+           console.error("Geocoding error:", error.message);
+           if (isMounted.current) toast({ title: "Geocoding Error", description: error.message || "Failed to find location from address.", variant: "destructive" });
        }
    };
 
@@ -128,28 +134,27 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
              setLatitude(newLat);
              setLongitude(newLng);
              setMarkerPosition({ lat: newLat, lng: newLng });
-             setAddress('');
+             setAddress(''); // Clear address when pinning manually
              map?.panTo({ lat: newLat, lng: newLng });
-             toast({ title: "Location Pinned", description: "Manually pinned location on the map." });
-             onPinLocation?.(newLat, newLng);
+             if (isMounted.current) toast({ title: "Location Pinned", description: "Manually pinned location on the map." });
+             onPinLocation?.(newLat, newLng); // Don't pass address if it's a manual map click
          }
-    }, [map, onPinLocation, toast, isLoaded]);
+    }, [map, onPinLocation, toast, isLoaded]); // Added toast and isLoaded to dependencies
 
 
     const handleConfirmPin = () => {
         if (!isLoaded) {
-             toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
+             if (isMounted.current) toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
              return;
         }
         if (onPinLocation) {
             onPinLocation(latitude, longitude, address || `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`);
-            toast({ title: "Location Confirmed", description: `Location pinned for recommendations.` });
+            if (isMounted.current) toast({ title: "Location Confirmed", description: `Location pinned for recommendations.` });
         } else {
-            toast({ title: "Info", description: `Current location: Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}` });
+            if (isMounted.current) toast({ title: "Info", description: `Current location: Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}` });
         }
     };
 
-  // If API key is missing, show an error and don't attempt to load the map
   if (!apiKey) {
     return (
       <div className={cn("w-full", customClassName)}>
@@ -166,7 +171,6 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
     );
   }
 
-  // Existing loading and error states for when the key IS provided but loading fails
   if (loadError) {
     return (
       <div className={cn("w-full", customClassName)}>
@@ -178,6 +182,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
             billing issues with your Google Cloud project, or network problems.
             Please check your API key configuration, ensure the Maps JavaScript API & Places API are enabled,
             and that billing is active on your project. Refer to README.md for detailed troubleshooting.
+            Error: {loadError.message}
           </AlertDescription>
         </Alert>
       </div>
@@ -195,7 +200,6 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
     );
   }
 
-  // Render the map if API key is present and loading is successful
   return (
     <div className={cn("w-full", customClassName)}>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2 items-end">
@@ -229,7 +233,7 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
            >
                 <Marker
                     position={markerPosition}
-                    draggable={false}
+                    draggable={false} // Keep draggable false for simplicity unless explicitly needed
                  />
            </GoogleMap>
         </div>

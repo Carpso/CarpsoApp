@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-'use client'; // Required for useEffect and useState
+'use client';
 
 import './globals.css';
 // import { GeistSans } from 'geist/font/sans'; // Assuming Geist fonts are installed
@@ -8,7 +8,6 @@ import Header from '@/components/layout/Header';
 import { Toaster } from "@/components/ui/toaster";
 import AppStateProvider from '@/context/AppStateProvider';
 import React, { useEffect, useState } from 'react';
-import type { Metadata } from 'next';
 import { useToast } from '@/hooks/use-toast';
 import Head from 'next/head';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
@@ -27,20 +26,12 @@ import { ThemeProvider } from '@/components/theme/ThemeProvider';
 const fallbackFontVariables = '';
 
 
-// Metadata can still be exported from client components in App Router
-// export const metadata: Metadata = {
-//   title: 'Carpso - Smart Parking',
-//   description: 'Find, predict, and reserve parking spots.',
-// };
-
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { toast } = useToast();
-  const [chatError, setChatError] = useState<string | null>(null);
+  const { toast } = useToast(); // This hook call needs to be within the component body or another hook
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -54,11 +45,12 @@ export default function RootLayout({
     const tawkWidgetId = process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID;
     const isConfigured = tawkPropertyId && tawkWidgetId && tawkPropertyId !== 'YOUR_PROPERTY_ID' && tawkWidgetId !== 'YOUR_WIDGET_ID';
 
-    setChatError(null);
 
     if (!isConfigured) {
       console.warn('Tawk.to environment variables not set correctly. Live chat will be disabled.');
-      setChatError('Live chat is currently unavailable (Configuration missing).');
+      // Optionally, inform the user via a non-modal way or log this issue.
+      // For example, a small banner or a console message might be appropriate.
+      // Setting state here directly might cause issues if not handled carefully.
     }
 
     if (isConfigured) {
@@ -66,7 +58,6 @@ export default function RootLayout({
         console.log("Tawk.to script already exists.");
         if (!(window as any).Tawk_API) {
              console.warn("Tawk.to script found, but API not initialized.");
-              setChatError("Chat failed to initialize properly. Try refreshing.");
         } else {
              console.log("Tawk.to API is available.");
         }
@@ -89,20 +80,22 @@ export default function RootLayout({
             console.log("Tawk.to script loaded successfully.");
             if (!(window as any).Tawk_API?.onLoad) {
                  console.error("Tawk.to script loaded, but API failed to initialize.");
-                 setChatError("Chat failed to initialize. Try refreshing.");
             }
         };
         s1.onerror = (error) => {
             console.error("Error loading Tawk.to script:", error);
-            setChatError("Failed to load live chat script.");
-            toast({ title: "Chat Error", description: "Could not load the live chat widget.", variant: "destructive" });
+            // Only toast if component is still mounted and toast context is available.
+            // This might be tricky if RootLayout itself is unmounting.
+            // Consider using a global error reporting service or context for critical errors.
+            // toast({ title: "Chat Error", description: "Could not load the live chat widget.", variant: "destructive" });
         };
 
         s0?.parentNode?.insertBefore(s1, s0);
         console.log("Tawk.to script injected.");
       }
     }
-  }, [isClient, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient]); // Removed toast from dependencies to avoid re-running this effect if toast object changes
 
   return (
     <html lang="en" suppressHydrationWarning>

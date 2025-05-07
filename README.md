@@ -29,7 +29,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         ```
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
         ```
-        This key is **ABSOLUTELY ESSENTIAL** for all map functionalities. If maps are not loading or you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or `RefererNotAllowedMapError`, it is **highly likely** due to an issue with this key or its configuration. Please follow these steps meticulously:
+        This key is **ABSOLUTELY ESSENTIAL** for all map functionalities. If maps are not loading or you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or `RefererNotAllowedMapError`, it is **highly likely** due to an issue with this key or its configuration. These errors are usually **NOT** due to a bug in the application code itself but rather problems with the API key setup in the Google Cloud Console. Please follow these steps meticulously:
 
         *   **Obtain/Verify Key:** Go to the [Google Cloud Console](https://console.cloud.google.com/).
         *   **Project Selection:** Ensure you have selected the correct Google Cloud Project.
@@ -38,7 +38,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         *   **Credentials:** Go to "APIs & Services" > "Credentials". Create a new API key or use an existing one.
         *   **API Key Restrictions (CRITICAL for Security & Functionality):**
             *   **Application restrictions:** Select "HTTP referrers (web sites)".
-                *   Add your development domain (e.g., `http://localhost:9002/*`, `http://localhost:3000/*`, or your specific dev port). **Ensure the port number and wildcard `/*` are correct.**
+                *   Add your development domain (e.g., `http://localhost:9002/*`, `http://localhost:3000/*`, or your specific dev port). **Ensure the port number and wildcard `/*` are correct.** If you are using a custom domain for development (e.g., via `/etc/hosts` or a proxy), ensure that domain is listed.
                 *   Add your production domain(s) when you deploy (e.g., `https://your-carpso-app.com/*`).
             *   **API restrictions:** Select "Restrict key".
                 *   In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API". Missing one will cause errors.
@@ -48,11 +48,12 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         **Troubleshooting Map Errors (`InvalidKeyMapError`, etc.):**
         1.  **Is the key in `.env`?** Is `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set and is it the exact key from the Google Cloud Console?
         2.  **BILLING ACCOUNT LINKED & ACTIVE?** This is a very frequent cause.
-        3.  **Maps JavaScript API & Places API ENABLED?** Both must be enabled.
-        4.  **HTTP Referrers Correct?** Are your dev (`http://localhost:PORT/*`) and production domains correctly listed?
-        5.  **API Restrictions Correct?** Key restricted to "Maps JavaScript API" and "Places API"?
+        3.  **Maps JavaScript API & Places API ENABLED?** Both must be enabled for your project.
+        4.  **HTTP Referrers Correct?** Are your dev (`http://localhost:PORT/*`) and production domains correctly listed? Are there any typos?
+        5.  **API Restrictions Correct?** Key restricted to **BOTH** "Maps JavaScript API" AND "Places API"?
         6.  **Restart Development Server:** After making changes to `.env`, **restart your Next.js development server** (`npm run dev`). Changes to `.env` are not hot-reloaded.
-        7.  **Browser Console:** Check the browser's developer console for more specific error messages from Google Maps.
+        7.  **Browser Console:** Check the browser's developer console for more specific error messages from Google Maps. These messages often provide direct clues.
+        8.  **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues related to the Maps APIs.
 
     *   **Google Generative AI API Key:**
         ```
