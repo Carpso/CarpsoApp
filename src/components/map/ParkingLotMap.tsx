@@ -8,12 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, Loader2 } from 'lucide-react'; // Added Loader2
+import { AlertCircle, Loader2, MapPinIcon } from 'lucide-react'; // Added Loader2, MapPinIcon
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 interface ParkingLotMapProps {
-    apiKey: string;
+    apiKey: string | undefined; // API key can be undefined if not set
     defaultLatitude: number;
     defaultLongitude: number;
     onPinLocation?: (latitude: number, longitude: number, address?: string) => void; // Optional callback
@@ -22,14 +22,22 @@ interface ParkingLotMapProps {
 
 const containerStyle = {
   width: '100%',
-  height: '300px', // Adjusted height for better embedding
+  height: '300px',
 };
 
 export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitude, onPinLocation, customClassName }: ParkingLotMapProps) {
+  const { toast } = useToast();
+
+  // Only attempt to load Google Maps if the API key is provided
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey,
-    libraries: ['places'], // Enable places library for potential geocoding/autocomplete
+    googleMapsApiKey: apiKey || '', // Pass empty string if apiKey is undefined to avoid error, though guard below is better
+    libraries: ['places'],
+    preventGoogleFontsLoading: true, // Optional: if you handle fonts elsewhere
+    // Prevent loading if API key is explicitly not provided
+    // This hook will not run if apiKey is undefined due to the conditional rendering below.
+    // However, if it were to run, this check would be an additional safeguard.
+    // disabled: !apiKey,
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -40,31 +48,27 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
       lat: defaultLatitude,
       lng: defaultLongitude
   });
-  const { toast } = useToast();
 
   useEffect(() => {
-    // Update marker and local lat/lng when default props change
     setLatitude(defaultLatitude);
     setLongitude(defaultLongitude);
     setMarkerPosition({ lat: defaultLatitude, lng: defaultLongitude });
-    if (map) {
+    if (map && isLoaded) {
         map.panTo({ lat: defaultLatitude, lng: defaultLongitude });
     }
-  }, [defaultLatitude, defaultLongitude, map]);
+  }, [defaultLatitude, defaultLongitude, map, isLoaded]);
 
 
   const onLoad = useCallback(function callback(mapInstance: google.maps.Map) {
     setMap(mapInstance);
-    // Optionally, set map center to initial marker position
     mapInstance.panTo(markerPosition);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // markerPosition can be added if needed, but might cause loop if map also updates it
+  }, [markerPosition]); // markerPosition ensures map pans to initial or updated marker
 
   const onUnmount = useCallback(function callback() {
     setMap(null);
   }, []);
 
-   // Geocoding function using Google's Geocoder
    const geocodeAddress = async (addressString: string): Promise<{ lat: number, lng: number } | null> => {
         if (!isLoaded || typeof window === 'undefined' || !window.google || !window.google.maps || !window.google.maps.Geocoder) {
             toast({ title: "Map Not Ready", description: "Geocoder service is not available yet.", variant: "destructive" });
@@ -94,13 +98,17 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
            toast({ title: "Missing Address", description: "Please enter an address to pin.", variant: "destructive" });
            return;
        }
+       if (!isLoaded) {
+            toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
+            return;
+       }
        try {
            const coords = await geocodeAddress(address);
            if (coords) {
               setLatitude(coords.lat);
               setLongitude(coords.lng);
               setMarkerPosition(coords);
-               map?.panTo(coords); // Center the map
+               map?.panTo(coords);
                toast({ title: "Location Pinned", description: `Pinned to: ${address}.` });
                onPinLocation?.(coords.lat, coords.lng, address);
            } else {
@@ -113,24 +121,26 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
    };
 
     const handleMapClick = useCallback((event: google.maps.MapMouseEvent) => {
-         if (event.latLng) {
+         if (event.latLng && isLoaded) {
             const newLat = event.latLng.lat();
             const newLng = event.latLng.lng();
 
              setLatitude(newLat);
              setLongitude(newLng);
              setMarkerPosition({ lat: newLat, lng: newLng });
-             // Clear address input since pinning manually
              setAddress('');
              map?.panTo({ lat: newLat, lng: newLng });
              toast({ title: "Location Pinned", description: "Manually pinned location on the map." });
              onPinLocation?.(newLat, newLng);
          }
-    }, [map, onPinLocation, toast]);
+    }, [map, onPinLocation, toast, isLoaded]);
 
 
     const handleConfirmPin = () => {
-        // Uses the current `latitude` and `longitude` (and `address` if manually typed & geocoded)
+        if (!isLoaded) {
+             toast({ title: "Map Not Ready", description: "Please wait for the map to load.", variant: "default" });
+             return;
+        }
         if (onPinLocation) {
             onPinLocation(latitude, longitude, address || `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`);
             toast({ title: "Location Confirmed", description: `Location pinned for recommendations.` });
@@ -139,71 +149,97 @@ export default function ParkingLotMap({ apiKey, defaultLatitude, defaultLongitud
         }
     };
 
-  return (
-    <div className={cn("w-full", customClassName)}>
-      {loadError && (
+  // If API key is missing, show an error and don't attempt to load the map
+  if (!apiKey) {
+    return (
+      <div className={cn("w-full", customClassName)}>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Google Maps API Key Missing</AlertTitle>
+          <AlertDescription>
+            The Google Maps API key is not configured. Map functionality is disabled.
+            Please set the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` environment variable.
+            Refer to the README.md for setup instructions.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Existing loading and error states for when the key IS provided but loading fails
+  if (loadError) {
+    return (
+      <div className={cn("w-full", customClassName)}>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Google Maps Error</AlertTitle>
           <AlertDescription>
-            Could not load Google Maps. This might be due to an invalid or misconfigured API key,
+            Could not load Google Maps. This might be due to an invalid or misconfigured API key (InvalidKeyMapError),
             billing issues with your Google Cloud project, or network problems.
-            Please check your API key configuration and ensure the Maps JavaScript API is enabled.
+            Please check your API key configuration, ensure the Maps JavaScript API & Places API are enabled,
+            and that billing is active on your project. Refer to README.md for detailed troubleshooting.
           </AlertDescription>
         </Alert>
-      )}
-      {!isLoaded && !loadError && (
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className={cn("w-full", customClassName)}>
         <div className="flex items-center justify-center h-[300px] bg-muted rounded-md">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="ml-2 text-muted-foreground">Loading Map...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="ml-2 text-muted-foreground">Loading Map...</p>
         </div>
-      )}
-      {isLoaded && !loadError && (
-        <>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2 items-end">
-                <div>
-                    <Label htmlFor="map-address-input">Enter Address to Pin</Label>
-                    <Input
-                        type="text"
-                        id="map-address-input"
-                        placeholder="e.g., Cairo Rd, Lusaka"
-                        value={address}
-                        onChange={handleAddressChange}
-                        className="mt-1"
-                    />
-                </div>
-                <Button size="sm" onClick={handlePinByAddress} className="w-full md:w-auto">Pin from Address</Button>
-            </div>
+      </div>
+    );
+  }
 
-           <div className="rounded-md overflow-hidden border shadow-sm" style={containerStyle}>
-               <GoogleMap
-                   mapContainerStyle={{ width: '100%', height: '100%' }} // Ensure map fills its container
-                   center={markerPosition}
-                   zoom={15}
-                   onLoad={onLoad}
-                   onUnmount={onUnmount}
-                   onClick={handleMapClick}
-                   options={{
-                     streetViewControl: true, // Enable street view
-                     mapTypeControl: true, // Enable map type (Satellite, Terrain)
-                     fullscreenControl: false, // Disable fullscreen for embedded view
-                    }}
-               >
-                    <Marker
-                        position={markerPosition}
-                        draggable={false} // Consider making it draggable if needed with onDragEnd
-                     />
-               </GoogleMap>
+  // Render the map if API key is present and loading is successful
+  return (
+    <div className={cn("w-full", customClassName)}>
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2 items-end">
+            <div>
+                <Label htmlFor="map-address-input">Enter Address to Pin</Label>
+                <Input
+                    type="text"
+                    id="map-address-input"
+                    placeholder="e.g., Cairo Rd, Lusaka"
+                    value={address}
+                    onChange={handleAddressChange}
+                    className="mt-1"
+                />
             </div>
-            <p className="text-xs text-muted-foreground mt-1 text-center">Click on the map to set a pin manually.</p>
+            <Button size="sm" onClick={handlePinByAddress} className="w-full md:w-auto">Pin from Address</Button>
+        </div>
 
-            <div className="flex justify-end mt-3">
-                <Button size="default" onClick={handleConfirmPin}>
-                    Use This Pinned Location
-                </Button>
-            </div>
-        </>
-      )}
+       <div className="rounded-md overflow-hidden border shadow-sm" style={containerStyle}>
+           <GoogleMap
+               mapContainerStyle={{ width: '100%', height: '100%' }}
+               center={markerPosition}
+               zoom={15}
+               onLoad={onLoad}
+               onUnmount={onUnmount}
+               onClick={handleMapClick}
+               options={{
+                 streetViewControl: true,
+                 mapTypeControl: true,
+                 fullscreenControl: false,
+                }}
+           >
+                <Marker
+                    position={markerPosition}
+                    draggable={false}
+                 />
+           </GoogleMap>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 text-center">Click on the map to set a pin manually.</p>
+
+        <div className="flex justify-end mt-3">
+            <Button size="default" onClick={handleConfirmPin}>
+                Use This Pinned Location
+            </Button>
+        </div>
     </div>
   );
 }
