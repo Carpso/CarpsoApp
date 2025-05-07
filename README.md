@@ -2,46 +2,68 @@
 
 This is a NextJS application demonstrating a smart parking solution using IoT sensor data and AI predictions.
 
-## **VERY IMPORTANT: Google Maps API Key Setup**
+## **VERY IMPORTANT: Google Maps API Key Setup for Development & Production**
 
 The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application to work correctly. If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or `RefererNotAllowedMapError`, or if maps are simply not loading, it is **EXTREMELY LIKELY** due to an issue with your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` or its configuration in the Google Cloud Console.
 
-**PLEASE FOLLOW THESE STEPS METICULOUSLY:**
+**PLEASE FOLLOW THESE STEPS METICULOUSLY for both Development and Production environments:**
 
-1.  **Obtain/Verify Key:** Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2.  **Project Selection:** Ensure you have selected the correct Google Cloud Project.
-3.  **Billing Enabled (CRUCIAL):** Verify that **Billing is enabled** for your Google Cloud Project. The Google Maps Platform **requires** a billing account, even if your usage is within the free tier. This is the **MOST COMMON CAUSE** of `InvalidKeyMapError` or maps failing to load. If billing is not enabled, the API key will be treated as invalid.
-4.  **Enable APIs (CRUCIAL):** For the selected project, go to "APIs & Services" > "Library" and ensure **BOTH** the **Maps JavaScript API** AND the **Places API** are **ENABLED**. If one is missing, maps or related features will fail.
-5.  **Credentials:** Go to "APIs & Services" > "Credentials". Create a new API key or use an existing one.
-6.  **API Key Restrictions (CRITICAL for Security & Functionality):**
+1.  **Obtain/Verify API Key:**
+    *   Go to the [Google Cloud Console](https://console.cloud.google.com/).
+    *   **Project Selection:** Ensure you have selected the correct Google Cloud Project for your environment (one for development, potentially a separate one for production, or ensure your single project is configured for both).
+
+2.  **Billing Enabled (CRUCIAL):**
+    *   Verify that **Billing is enabled** for your Google Cloud Project. The Google Maps Platform **requires** a billing account, even if your usage is within the free tier. This is the **MOST COMMON CAUSE** of `InvalidKeyMapError` or maps failing to load.
+    *   Ensure the project's billing account is in good standing.
+
+3.  **Enable APIs (CRUCIAL):**
+    *   For the selected project, go to "APIs & Services" > "Library".
+    *   Ensure **BOTH** the **Maps JavaScript API** AND the **Places API** are **ENABLED**. If one is missing, maps or related features will fail.
+
+4.  **Credentials & API Key Creation:**
+    *   Go to "APIs & Services" > "Credentials".
+    *   Create a new API key or use an existing one. It's recommended to use separate keys for development and production for better security and quota management.
+
+5.  **API Key Restrictions (CRITICAL for Security & Functionality):**
     *   **Application restrictions:**
         *   Select "HTTP referrers (web sites)".
-        *   **Development:** Add your development domain (e.g., `http://localhost:9002/*`, `http://localhost:3000/*`, or your specific dev port). **Ensure the port number and wildcard `/*` are correct.** If you are using a custom domain for development (e.g., via `/etc/hosts` or a proxy), ensure that domain is listed.
-        *   **Production:** Add your production domain(s) when you deploy (e.g., `https://your-carpso-app.com/*`).
+        *   **For Development:** Add your development domain(s) (e.g., `http://localhost:3000/*`, `http://localhost:9002/*`, or your specific dev port). Ensure the port number and wildcard `/*` are correct. If using a custom domain for development (e.g., via `/etc/hosts` or a proxy), ensure that domain is listed.
+        *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`). **This is critical for the map to work when deployed.**
     *   **API restrictions:**
         *   Select "Restrict key".
         *   In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API". Missing one will cause errors.
-7.  **Set Environment Variable:** Create a `.env` file in the root directory of your project (if it doesn't exist). Add the following line, replacing `YOUR_GOOGLE_MAPS_API_KEY` with your actual key:
-    ```
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
-    ```
+
+6.  **Set Environment Variable (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`):**
+    *   **For Development:** Create a `.env.local` file (or `.env`) in the root directory of your project. Add the following line, replacing `YOUR_DEV_GOOGLE_MAPS_API_KEY` with your actual development key:
+        ```
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY
+        ```
+    *   **For Production:** Set this environment variable in your production environment (e.g., Vercel, Netlify, Firebase Functions environment settings, Docker environment variables, etc.). **Do not commit your production API key to your Git repository.** Use your production-specific API key here.
+        ```
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_PRODUCTION_GOOGLE_MAPS_API_KEY
+        ```
     *   **Double-check:** Ensure the key is copied exactly without extra spaces or characters.
     *   **Prefix:** The `NEXT_PUBLIC_` prefix is essential for Next.js to expose the variable to the client-side.
-8.  **Wait for Propagation:** Sometimes, it can take a few minutes (up to 5-10 minutes) for API key changes or enabled APIs to propagate through Google's systems.
-9.  **Restart Development Server:** After making any changes to your `.env` file, **you MUST restart your Next.js development server** (e.g., `npm run dev`). Environment variable changes are not hot-reloaded.
+
+7.  **Wait for Propagation:**
+    *   Sometimes, it can take a few minutes (up to 5-10 minutes) for API key changes or enabled APIs to propagate through Google's systems.
+
+8.  **Restart/Redeploy:**
+    *   **For Development:** After making any changes to your `.env.local` file, **you MUST restart your Next.js development server** (e.g., `npm run dev`).
+    *   **For Production:** After setting/updating environment variables in your hosting provider, you may need to **redeploy your application** for the changes to take effect.
 
 **TROUBLESHOOTING MAP ERRORS (`InvalidKeyMapError`, `ApiNotActivatedMapError`, etc.):**
 
-1.  **Is Billing ENABLED on your Google Cloud Project?** This is the **most frequent cause** for `InvalidKeyMapError` or maps not loading. Double-check this first.
-2.  **Is the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set in your `.env` file?**
+1.  **Is Billing ENABLED on your Google Cloud Project?** This is the **most frequent cause**.
+2.  **Is the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set in your `.env.local` (for dev) AND in your production environment settings?**
     *   Does it have the `NEXT_PUBLIC_` prefix?
-    *   Is the key copied exactly without typos or extra spaces?
+    *   Is the key copied exactly?
 3.  **Are BOTH Maps JavaScript API AND Places API enabled in the Google Cloud Console for your project?**
-4.  **Are HTTP Referrers configured correctly for `localhost:YOUR_PORT/*` (for development) and your production domain?** Check for typos and ensure the port number is correct.
+4.  **Are HTTP Referrers configured correctly for `localhost:YOUR_PORT/*` (development) AND your production domain(s)?** Check for typos, ensure the port number is correct, and use `/*` at the end of the domain.
 5.  **Is the API key restricted to BOTH Maps JavaScript API AND Places API under "API restrictions"?**
-6.  **Did you RESTART your Next.js development server after changing the `.env` file?**
-7.  **Check the Browser Console:** Open your browser's developer console (usually F12) and look for more specific error messages from Google Maps. These messages often provide direct clues.
-8.  **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues related to the Maps APIs.
+6.  **Did you RESTART your Next.js development server (for dev) or REDEPLOY (for production) after changes?**
+7.  **Check the Browser Console:** Open your browser's developer console (usually F12) and look for more specific error messages from Google Maps.
+8.  **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues.
 
 ---
 
@@ -66,18 +88,18 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
     npm install
     ```
 2.  **Set up Environment Variables:**
-    *   Create a `.env` file in the root directory (if you haven't already for the Google Maps API key).
+    *   Create a `.env.local` file in the root directory for development (refer to the Google Maps API key setup above).
     *   **Google Generative AI API Key:**
         ```
         GOOGLE_GENAI_API_KEY=YOUR_GOOGLE_AI_STUDIO_API_KEY
         ```
-        Obtain this key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+        Obtain this key from [Google AI Studio](https://aistudio.google.com/app/apikey). Ensure this is also set in your production environment.
     *   **(Optional) Tawk.to Live Chat:** For live chat functionality:
         ```
         NEXT_PUBLIC_TAWKTO_PROPERTY_ID=YOUR_TAWKTO_PROPERTY_ID
         NEXT_PUBLIC_TAWKTO_WIDGET_ID=YOUR_TAWKTO_WIDGET_ID
         ```
-        Obtain these from your [Tawk.to Dashboard](https://dashboard.tawk.to/).
+        Obtain these from your [Tawk.to Dashboard](https://dashboard.tawk.to/). Set these in production if using the feature.
     *   **(Optional) Social Media Links:** For links in the user profile (editable in Admin settings):
         ```
         NEXT_PUBLIC_FACEBOOK_LINK=YOUR_FACEBOOK_PAGE_URL
@@ -86,12 +108,13 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
         NEXT_PUBLIC_TIKTOK_LINK=YOUR_TIKTOK_PROFILE_URL
         NEXT_PUBLIC_WEBSITE_LINK=YOUR_OFFICIAL_WEBSITE_URL
         ```
+        Set these in production if these links are desired.
 
 3.  **Run Development Server:**
     ```bash
     npm run dev
     ```
-    This starts the Next.js app on `http://localhost:9002`.
+    This starts the Next.js app on `http://localhost:9002` (or your configured port).
 4.  **(Optional) Run Genkit Development Server:**
     If you are actively developing or testing the Genkit flows, run:
     ```bash
