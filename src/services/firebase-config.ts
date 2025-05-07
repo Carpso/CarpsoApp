@@ -28,15 +28,25 @@ const requiredConfigKeys: (keyof typeof firebaseConfig)[] = [
 let missingKeys = false;
 for (const key of requiredConfigKeys) {
   if (!firebaseConfig[key]) {
-    console.error(`Firebase config error: Missing environment variable NEXT_PUBLIC_FIREBASE_${key.toUpperCase().replace('ID', '_ID')}`);
+    let expectedEnvVar = `NEXT_PUBLIC_FIREBASE_`;
+    if (key === 'apiKey') {
+      expectedEnvVar += 'API_KEY';
+    } else if (key === 'appId') {
+      expectedEnvVar += 'APP_ID';
+    } else if (key === 'messagingSenderId') {
+      expectedEnvVar += 'MESSAGING_SENDER_ID';
+    } else if (key === 'projectId') {
+      expectedEnvVar += 'PROJECT_ID';
+    } else {
+      expectedEnvVar += key.toUpperCase();
+    }
+    console.error(`Firebase config error: Missing environment variable ${expectedEnvVar}`);
     missingKeys = true;
   }
 }
 
 if (missingKeys) {
-  console.error("One or more Firebase environment variables are missing. Please check your .env.local or environment configuration.");
-  // Optionally, you could throw an error here or prevent app initialization
-  // For now, it will proceed and likely fail at Firebase service initialization, which is what the user is seeing.
+  console.error("One or more Firebase environment variables are missing. Please check your .env.local or environment configuration as per the README.md.");
 }
 
 
@@ -46,14 +56,10 @@ if (!getApps().length) {
   if (!missingKeys) { // Only initialize if all keys are present
     app = initializeApp(firebaseConfig);
   } else {
-    // Create a dummy app object or handle the error gracefully
-    // This part depends on how you want to handle missing Firebase config
-    // For now, we'll let it potentially error out later if services are used without a valid app
-    console.error("Firebase app not initialized due to missing configuration.");
-    // A proper fallback or error state in the UI would be ideal here.
-    // For the purpose of fixing the immediate error, we ensure `app` is defined
-    // but Firebase services might not work.
-    app = {} as FirebaseApp; // This is a temporary measure to avoid undefined `app`
+    console.error("Firebase app not initialized due to missing configuration. Please ensure all NEXT_PUBLIC_FIREBASE_... environment variables are set correctly.");
+    // Create a dummy app object to prevent crashes in some parts of the app,
+    // but Firebase services will not function correctly.
+    app = {} as FirebaseApp;
   }
 } else {
   app = getApps()[0];
@@ -65,23 +71,29 @@ let auth: Auth | undefined;
 let firestore: Firestore | undefined;
 let storage: FirebaseStorage | undefined;
 
-if (app && Object.keys(app).length > 0 && !missingKeys) { // Check if 'app' is a real FirebaseApp instance
+// Check if 'app' is a real FirebaseApp instance and not the dummy object
+const isRealFirebaseApp = app && typeof app.options === 'object' && app.options.apiKey;
+
+if (isRealFirebaseApp && !missingKeys) {
   try {
     auth = getAuth(app);
     firestore = getFirestore(app);
     storage = getStorage(app);
   } catch (e) {
     console.error("Error initializing Firebase services. This is likely due to invalid or missing Firebase config values.", e);
-    // Set services to undefined so the app doesn't crash immediately trying to use them
     auth = undefined;
     firestore = undefined;
     storage = undefined;
   }
 } else {
-  console.warn("Firebase services not initialized because the Firebase app could not be initialized (missing config).");
+  if (missingKeys) {
+    console.warn("Firebase services not initialized because the Firebase app could not be initialized (missing or invalid config).");
+  } else if (!isRealFirebaseApp) {
+    console.warn("Firebase services not initialized because a valid Firebase app instance is not available.");
+  }
 }
 
 
-// const analytics: Analytics | undefined = typeof window !== 'undefined' && app && Object.keys(app).length > 0 && !missingKeys ? getAnalytics(app) : undefined; // Optional
+// const analytics: Analytics | undefined = typeof window !== 'undefined' && isRealFirebaseApp && !missingKeys ? getAnalytics(app) : undefined; // Optional
 
 export { app, auth, firestore, storage /*, analytics */ };
