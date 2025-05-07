@@ -1,7 +1,7 @@
 // src/app/help/page.tsx
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react'; // Added useState import
 import {
   Accordion,
   AccordionContent,
@@ -9,7 +9,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LifeBuoy, Search, Mic, Square, CheckSquare } from 'lucide-react'; // Added Mic, Square, CheckSquare
+import { LifeBuoy, Search, Mic, Square, CheckSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
