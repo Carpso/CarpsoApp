@@ -10,7 +10,7 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
 
 1.  **Obtain/Verify Key:** Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2.  **Project Selection:** Ensure you have selected the correct Google Cloud Project.
-3.  **Billing Enabled (CRUCIAL):** Verify that **Billing is enabled** for your Google Cloud Project. The Google Maps Platform **requires** a billing account, even if your usage is within the free tier. This is the **MOST COMMON CAUSE** of `InvalidKeyMapError` or maps failing to load.
+3.  **Billing Enabled (CRUCIAL):** Verify that **Billing is enabled** for your Google Cloud Project. The Google Maps Platform **requires** a billing account, even if your usage is within the free tier. This is the **MOST COMMON CAUSE** of `InvalidKeyMapError` or maps failing to load. If billing is not enabled, the API key will be treated as invalid.
 4.  **Enable APIs (CRUCIAL):** For the selected project, go to "APIs & Services" > "Library" and ensure **BOTH** the **Maps JavaScript API** AND the **Places API** are **ENABLED**. If one is missing, maps or related features will fail.
 5.  **Credentials:** Go to "APIs & Services" > "Credentials". Create a new API key or use an existing one.
 6.  **API Key Restrictions (CRITICAL for Security & Functionality):**
@@ -31,14 +31,17 @@ The Google Maps functionality is **ABSOLUTELY ESSENTIAL** for this application t
 9.  **Restart Development Server:** After making any changes to your `.env` file, **you MUST restart your Next.js development server** (e.g., `npm run dev`). Environment variable changes are not hot-reloaded.
 
 **TROUBLESHOOTING MAP ERRORS (`InvalidKeyMapError`, `ApiNotActivatedMapError`, etc.):**
-*   **Is the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set in your `.env` file and does it have the `NEXT_PUBLIC_` prefix?**
-*   **Is Billing ENABLED on your Google Cloud Project?** (Very common issue)
-*   **Are BOTH Maps JavaScript API AND Places API enabled in the Google Cloud Console for your project?**
-*   **Are HTTP Referrers configured correctly for `localhost:YOUR_PORT/*` and your production domain?** (Check for typos, correct port)
-*   **Is the key restricted to BOTH Maps JavaScript API AND Places API?**
-*   **Did you RESTART your Next.js development server after changing `.env`?**
-*   **Check the Browser Console:** Open your browser's developer console (usually F12) and look for more specific error messages from Google Maps. These messages often provide direct clues.
-*   **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues related to the Maps APIs.
+
+1.  **Is Billing ENABLED on your Google Cloud Project?** This is the **most frequent cause** for `InvalidKeyMapError` or maps not loading. Double-check this first.
+2.  **Is the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` correctly set in your `.env` file?**
+    *   Does it have the `NEXT_PUBLIC_` prefix?
+    *   Is the key copied exactly without typos or extra spaces?
+3.  **Are BOTH Maps JavaScript API AND Places API enabled in the Google Cloud Console for your project?**
+4.  **Are HTTP Referrers configured correctly for `localhost:YOUR_PORT/*` (for development) and your production domain?** Check for typos and ensure the port number is correct.
+5.  **Is the API key restricted to BOTH Maps JavaScript API AND Places API under "API restrictions"?**
+6.  **Did you RESTART your Next.js development server after changing the `.env` file?**
+7.  **Check the Browser Console:** Open your browser's developer console (usually F12) and look for more specific error messages from Google Maps. These messages often provide direct clues.
+8.  **Google Cloud Console Quotas & Errors:** Check the "APIs & Services" > "Dashboard" in the Google Cloud Console for your project. Look for any errors or quota issues related to the Maps APIs.
 
 ---
 
