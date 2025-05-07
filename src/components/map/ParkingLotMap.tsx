@@ -112,9 +112,14 @@ export default function ParkingLotMap({
           <AlertTitle>Google Maps API Key Missing!</AlertTitle>
           <AlertDescription>
             The `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is not configured in your environment variables (e.g., `.env.local` or `.env`).
-            Map functionality is disabled.
-            <br />
-            <strong>Please carefully review the &quot;Google Maps API Key Setup&quot; section in the `README.md` file</strong> for detailed setup instructions. This is crucial for the app to work.
+            Map functionality is disabled. Common causes for map errors (like `InvalidKeyMapError`) include:
+            <ul className="list-disc pl-5 mt-2 text-xs">
+                <li>Typo in the API key.</li>
+                <li>The API key is not authorized to use the **Maps JavaScript API** and **Places API**.</li>
+                <li>**Billing is not enabled** for your Google Cloud Project (this is the most common cause).</li>
+                <li>The API key has incorrect restrictions (e.g., HTTP referrer or API restrictions that do not include this site or the required APIs).</li>
+            </ul>
+            <strong>Please carefully review the &quot;Google Maps API Key Setup&quot; section in the `README.md` file</strong> for detailed setup and troubleshooting instructions. This is crucial for the app to work.
           </AlertDescription>
         </Alert>
       </div>
@@ -140,7 +145,7 @@ export default function ParkingLotMap({
                 <ul className="list-disc pl-5 mt-2 text-xs">
                   <li>Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in your `.env.local` (or `.env`) file is correct and has no extra spaces.</li>
                   <li>Verify that **Billing is enabled** for your Google Cloud Project.</li>
-                  <li>Ensure **Maps JavaScript API** and **Places API** are enabled in the Google Cloud Console.</li>
+                  <li>Ensure **Maps JavaScript API** AND **Places API** are enabled in the Google Cloud Console.</li>
                   <li>Check API key restrictions (HTTP referrers, API restrictions) in the Google Cloud Console.</li>
                   <li>Restart your Next.js development server after any `.env` changes.</li>
                 </ul>
@@ -158,8 +163,8 @@ export default function ParkingLotMap({
 
   if (!isLoaded) {
     return (
-      <div className={cn("w-full", customClassName)}>
-        <div className="flex items-center justify-center h-[300px] bg-muted rounded-md">
+      <div className={cn("w-full bg-muted", customClassName)} style={containerStyle}>
+        <div className="flex items-center justify-center h-full rounded-md">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="ml-2 text-muted-foreground">Loading Map...</p>
         </div>
@@ -180,7 +185,7 @@ export default function ParkingLotMap({
                  streetViewControl: true,
                  mapTypeControl: true,
                  fullscreenControl: false,
-                 mapId: 'CARPSO_MAP_ID',
+                 mapId: 'CARPSO_MAP_ID', // Consider making this dynamic or removing if not styled
                  clickableIcons: false,
                 }}
            >
@@ -230,7 +235,7 @@ export default function ParkingLotMap({
                            color: 'hsl(var(--primary-foreground))',
                            fontSize: '10px',
                            fontWeight: 'bold',
-                           className: 'bg-primary px-1 py-0.5 rounded-sm shadow-md' // Ensure Tailwind classes for label styling are effective
+                           className: 'bg-primary px-1 py-0.5 rounded-sm shadow-md' 
                          }}
                          title={`Pinned Car at ${pinnedCarLocation.spotId}`}
                          zIndex={10}
@@ -252,3 +257,4 @@ export default function ParkingLotMap({
     </div>
   );
 }
+

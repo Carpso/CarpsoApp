@@ -20,27 +20,37 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
 
 3.  **Enable APIs (CRUCIAL):**
     *   For the selected project, go to "APIs & Services" > "Library".
-    *   Ensure **Maps JavaScript API** AND **Places API** are **ENABLED**.
+    *   Ensure **Maps JavaScript API** AND **Places API** are **ENABLED**. If these are not enabled, you might encounter `ApiNotActivatedMapError`.
 
 4.  **Credentials & API Key Creation:**
-    *   Go to "APIs & Services" > "Credentials". Create or use an existing API key.
+    *   Go to "APIs & Services" > "Credentials". Create or use an existing API key. If the key is missing entirely in your `.env` file, you'll see `MissingKeyMapError`.
 
 5.  **API Key Restrictions (CRITICAL for Security & Functionality):**
     *   **Application restrictions:** Select "HTTP referrers (web sites)".
-        *   **For Development:** Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`).
+        *   **For Development:** Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
         *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
+        *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
     *   **API restrictions:** Select "Restrict key". In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API".
+        *   *If the key is not authorized for these APIs, you might see `ApiNotActivatedMapError` or `InvalidKeyMapError`.*
 
 6.  **Set Environment Variable (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`):**
     *   **For Development:** Create a `.env.local` file (or `.env`) in your project root. Add:
         ```
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE
         ```
+        Ensure there are no typos in the key or the variable name.
     *   **For Production:** Set this in your production environment settings (e.g., Vercel, Netlify). **Do not commit production keys to Git.**
 
 7.  **Wait & Restart/Redeploy:** Allow a few minutes for changes to propagate. Restart your dev server or redeploy your production app.
 
-**TROUBLESHOOTING MAP ERRORS:** Review the steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
+**TROUBLESHOOTING MAP ERRORS:**
+If you see:
+*   `InvalidKeyMapError`: Double-check the key for typos, ensure billing is enabled, and that the key is authorized for Maps JavaScript API & Places API.
+*   `ApiNotActivatedMapError`: Make sure Maps JavaScript API and Places API are explicitly ENABLED in the Google Cloud Console library for your project.
+*   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set in your `.env.local` or production environment.
+*   `RefererNotAllowedMapError`: Verify your "HTTP referrers" in the API key restrictions. For dev, `http://localhost:YOUR_PORT/*` is common. For production, it must be your live domain.
+
+Review all steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
 ---
 
