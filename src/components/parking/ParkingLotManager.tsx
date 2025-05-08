@@ -8,7 +8,7 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot';
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge"; // Corrected import
+import { Badge } from "@/components/ui/badge";
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon, LocateFixed, Car } from 'lucide-react';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { AppStateContext } from '@/context/AppStateProvider';
 import BottomNavBar from '@/components/layout/BottomNavBar';
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow';
 import { getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service';
-import { calculateEstimatedCost, ParkingRecord } from '@/services/pricing-service';
+import { calculateEstimatedCost, ParkingRecord } from '@/services/pricing-service'; // Ensure ParkingRecord is imported
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant';
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow';
 import { cn } from '@/lib/utils';
@@ -81,7 +81,7 @@ export default function ParkingLotManager() {
 
     const cacheKey = 'cachedParkingLotsWithExternal_v2';
     const cacheTimestampKey = `${cacheKey}Timestamp`;
-    const maxCacheAge = isVisibleCtx ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 mins if visible, 1hr if not
+    const maxCacheAge = isVisibleCtx ? 5 * 60 * 1000 : 60 * 60 * 1000;
     let newAllLots: ParkingLot[] = [];
 
     if (!forceRefresh && typeof window !== 'undefined') {
@@ -900,6 +900,7 @@ export default function ParkingLotManager() {
                                 showUserCar={true}
                                 pinnedCarLocation={pinnedSpot}
                                 centerCoordinates={mapCenter}
+                                defaultMapType="satellite" // Use satellite view for pinned car
                             />
                         ) : (
                             <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-sm">
@@ -1084,14 +1085,15 @@ export default function ParkingLotManager() {
       {/* Modals */}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
        {isClient && <BottomNavBar onAuthClick={() => setIsAuthModalOpen(true)} />}
+        {/* Report Issue Modal (Now also potentially triggered by voice) */}
         <ReportIssueModal
             isOpen={isReportModalOpen}
             onClose={() => {
                  setIsReportModalOpen(false);
-                 setTimeout(() => setReportingReservation(null), 300);
+                 setTimeout(() => setReportingReservation(null), 300); // Delay reset for animation
             }}
             reservation={reportingReservation}
-            userId={userId || ''}
+            userId={userId || ''} // Pass userId
        />
    </div>
  );

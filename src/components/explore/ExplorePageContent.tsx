@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
+import ParkingLotMap from '@/components/map/ParkingLotMap'; // Import the map component
 
 interface FeaturedService {
     id: number | string;
@@ -27,6 +28,8 @@ interface FeaturedService {
     icon: React.ElementType;
     serviceType: ParkingLotService;
     imageUrl?: string;
+    latitude?: number;
+    longitude?: number;
 }
 
 const submitLotRecommendation = async (name: string, location: string, reason: string): Promise<boolean> => {
@@ -46,14 +49,14 @@ export default function ExplorePageContent() {
     const [recommendReason, setRecommendReason] = useState('');
     const [isSubmittingRecommendation, setIsSubmittingRecommendation] = useState(false);
     const { toast } = useToast();
-    const { isOnline, userId, userRole } = useContext(AppStateContext)!; // Include userId and userRole
+    const { isOnline, userId, userRole } = useContext(AppStateContext)!;
+    const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null); // State for map centering
 
     useEffect(() => {
         const fetchExploreData = async () => {
             setIsLoadingAds(true);
             setIsLoadingLots(true);
 
-             // Load from cache first if offline
             let cachedAds: Advertisement[] = [];
             let cachedLots: ParkingLot[] = [];
             if (!isOnline && typeof window !== 'undefined') {
@@ -71,22 +74,27 @@ export default function ExplorePageContent() {
                 setLots(cachedLots);
                 setIsLoadingAds(false);
                 setIsLoadingLots(false);
+                // Set map center to first cached lot if available
+                if (cachedLots[0]) {
+                    setMapCenter({ lat: cachedLots[0].latitude, lng: cachedLots[0].longitude });
+                }
                 return;
             }
 
-            // If online or no cache, fetch fresh
              if (isOnline) {
                 try {
                     const [adsData, lotsData] = await Promise.all([
-                        getAdvertisements(), // Fetch all active ads
-                         // Fetch lots visible to the current user based on role/status
+                        getAdvertisements(),
                          getAvailableParkingLots(userRole || 'User', userId || undefined)
                     ]);
                     const activeAds = adsData.filter(ad => ad.status === 'active' && (!ad.endDate || new Date(ad.endDate) >= new Date()));
                     setAds(activeAds);
                     setLots(lotsData);
+                    if (lotsData.length > 0 && !mapCenter) { // Set initial map center
+                        setMapCenter({ lat: lotsData[0].latitude, lng: lotsData[0].longitude });
+                    }
 
-                     // Cache fetched data
+
                      if (typeof window !== 'undefined') {
                          try {
                               localStorage.setItem('cachedExploreAds', JSON.stringify(activeAds));
@@ -96,9 +104,11 @@ export default function ExplorePageContent() {
 
                 } catch (error) {
                     console.error("Failed to fetch explore data:", error);
-                    // Show error but still use cache if available
                     setAds(cachedAds);
                     setLots(cachedLots);
+                    if (cachedLots[0] && !mapCenter) {
+                         setMapCenter({ lat: cachedLots[0].latitude, lng: cachedLots[0].longitude });
+                    }
                     toast({
                         title: "Error Loading Data",
                         description: "Could not fetch latest updates. Displaying cached data if available.",
@@ -109,14 +119,15 @@ export default function ExplorePageContent() {
                     setIsLoadingLots(false);
                 }
              } else {
-                  // Offline and no cache
                    console.warn("Offline: No cached explore data available.");
                    setIsLoadingAds(false);
                    setIsLoadingLots(false);
+                   // Set a default map center if offline and no cache
+                   if (!mapCenter) setMapCenter({ lat: -15.4167, lng: 28.2833 }); // Default to Lusaka
               }
         };
         fetchExploreData();
-    }, [isOnline, toast, userId, userRole]);
+    }, [isOnline, toast, userId, userRole, mapCenter]); // Added mapCenter to dependencies
 
     const featuredServices: FeaturedService[] = lots.flatMap(lot =>
         (lot.services || []).map(service => ({
@@ -127,7 +138,9 @@ export default function ExplorePageContent() {
             description: `Available at ${lot.name}.`,
             icon: getServiceIcon(service),
             serviceType: service,
-            imageUrl: lot.id.startsWith('g_place') ? `https://picsum.photos/seed/${lot.id}-${service}/400/200` : `https://picsum.photos/seed/${lot.id}-${service}/400/200`
+            imageUrl: lot.id.startsWith('g_place') ? `https://picsum.photos/seed/${lot.id}-${service}/400/200` : `https://picsum.photos/seed/${lot.id}-${service}/400/200`,
+            latitude: lot.latitude,
+            longitude: lot.longitude,
         }))
     ).filter((service, index, self) =>
         index === self.findIndex((s) => s.serviceType === service.serviceType && s.locationId === service.locationId)
@@ -179,10 +192,10 @@ export default function ExplorePageContent() {
     };
 
     const isLoading = isLoadingAds || isLoadingLots;
+    const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
     return (
         <div className="container py-8 px-4 md:px-6 lg:px-8">
-            {/* Offline Indicator Banner */}
            {!isOnline && (
                <Alert variant="destructive" className="mb-6">
                    <WifiOff className="h-4 w-4"/>
@@ -192,6 +205,39 @@ export default function ExplorePageContent() {
                    </AlertDescription>
                </Alert>
            )}
+
+           {/* Map View of All Parking Lots */}
+            <section className="mb-12">
+                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                     <MapPin className="h-6 w-6 text-primary" /> Explore Parking Locations Map
+                 </h2>
+                <Card className="h-[400px] md:h-[500px]">
+                    {GOOGLE_MAPS_API_KEY && mapCenter ? (
+                        <ParkingLotMap
+                            apiKey={GOOGLE_MAPS_API_KEY}
+                            defaultLatitude={mapCenter.lat}
+                            defaultLongitude={mapCenter.lng}
+                            customClassName="h-full w-full rounded-md"
+                            // Add markers for lots in future if needed, or integrate with selectedLot from ParkingLotManager
+                            // For now, it just centers based on first lot or default
+                        />
+                    ) : GOOGLE_MAPS_API_KEY && isLoadingLots ? (
+                        <div className="flex items-center justify-center h-full bg-muted rounded-md">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                            <p className="ml-2 text-muted-foreground">Loading Map Data...</p>
+                        </div>
+                    ) : (
+                        <Alert variant="warning" className="h-full flex flex-col justify-center">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Map Service Unavailable</AlertTitle>
+                            <AlertDescription>
+                                {GOOGLE_MAPS_API_KEY ? "Loading map data or no locations available." : "Google Maps API key is not configured."}
+                            </AlertDescription>
+                        </Alert>
+                    )}
+                </Card>
+            </section>
+
 
             {/* Section 1: Featured Promotions/Advertisements */}
             <section className="mb-12">
@@ -275,6 +321,7 @@ export default function ExplorePageContent() {
                                          objectFit="cover"
                                          className="z-0"
                                          data-ai-hint={serviceHint}
+                                         unoptimized
                                      />
                                      <div className="absolute inset-0 bg-black/60 z-10"></div>
                                      <div className="relative z-20">
@@ -320,11 +367,9 @@ export default function ExplorePageContent() {
                                          <p className="text-sm text-muted-foreground flex items-center gap-1">
                                              <MapPin className="h-3.5 w-3.5" /> {service.location}
                                          </p>
-                                         {service.locationId && (
-                                             <Button variant="link" size="sm" className="text-xs h-auto p-0 mt-1" asChild>
-                                                 <a href={`/?location=${service.locationId}`} >
-                                                     View Location <ExternalLink className="h-3 w-3 ml-1" />
-                                                 </a>
+                                         {service.locationId && service.latitude && service.longitude && (
+                                             <Button variant="link" size="sm" className="text-xs h-auto p-0 mt-1" onClick={() => setMapCenter({lat: service.latitude!, lng: service.longitude!})}>
+                                                 Show on Map <ExternalLink className="h-3 w-3 ml-1" />
                                              </Button>
                                          )}
                                      </div>
