@@ -37,7 +37,7 @@ export interface ConversationParticipant {
   userRole?: UserRole;
 }
 export interface ChatConversation {
-  id?: string; // Firestore ID
+  id: string; // Firestore ID - ensure it's always present
   participantIds: string[]; // IDs of users in the conversation
   participants: ConversationParticipant[]; // Denormalized participant details
   lastMessageText?: string;
@@ -73,16 +73,19 @@ export const generateConversationId = (userId1: string, userId2: string): string
  * @param initiator The user initiating the chat.
  * @param recipient The user receiving the chat invitation.
  * @param context Optional context for the conversation.
- * @returns The ID of the created or existing conversation.
+ * @returns The full ChatConversation object (newly created or existing).
  */
 export async function createOrGetConversation(
   initiator: ConversationParticipant,
   recipient: ConversationParticipant,
   context?: ChatConversation['context']
-): Promise<string> {
+): Promise<ChatConversation> {
   if (!firestore) {
     console.error("Firestore is not initialized. Cannot create or get conversation.");
     throw new Error("Chat service unavailable: Firestore not initialized.");
+  }
+  if (!initiator || !initiator.userId || !recipient || !recipient.userId) {
+      throw new Error("Initiator and recipient user IDs are required.");
   }
   const conversationId = generateConversationId(initiator.userId, recipient.userId);
   const conversationRef = doc(firestore, CONVERSATIONS_COLLECTION, conversationId);
@@ -90,28 +93,30 @@ export async function createOrGetConversation(
   const conversationSnap = await getDoc(conversationRef);
 
   if (conversationSnap.exists()) {
-    // Conversation exists, potentially update context if it's new or different
     const existingData = conversationSnap.data() as ChatConversation;
+    // Conversation exists, potentially update context if it's new or different
     if (context && JSON.stringify(context) !== JSON.stringify(existingData.context)) {
       await updateDoc(conversationRef, {
         context: context,
-        updatedAt: Timestamp.now(), // Use imported Timestamp
+        updatedAt: Timestamp.now(),
       });
+      return { ...existingData, context, updatedAt: Timestamp.now() }; // Return updated data
     }
-    return conversationId;
+    return existingData;
   } else {
     // Create new conversation
     const newConversation: ChatConversation = {
-      id: conversationId,
+      id: conversationId, // Ensure ID is set
       participantIds: [initiator.userId, recipient.userId],
-      participants: [initiator, recipient], // Store denormalized participant info
-      createdAt: Timestamp.now(), // Use imported Timestamp
-      updatedAt: Timestamp.now(), // Use imported Timestamp
+      participants: [initiator, recipient],
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
       context: context,
       unreadCounts: { [initiator.userId]: 0, [recipient.userId]: 0 },
+      // lastMessage fields will be undefined initially
     };
     await setDoc(conversationRef, newConversation);
-    return conversationId;
+    return newConversation;
   }
 }
 
@@ -137,56 +142,60 @@ export async function sendMessage(
   if (!text.trim()) throw new Error('Message text cannot be empty.');
 
   const messagesColRef = collection(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION);
-  const newMessage: Omit<ChatMessage, 'id'> = {
+  const newMessageData: Omit<ChatMessage, 'id'> = { // Explicitly Omit 'id'
     conversationId,
     senderId,
     senderName,
     senderRole,
     text,
-    timestamp: Timestamp.now(), // Use imported Timestamp
-    readBy: [senderId], // Sender has "read" it
+    timestamp: Timestamp.now(),
+    readBy: [senderId],
   };
-  await addDoc(messagesColRef, newMessage);
+  await addDoc(messagesColRef, newMessageData);
 
-  // Update conversation's last message details
   const conversationRef = doc(firestore, CONVERSATIONS_COLLECTION, conversationId);
   const conversationSnap = await getDoc(conversationRef);
   if (conversationSnap.exists()) {
       const conversationData = conversationSnap.data() as ChatConversation;
-      const otherParticipantId = conversationData.participantIds.find(id => id !== senderId);
       const newUnreadCounts = { ...(conversationData.unreadCounts || {}) };
-      if (otherParticipantId) {
-          newUnreadCounts[otherParticipantId] = (newUnreadCounts[otherParticipantId] || 0) + 1;
-      }
+      
+      // Increment unread count for all other participants
+      conversationData.participantIds.forEach(pid => {
+          if (pid !== senderId) {
+              newUnreadCounts[pid] = (newUnreadCounts[pid] || 0) + 1;
+          }
+      });
 
       await updateDoc(conversationRef, {
         lastMessageText: text,
-        lastMessageTimestamp: newMessage.timestamp,
+        lastMessageTimestamp: newMessageData.timestamp,
         lastMessageSenderId: senderId,
-        updatedAt: newMessage.timestamp,
+        updatedAt: newMessageData.timestamp,
         unreadCounts: newUnreadCounts,
       });
+  } else {
+      console.warn(`Conversation ${conversationId} not found while trying to update last message.`);
   }
 }
 
 /**
  * Subscribes to messages in a conversation.
  * @param conversationId The ID of the conversation.
- * @param callback Function to call with new messages.
+ * @param callback Function to call with new messages or an error.
  * @returns An unsubscribe function, or a no-op function if Firestore is not initialized.
  */
 export function subscribeToMessages(
   conversationId: string,
-  callback: (messages: ChatMessage[]) => void
+  callback: (messages: ChatMessage[], error?: Error) => void
 ): Unsubscribe {
   if (!firestore) {
     console.error("Firestore is not initialized. Cannot subscribe to messages.");
-    // Return a no-op unsubscribe function
+    callback([], new Error("Chat service unavailable: Firestore not initialized."));
     return () => {};
   }
   const messagesQuery = query(
     collection(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION),
-    orderBy('timestamp', 'asc') // Show oldest messages first
+    orderBy('timestamp', 'asc')
   );
 
   return onSnapshot(messagesQuery, (querySnapshot) => {
@@ -197,39 +206,40 @@ export function subscribeToMessages(
     callback(messages);
   }, (error) => {
     console.error(`Error listening to messages for conversation ${conversationId}:`, error);
-    // Optionally, inform the user through a toast or UI update
+    callback([], error);
   });
 }
 
 /**
  * Subscribes to a user's conversations.
  * @param userId The ID of the user.
- * @param callback Function to call with the user's conversations.
+ * @param callback Function to call with the user's conversations or an error.
  * @returns An unsubscribe function, or a no-op function if Firestore is not initialized.
  */
 export function subscribeToUserConversations(
   userId: string,
-  callback: (conversations: ChatConversation[]) => void
+  callback: (conversations: ChatConversation[], error?: Error) => void
 ): Unsubscribe {
   if (!firestore) {
     console.error("Firestore is not initialized. Cannot subscribe to user conversations.");
-    // Return a no-op unsubscribe function
+    callback([], new Error("Chat service unavailable: Firestore not initialized."));
     return () => {};
   }
   const conversationsQuery = query(
     collection(firestore, CONVERSATIONS_COLLECTION),
     where('participantIds', 'array-contains', userId),
-    orderBy('updatedAt', 'desc') // Show most recently active conversations first
+    orderBy('updatedAt', 'desc')
   );
 
   return onSnapshot(conversationsQuery, (querySnapshot) => {
     const conversations = querySnapshot.docs.map(docSnap => ({
-      id: docSnap.id,
+      id: docSnap.id, // Ensure ID is included from the document snapshot ID
       ...docSnap.data(),
     } as ChatConversation));
     callback(conversations);
   }, (error) => {
     console.error(`Error listening to conversations for user ${userId}:`, error);
+    callback([], error);
   });
 }
 
@@ -244,36 +254,33 @@ export async function markMessagesAsRead(conversationId: string, userId: string)
     throw new Error("Chat service unavailable: Firestore not initialized.");
   }
   const conversationRef = doc(firestore, CONVERSATIONS_COLLECTION, conversationId);
-  const conversationSnap = await getDoc(conversationRef);
+  
+  try {
+    const conversationSnap = await getDoc(conversationRef);
 
-  if (conversationSnap.exists()) {
-      const conversationData = conversationSnap.data() as ChatConversation;
-      const newUnreadCounts = { ...(conversationData.unreadCounts || {}) };
-      newUnreadCounts[userId] = 0; // Reset unread count for this user
+    if (conversationSnap.exists()) {
+        const conversationData = conversationSnap.data() as ChatConversation;
+        const currentUnreadCount = conversationData.unreadCounts?.[userId] || 0;
 
-      await updateDoc(conversationRef, {
-          unreadCounts: newUnreadCounts,
-          // Optionally, update participants' lastReadTimestamp if needed
-      });
+        if (currentUnreadCount > 0) {
+            const newUnreadCounts = { ...(conversationData.unreadCounts || {}) };
+            newUnreadCounts[userId] = 0;
 
-      // Also update individual messages (more granular but can be write-heavy)
-      // This part is optional and depends on how "read" status is tracked.
-      // For simplicity, we might only track unread counts at the conversation level.
-      const messagesQuery = query(
-        collection(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION),
-        where('senderId', '!=', userId), // Only mark messages from others as read by this user
-        // Potentially add where('readBy', 'not-array-contains', userId) if Firestore supported it directly on arrays for reads
-      );
-      const messagesSnap = await getDocs(messagesQuery);
-      messagesSnap.forEach(async (messageDoc) => {
-        const messageData = messageDoc.data() as ChatMessage;
-        if (!messageData.readBy || !messageData.readBy.includes(userId)) {
-           await updateDoc(doc(firestore, CONVERSATIONS_COLLECTION, conversationId, MESSAGES_SUBCOLLECTION, messageDoc.id), {
-             readBy: arrayUnion(userId)
-           });
+            await updateDoc(conversationRef, {
+                unreadCounts: newUnreadCounts,
+                // Optionally, update each message individually (can be write-heavy)
+                // For performance, often just updating the conversation-level unread count is sufficient
+            });
+            console.log(`Marked conversation ${conversationId} as read for user ${userId}. Unread count reset.`);
+        } else {
+            console.log(`Conversation ${conversationId} already marked as read or no unread messages for user ${userId}.`);
         }
-      });
-      console.log(`Marked conversation ${conversationId} as read for user ${userId}`);
+    } else {
+         console.warn(`Conversation ${conversationId} not found for marking messages as read.`);
+    }
+  } catch (error) {
+     console.error(`Error marking messages as read for conversation ${conversationId}, user ${userId}:`, error);
+     // Optionally re-throw or handle specific errors
   }
 }
 
@@ -292,6 +299,7 @@ export async function getMockUsersForChat(currentUserId?: string): Promise<Conve
     { userId: 'owner_lot_B', userName: 'Airport Lot B Manager', userRole: 'ParkingLotOwner', userAvatarUrl: `https://picsum.photos/seed/owner_B/40/40` },
     { userId: 'user_sample_1', userName: 'John Doe', userRole: 'User', userAvatarUrl: `https://picsum.photos/seed/john_d/40/40` },
     { userId: 'user_sample_2', userName: 'Jane Smith', userRole: 'User', userAvatarUrl: `https://picsum.photos/seed/jane_s/40/40` },
+    { userId: 'attendant_001', userName: 'Parking Attendant (Lot A)', userRole: 'ParkingAttendant', userAvatarUrl: `https://picsum.photos/seed/attend_A/40/40` },
   ];
   return currentUserId ? allMockUsers.filter(user => user.userId !== currentUserId) : allMockUsers;
 }
