@@ -30,20 +30,22 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Timestamp } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Added Avatar imports
 import { Alert, AlertTitle as AlertTitleSub, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert'; // Aliased to avoid conflict
 
 export default function ChatPage() {
   const { isAuthenticated, userId, userName, userAvatarUrl, userRole, isOnline } = useContext(AppStateContext)!;
-  const [conversations, setConversations } = useState<ChatConversation[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isLoadingConversations, setIsLoadingConversations } = useState(true);
-  const [isLoadingMessages, setIsLoadingMessages } = useState(false);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isNewChatModalOpen, setIsNewChatModalOpen } = useState(false);
-  const [availableUsers, setAvailableUsers } = useState<ConversationParticipant[]>([]);
-  const [selectedUserToChatId, setSelectedUserToChatId } = useState<string>(''); // Store ID, not object
-  const [isCreatingConversation, setIsCreatingConversation } = useState(false);
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<ConversationParticipant[]>([]);
+  const [selectedUserToChatId, setSelectedUserToChatId] = useState<string>(''); // Store ID, not object
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false); // Added loading state for users
   const { toast } = useToast();
   const router = useRouter();
 
@@ -167,9 +169,17 @@ export default function ChatPage() {
 
    useEffect(() => {
     if (isNewChatModalOpen && isOnline && userId) {
-      getMockUsersForChat(userId).then(users => setAvailableUsers(users));
+      setIsLoadingUsers(true); // Start loading
+      getMockUsersForChat(userId)
+        .then(users => setAvailableUsers(users))
+        .catch(err => {
+            console.error("Error fetching users for new chat:", err);
+            toast({title: "Error", description: "Could not load user list for new chat.", variant: "destructive"});
+            setAvailableUsers([]);
+        })
+        .finally(() => setIsLoadingUsers(false)); // Stop loading
     }
-  }, [isNewChatModalOpen, isOnline, userId]);
+  }, [isNewChatModalOpen, isOnline, userId, toast]);
 
 
   if (!isAuthenticated && typeof window !== 'undefined') { // Added client-side check
