@@ -56,7 +56,7 @@ Review all steps above, especially Billing, API enablement, HTTP referrers, and 
 
 ### **2. Firebase Configuration (ESSENTIAL for Auth, Database, Chat, etc.)**
 
-If you encounter errors related to Firebase authentication (like `auth/invalid-api-key`), database access, or chat functionality, it's likely due to an issue with your Firebase project setup or environment variables.
+If you encounter errors related to Firebase authentication (like `auth/invalid-api-key`), database access (`FirebaseError: Missing or insufficient permissions`), or chat functionality, it's likely due to an issue with your Firebase project setup, environment variables, or **Firebase Security Rules**.
 
 **PLEASE FOLLOW THESE STEPS METICULOUSLY:**
 
@@ -74,26 +74,102 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
     *   **Authentication:** In the Firebase Console, go to "Authentication" (under Build). Click "Get started".
         *   Enable the sign-in methods you want to support (e.g., Email/Password, Phone, Google, Facebook, Apple).
     *   **Firestore Database:** Go to "Firestore Database" (under Build). Click "Create database".
-        *   Start in **production mode** or **test mode** (be mindful of security rules for production).
+        *   Start in **production mode**. Test mode rules are very open (`allow read, write: if true;`) and **NOT SUITABLE FOR PRODUCTION**.
         *   Choose a Cloud Firestore location.
-        *   **Security Rules:** Crucial for production. Initially, test mode rules are open. For production, define rules to protect your data (e.g., only authenticated users can read/write their own data). Example for `conversations` (adjust as needed):
-            ```json
+        *   **Security Rules (CRITICAL for preventing `Missing or insufficient permissions` errors):**
+            *   After creating the database, go to the "Rules" tab within Firestore.
+            *   **For Production:** Define rules to protect your data. Start with restrictive rules and open them up as needed.
+            *   **Example Rules (ADAPT THESE TO YOUR SPECIFIC NEEDS - DO NOT COPY-PASTE BLINDLY):**
+                ```firestore-rules
+                rules_version = '2';
+                service cloud.firestore {
+                  match /databases/{database}/documents {
+
+                    // Users: Users can read their own profile, admins can read any.
+                    // Users can only create their own profile document initially.
+                    // Users can only update their own profile.
+                    match /users/{userId} {
+                      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+                      allow create: if request.auth != null && request.auth.uid == userId;
+                      allow update: if request.auth != null && request.auth.uid == userId;
+                      // allow delete: if isAdmin(); // Or other specific conditions
+                    }
+
+                    // ParkingLots: Authenticated users can read, specific roles can write.
+                    match /parkingLots/{lotId} {
+                      allow read: if request.auth != null;
+                      allow create, update, delete: if request.auth != null && (isAdmin() || isParkingLotOwner(lotId));
+                      // Consider if attendants need specific write access for overrides.
+                    }
+
+                    // Conversations: Participants can read/write. Admins can read.
+                    match /conversations/{conversationId} {
+                      allow read: if request.auth != null && (request.auth.uid in resource.data.participantIds || isAdmin());
+                      allow create: if request.auth != null && request.auth.uid in request.resource.data.participantIds; // User must be in the new conversation
+                      allow update: if request.auth != null && request.auth.uid in resource.data.participantIds; // e.g., for lastMessage, unreadCounts
+                      // allow delete: if request.auth != null && isAdmin(); // Or only by participants if appropriate
+                    }
+
+                    // Messages: Participants can read/write within their conversations.
+                    match /conversations/{conversationId}/messages/{messageId} {
+                      allow read: if request.auth != null && (get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds.hasAny([request.auth.uid]) || isAdmin());
+                      allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid && get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds.hasAny([request.auth.uid]);
+                      // allow update, delete: if request.auth != null && (request.resource.data.senderId == request.auth.uid || isAdmin()); // Sender or admin can modify/delete
+                    }
+
+                    // Add rules for other collections (e.g., advertisements, pricingRules, parkingRecords, loyaltyPrograms)
+                    // Example for advertisements: Admins can manage all, owners can manage for their lots
+                    match /advertisements/{adId} {
+                        allow read: if true; // Publicly readable
+                        allow create, update, delete: if request.auth != null && (isAdmin() || (isParkingLotOwnerForAd(resource.data.targetLocationId) && request.resource.data.targetLocationId == resource.data.targetLocationId) );
+                    }
+
+                    // Helper functions (define these at the top of your rules or in a separate file if supported)
+                    function isAdmin() {
+                      // Check custom claim or a specific user document field
+                      return request.auth.token.admin == true || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+                    }
+
+                    function isParkingLotOwner(lotId) {
+                      // Check if user owns the specific lot
+                      // This might involve checking a field in the user's profile or the parkingLot document itself.
+                      // Example: return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedLots.hasAny([lotId]);
+                      // Or: return get(/databases/$(database)/documents/parkingLots/$(lotId)).data.ownerUserId == request.auth.uid;
+                      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ParkingLotOwner' &&
+                             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.associatedLots.hasAny(['*']) ||
+                              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.associatedLots.hasAny([lotId]));
+                    }
+                     function isParkingLotOwnerForAd(targetLocationId) {
+                        // Check if the user is an owner and if the ad is for one of their lots or a global ad they can manage
+                        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+                        return userDoc.data.role == 'ParkingLotOwner' &&
+                               (userDoc.data.associatedLots.hasAny(['*']) || // Admin-like owner can manage global
+                                (targetLocationId != null && userDoc.data.associatedLots.hasAny([targetLocationId])) || // Ad for their lot
+                                (targetLocationId == null && userDoc.data.associatedLots.hasAny(['*'])) // Owner managing global ads (if permitted)
+                               );
+                    }
+                  }
+                }
+                ```
+            *   **IMPORTANT:** The `isAdmin()` and `isParkingLotOwner()` functions in the example above are conceptual. You need to implement how roles are stored (e.g., custom claims on the Firebase Auth token, or a `role` field in the user's profile document in Firestore) and reference that in your rules.
+            *   **Regularly review and test your security rules.** Use the Firebase Console's Rules Playground.
+    *   **Firebase Storage (Optional, if using for image uploads):** Go to "Storage" (under Build). Click "Get started". Set up security rules.
+        *   Example rules (similar to Firestore, control who can upload/download):
+            ```storage-rules
             // rules_version = '2';
-            // service cloud.firestore {
-            //   match /databases/{database}/documents {
-            //     // Allow users to read/write conversations they are part of
-            //     match /conversations/{conversationId} {
-            //       allow read, write: if request.auth != null && request.auth.uid in resource.data.participantIds;
-            //       // Allow users to read messages in conversations they are part of
-            //       match /messages/{messageId} {
-            //         allow read, write: if request.auth != null && get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds.hasAny([request.auth.uid]);
-            //       }
+            // service firebase.storage {
+            //   match /b/{bucket}/o {
+            //     // Allow users to upload to their own folder, or a specific path for reports
+            //     match /user_uploads/{userId}/{allPaths=**} {
+            //       allow read, write: if request.auth != null && request.auth.uid == userId;
             //     }
-            //     // Add rules for other collections (users, parkingLots, etc.)
+            //     match /issue_reports/{reportId}/{fileName} {
+            //       allow write: if request.auth != null; // Anyone authenticated can upload for a report
+            //       allow read: if request.auth != null; // Or more specific: involved parties/admins
+            //     }
             //   }
             // }
             ```
-    *   **Firebase Storage (Optional, if using for image uploads):** Go to "Storage" (under Build). Click "Get started". Set up security rules.
     *   **Firebase Functions (Optional, if using for backend logic):** You'll set this up via Firebase CLI later if needed.
 
 4.  **Set Environment Variables (Firebase Config):**
@@ -109,18 +185,23 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
         ```
     *   **For Production:** Set these same environment variables in your production hosting environment (e.g., Vercel, Netlify, Firebase Hosting environment settings). **Do not commit these keys to Git if they contain sensitive information.**
 
-5.  **Restart/Redeploy:** After making changes to environment variables, **restart your Next.js development server** or **redeploy your production application**.
+5.  **Restart/Redeploy:** After making changes to environment variables or security rules, **restart your Next.js development server** or **redeploy your production application**. Allow a few minutes for security rule changes to propagate.
 
-**TROUBLESHOOTING FIREBASE ERRORS (`auth/invalid-api-key`, etc.):**
+**TROUBLESHOOTING FIREBASE ERRORS (`auth/invalid-api-key`, `Missing or insufficient permissions`, etc.):**
 
 1.  **Are ALL `NEXT_PUBLIC_FIREBASE_...` variables correctly set in your `.env.local` (for dev) AND in your production environment?**
     *   Double-check for typos or missing prefixes.
     *   Ensure the values are copied exactly from your Firebase project settings.
 2.  **Is the Firebase project ID in your environment variables the SAME as the one in the Firebase Console?**
 3.  **Are the required Firebase services (Authentication, Firestore) ENABLED in the Firebase Console for your project?**
-4.  **Did you RESTART your Next.js development server (for dev) or REDEPLOY (for production) after changes?**
-5.  **Check the Browser Console:** Open your browser's developer console (F12) for more specific Firebase error messages.
-6.  **Firebase Console Project Health:** Check for any alerts or issues in your Firebase project dashboard.
+4.  **SECURITY RULES:** This is the most common cause of `Missing or insufficient permissions`.
+    *   Did you deploy your rules?
+    *   Are your rules correctly allowing the logged-in user (or public, if intended) to perform the action (read, write, create, update, delete) on the specific path in Firestore/Storage?
+    *   Use the Firebase Console's Rules Playground to test your rules against specific operations.
+    *   Check the browser's Network tab and Console for detailed Firebase error messages. They often provide hints about which rule failed.
+5.  **Did you RESTART your Next.js development server (for dev) or REDEPLOY (for production) after changes?**
+6.  **Check the Browser Console:** Open your browser's developer console (F12) for more specific Firebase error messages.
+7.  **Firebase Console Project Health:** Check for any alerts or issues in your Firebase project dashboard.
 
 ---
 
@@ -218,7 +299,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
 **Implementation Strategy:**
 
 *   **Authentication:** Uses Firebase Authentication.
-*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore).
+*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore). This is checked by security rules.
 *   **Access Control:**
     *   **Frontend:** Conditional rendering based on the user's role to show/hide specific UI elements and features.
     *   **Backend/API:** Server Actions and Firebase Security Rules verify the user's role before allowing access to protected resources or performing restricted actions.
