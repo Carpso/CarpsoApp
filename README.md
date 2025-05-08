@@ -1,3 +1,4 @@
+
 # Carpso - Smart Parking
 
 ## **VERY IMPORTANT: API Key Setup for Development & Production**
@@ -23,7 +24,7 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
     *   Ensure **Maps JavaScript API** AND **Places API** are **ENABLED**. If these are not enabled, you might encounter `ApiNotActivatedMapError`.
 
 4.  **Credentials & API Key Creation:**
-    *   Go to "APIs & Services" > "Credentials". Create or use an existing API key. If the key is missing entirely in your `.env` file, you'll see `MissingKeyMapError`.
+    *   Go to "APIs & Services" > "Credentials". Create or use an existing API key. If the key is missing entirely in your `.env.local` or `.env` file, you'll see `MissingKeyMapError`.
 
 5.  **API Key Restrictions (CRITICAL for Security & Functionality):**
     *   **Application restrictions:** Select "HTTP referrers (web sites)".
@@ -51,7 +52,7 @@ If you see:
 *   `InvalidKeyMapError`: Double-check the key for typos, ensure billing is enabled, and that the key is authorized for Maps JavaScript API & Places API.
 *   `ApiNotActivatedMapError`: Make sure Maps JavaScript API and Places API are explicitly ENABLED in the Google Cloud Console library for your project.
 *   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set in your `.env.local` or production environment.
-*   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions.** The error message usually indicates the exact URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or a more specific one). For production, it must be your live domain.
+*   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions.** The error message usually indicates the exact URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL pattern provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or the more specific one like `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`). For production, it must be your live domain.
 
 Review all steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
@@ -422,3 +423,4 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
+
