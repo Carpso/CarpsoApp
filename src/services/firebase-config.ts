@@ -13,7 +13,7 @@ const firebaseConfig = {
   projectId: "carpso-11zv0",
   storageBucket: "carpso-11zv0.firebasestorage.app", // Corrected: removed ".appspot.com" as per user input
   messagingSenderId: "29146253573",
-  appId: "1:29146253573:web:19e0732a64f8623aa00f6c",
+  appId: "1:29146253573:web:19e0732a64f8623aa00f6c", // User provided a new App ID
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Keep measurementId from env or undefined
 };
 
@@ -45,13 +45,13 @@ for (const key of requiredConfigKeys) {
     }
 
 
-    console.error(`Firebase config error: Missing value for ${key}. Check Firebase console or environment variables.`);
+    console.error(`Firebase config error: Missing value for ${key}. Check Firebase console or environment variables (${expectedEnvVar}).`);
     missingKeys = true;
   }
 }
 
 if (missingKeys) {
-  console.error("One or more Firebase configuration values are missing. Firebase services will not be initialized correctly. Please check your Firebase console and ensure all necessary values are provided.");
+  console.error("One or more Firebase configuration values are missing. Firebase services will not be initialized correctly. Please check your Firebase console and ensure all necessary values are provided in your .env.local file (prefixed with NEXT_PUBLIC_FIREBASE_...) or environment configuration.");
 }
 
 // Initialize Firebase
@@ -91,7 +91,7 @@ if (isRealFirebaseApp && !missingKeys) {
     storage = getStorage(app);
     // analytics = typeof window !== 'undefined' ? getAnalytics(app) : undefined; // Optional
     console.log("Firebase services (Auth, Firestore, Storage) initialized.");
-  } catch (e) {
+  } catch (e: any) {
     console.error("Error initializing Firebase services. This might be due to invalid configuration values:", e);
     auth = undefined;
     firestore = undefined;
@@ -108,4 +108,3 @@ if (isRealFirebaseApp && !missingKeys) {
 }
 
 export { app, auth, firestore, storage /*, analytics */ };
-```
