@@ -42,19 +42,22 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
         ```
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE
         ```
-        Ensure there are no typos in the key or the variable name.
+        Ensure there are no typos in the key or the variable name. **An empty or incorrect key here is a primary cause of `InvalidKeyMapError` or `MissingKeyMapError`.**
     *   **For Production:** Set this in your production environment settings (e.g., Vercel, Netlify, Firebase Hosting Environment Config). **Do not commit production keys to Git.**
 
 7.  **Wait & Restart/Redeploy:** Allow a few minutes for changes to propagate. Restart your dev server or redeploy your production app.
 
 **TROUBLESHOOTING MAP ERRORS:**
 If you see:
-*   `InvalidKeyMapError`: Double-check the key for typos, ensure billing is enabled, and that the key is authorized for Maps JavaScript API & Places API.
-*   `ApiNotActivatedMapError`: Make sure Maps JavaScript API and Places API are explicitly ENABLED in the Google Cloud Console library for your project.
-*   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set in your `.env.local` or production environment.
+*   `InvalidKeyMapError`:
+    1.  **Check your `.env.local` file**: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is **not empty** and contains the correct API key string without typos.
+    2.  **Verify Billing**: Go to your Google Cloud Console, select your project, and confirm that **Billing is ENABLED** and the billing account is active. This is the most common cause.
+    3.  **API Authorization**: In "APIs & Services" > "Credentials", select your API key. Under "API restrictions", ensure "Maps JavaScript API" AND "Places API" are selected.
+*   `ApiNotActivatedMapError`: Make sure "Maps JavaScript API" and "Places API" are explicitly ENABLED in the Google Cloud Console library for your project.
+*   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set (and not empty) in your `.env.local` or production environment.
 *   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions. The error message USUALLY indicates the EXACT URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL pattern provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or the more specific one like `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`). Add this exact URL (with `/*` at the end if it's a path) to your API Key's "HTTP referrers (web sites)" list in Google Cloud Console. For production, it must be your live domain.**
 
-Review all steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
+Review all steps above, especially the API key value in `.env.local`, Billing enablement, API enablement for Maps JavaScript & Places, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
 ---
 
