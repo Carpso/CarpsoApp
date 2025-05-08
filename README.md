@@ -27,7 +27,10 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
 
 5.  **API Key Restrictions (CRITICAL for Security & Functionality):**
     *   **Application restrictions:** Select "HTTP referrers (web sites)".
-        *   **For Development:** Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
+        *   **For Development:**
+            *   Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
+            *   **IMPORTANT FOR IDX/CLOUDTOP:** If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError` with a specific URL (like `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), you **MUST** add that specific URL pattern to the allowed referrers. For example, if the error mentions `https://6000-idx-studio-12345.cluster-abcdef.cloudworkstations.dev`, you should add `https://*.cloudworkstations.dev/*` or the more specific `https://6000-idx-studio-*.cluster-*.cloudworkstations.dev/*`.
+            *   **The error message `RefererNotAllowedMapError` usually tells you the exact URL that needs to be authorized. For instance, if it says "Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev", then add `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*` to your API key's HTTP referrers.**
         *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
         *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
     *   **API restrictions:** Select "Restrict key". In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API".
@@ -39,7 +42,7 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE
         ```
         Ensure there are no typos in the key or the variable name.
-    *   **For Production:** Set this in your production environment settings (e.g., Vercel, Netlify). **Do not commit production keys to Git.**
+    *   **For Production:** Set this in your production environment settings (e.g., Vercel, Netlify, Firebase Hosting Environment Config). **Do not commit production keys to Git.**
 
 7.  **Wait & Restart/Redeploy:** Allow a few minutes for changes to propagate. Restart your dev server or redeploy your production app.
 
@@ -48,7 +51,7 @@ If you see:
 *   `InvalidKeyMapError`: Double-check the key for typos, ensure billing is enabled, and that the key is authorized for Maps JavaScript API & Places API.
 *   `ApiNotActivatedMapError`: Make sure Maps JavaScript API and Places API are explicitly ENABLED in the Google Cloud Console library for your project.
 *   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set in your `.env.local` or production environment.
-*   `RefererNotAllowedMapError`: Verify your "HTTP referrers" in the API key restrictions. For dev, `http://localhost:YOUR_PORT/*` is common. For production, it must be your live domain.
+*   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions.** The error message usually indicates the exact URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or a more specific one). For production, it must be your live domain.
 
 Review all steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
@@ -104,9 +107,9 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
 
                     // Conversations: Participants can read/write. Admins can read.
                     match /conversations/{conversationId} {
-                      allow read: if request.auth != null && (request.auth.uid in resource.data.participantIds || isAdmin());
-                      allow create: if request.auth != null && request.auth.uid in request.resource.data.participantIds; // User must be in the new conversation
-                      allow update: if request.auth != null && request.auth.uid in resource.data.participantIds; // e.g., for lastMessage, unreadCounts
+                      allow read: if request.auth != null && (resource.data.participantIds.hasAny([request.auth.uid]) || isAdmin()); // Corrected: Check against resource.data
+                      allow create: if request.auth != null && request.resource.data.participantIds.hasAny([request.auth.uid]); // User must be in the new conversation
+                      allow update: if request.auth != null && resource.data.participantIds.hasAny([request.auth.uid]); // e.g., for lastMessage, unreadCounts
                       // allow delete: if request.auth != null && isAdmin(); // Or only by participants if appropriate
                     }
 
@@ -121,23 +124,51 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                     // Example for advertisements: Admins can manage all, owners can manage for their lots
                     match /advertisements/{adId} {
                         allow read: if true; // Publicly readable
-                        allow create, update, delete: if request.auth != null && (isAdmin() || (isParkingLotOwnerForAd(resource.data.targetLocationId) && request.resource.data.targetLocationId == resource.data.targetLocationId) );
+                        allow create, update, delete: if request.auth != null && (isAdmin() || (isParkingLotOwnerForAd(request.resource.data.targetLocationId)));
                     }
+                     match /pricingRules/{ruleId} {
+                        allow read: if true; // Publicly readable
+                        allow create, update, delete: if request.auth != null && (isAdmin() || isParkingLotOwnerForRule(request.resource.data.lotId));
+                     }
+                     match /parkingRecords/{recordId} {
+                        allow read: if request.auth != null && (request.auth.uid == resource.data.userId || isAdmin() || isParkingLotOwner(resource.data.lotId) || isParkingAttendantForLot(resource.data.lotId));
+                        allow create: if request.auth != null; // Or more specific: only by system/attendant
+                        allow update: if request.auth != null && (isAdmin() || isParkingAttendantForLot(resource.data.lotId)); // e.g. attendant marking as paid
+                        // allow delete: if isAdmin();
+                     }
+                     match /userPreferences/{userId} {
+                         allow read, write: if request.auth != null && request.auth.uid == userId;
+                     }
+                     match /userGamification/{userId} {
+                         allow read: if request.auth != null && request.auth.uid == userId;
+                         // Write might be restricted to server-side logic (e.g., Cloud Functions) for awarding points/badges
+                         allow write: if request.auth != null && (isAdmin() || isServerAdmin()); // Allow admin or server to update
+                     }
+                     match /userBookmarks/{userId}/bookmarks/{bookmarkId} {
+                        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+                     }
+
 
                     // Helper functions (define these at the top of your rules or in a separate file if supported)
                     function isAdmin() {
                       // Check custom claim or a specific user document field
                       return request.auth.token.admin == true || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
                     }
+                     function isServerAdmin() {
+                         // This is a placeholder. In a real app, you'd use Firebase Admin SDK on your server
+                         // which bypasses security rules. This function is illustrative for conceptual server-side operations.
+                         // For client-side, you'd rely on isAdmin() or specific role checks.
+                         // If you have callable functions that need to write, they run with admin privileges by default.
+                         return false; // Client cannot claim this.
+                     }
 
                     function isParkingLotOwner(lotId) {
                       // Check if user owns the specific lot
                       // This might involve checking a field in the user's profile or the parkingLot document itself.
-                      // Example: return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedLots.hasAny([lotId]);
-                      // Or: return get(/databases/$(database)/documents/parkingLots/$(lotId)).data.ownerUserId == request.auth.uid;
-                      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ParkingLotOwner' &&
-                             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.associatedLots.hasAny(['*']) ||
-                              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.associatedLots.hasAny([lotId]));
+                      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+                      return userDoc.data.role == 'ParkingLotOwner' &&
+                             (userDoc.data.associatedLots.hasAny(['*']) || // Owner of all lots
+                              (lotId != null && userDoc.data.associatedLots.hasAny([lotId]))); // Owner of specific lot
                     }
                      function isParkingLotOwnerForAd(targetLocationId) {
                         // Check if the user is an owner and if the ad is for one of their lots or a global ad they can manage
@@ -148,26 +179,55 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                                 (targetLocationId == null && userDoc.data.associatedLots.hasAny(['*'])) // Owner managing global ads (if permitted)
                                );
                     }
+                     function isParkingLotOwnerForRule(ruleLotId) {
+                        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+                        return userDoc.data.role == 'ParkingLotOwner' &&
+                               (userDoc.data.associatedLots.hasAny(['*']) || // Owner of all lots
+                                (ruleLotId != null && userDoc.data.associatedLots.hasAny([ruleLotId])) || // Rule for their lot
+                                (ruleLotId == null && userDoc.data.associatedLots.hasAny(['*'])) // Owner managing global rules
+                               );
+                     }
+                      function isParkingAttendantForLot(lotId) {
+                        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+                        // Assumes attendant role and their associated lot ID is stored in user profile
+                        return userDoc.data.role == 'ParkingAttendant' &&
+                               userDoc.data.assignedLotId == lotId;
+                      }
                   }
                 }
                 ```
-            *   **IMPORTANT:** The `isAdmin()` and `isParkingLotOwner()` functions in the example above are conceptual. You need to implement how roles are stored (e.g., custom claims on the Firebase Auth token, or a `role` field in the user's profile document in Firestore) and reference that in your rules.
+            *   **IMPORTANT:** The `isAdmin()`, `isParkingLotOwner()`, `isParkingAttendantForLot()` functions in the example above are conceptual. You need to implement how roles are stored (e.g., custom claims on the Firebase Auth token, or a `role` field in the user's profile document in Firestore) and reference that in your rules.
             *   **Regularly review and test your security rules.** Use the Firebase Console's Rules Playground.
     *   **Firebase Storage (Optional, if using for image uploads):** Go to "Storage" (under Build). Click "Get started". Set up security rules.
         *   Example rules (similar to Firestore, control who can upload/download):
             ```storage-rules
-            // rules_version = '2';
-            // service firebase.storage {
-            //   match /b/{bucket}/o {
-            //     // Allow users to upload to their own folder, or a specific path for reports
-            //     match /user_uploads/{userId}/{allPaths=**} {
-            //       allow read, write: if request.auth != null && request.auth.uid == userId;
-            //     }
-            //     match /issue_reports/{reportId}/{fileName} {
-            //       allow write: if request.auth != null; // Anyone authenticated can upload for a report
-            //       allow read: if request.auth != null; // Or more specific: involved parties/admins
-            //     }
-            //   }
+            rules_version = '2';
+            service firebase.storage {
+              match /b/{bucket}/o {
+                // Allow users to upload to their own folder, or a specific path for reports
+                match /user_uploads/{userId}/{allPaths=**} {
+                  allow read, write: if request.auth != null && request.auth.uid == userId;
+                }
+                match /issue_reports/{reportId}/{fileName} {
+                  allow write: if request.auth != null; // Anyone authenticated can upload for a report
+                  // Allow read only by involved parties or admins
+                  allow read: if request.auth != null && (get(/databases/$(database)/documents/issueReportsMeta/$(reportId)).data.involvedUserIds.hasAny([request.auth.uid]) || isAdmin());
+                }
+                 match /advertisement_images/{adImageId}/{fileName} {
+                   allow read: if true; // Publicly readable advertisement images
+                   allow write: if request.auth != null && (isAdmin() || isParkingLotOwnerForAdImage()); // Check if user is admin or owner associated with the ad's target
+                 }
+              }
+            }
+            // Helper (conceptual - adapt to your Firestore structure for ad ownership)
+            // function isAdmin() { ... } // Same as Firestore
+            // function isParkingLotOwnerForAdImage() {
+            //   // Complex: This needs to verify that the user uploading is an owner
+            //   // of the lot the ad (associated with this image) is targeting.
+            //   // This might require an intermediate Firestore document linking adImageId to an adId and its targetLocationId.
+            //   // For simplicity, let's assume for now that only admin can upload ad images directly to storage
+            //   // or that the ad creation flow handles permissions more tightly.
+            //   return isAdmin();
             // }
             ```
     *   **Firebase Functions (Optional, if using for backend logic):** You'll set this up via Firebase CLI later if needed.
@@ -221,6 +281,8 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
 *   **External Lot Listing:** Displays parking lots from Google Maps in addition to Carpso-managed ones.
 *   **Lot Recommendation:** Users can suggest new parking lots to be added to the platform.
 *   **Chat System:** Real-time messaging between users, admins, and potentially lot owners/attendants (powered by Firebase).
+*   **Parking Passes:** Hourly, Daily, Weekly, Monthly, and Yearly passes.
+*   **External Integrations:** Calendar sync, Tawk.to live chat (optional).
 
 ## Getting Started
 
@@ -271,6 +333,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
     *   Can use predictive features.
     *   Manages their own profile and payment methods.
     *   Can use wallet, earn points, refer users.
+    *   Can purchase and use parking passes.
     *   Can chat with support/admins.
 *   **`ParkingLotOwner`:**
     *   All `User` permissions.
@@ -293,13 +356,13 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
     *   Can manage system settings and configurations (e.g., global fees, integrations).
     *   Can oversee financial reports and transactions for the entire platform.
     *   Can manage all parking lots, including their subscription status (active, trial, inactive).
-    *   Can create global advertisements and pricing rules.
+    *   Can create global advertisements and pricing rules, including pass definitions.
     *   Can chat with any user, owner, or attendant.
 
 **Implementation Strategy:**
 
 *   **Authentication:** Uses Firebase Authentication.
-*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore). This is checked by security rules.
+*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore). This is checked by security rules and client-side logic.
 *   **Access Control:**
     *   **Frontend:** Conditional rendering based on the user's role to show/hide specific UI elements and features.
     *   **Backend/API:** Server Actions and Firebase Security Rules verify the user's role before allowing access to protected resources or performing restricted actions.
@@ -317,13 +380,13 @@ This section outlines potential future enhancements and strategic considerations
     *   **Advanced Predictions:** Offer more granular or longer-term prediction insights for subscribers.
 *   **Advertising:** Display unobtrusive ads from local businesses relevant to drivers (e.g., nearby restaurants, shops). Admins manage global ads, Owners can manage ads for their lots.
 *   **Data Insights:** Anonymize and aggregate parking data to sell insights to urban planners, businesses, or municipalities.
-*   **Passes:** Offer hourly, daily, weekly, monthly, and yearly parking passes.
+*   **Passes:** Offer hourly, daily, weekly, monthly, and yearly parking passes (implemented).
 
 ### Security & Compliance
 
 Security is paramount for user trust and data protection.
 
-*   **End-to-End Encryption:** Implement encryption for all data transmission, especially sensitive user information and payment details.
+*   **End-to-End Encryption:** Implement encryption for all data transmission, especially sensitive user information and payment details (HTTPS is standard).
 *   **Secure API Endpoints:** Protect all backend APIs with robust authentication and authorization mechanisms (e.g., OAuth 2.0, JWT), enforcing role-based access. Firebase security rules play a key part.
 *   **Compliance:** Ensure adherence to data privacy regulations like GDPR, CCPA, etc., including clear user consent and data management policies.
 *   **Regular Audits:** Conduct periodic security audits and penetration testing.
@@ -332,21 +395,21 @@ Security is paramount for user trust and data protection.
 ### MVP & Development Stages
 
 *   **Phase 1 (Core MVP):** Reliable real-time spot availability display and basic spot reservation functionality. Implement user authentication (`User` role). Basic Chat system. (Largely complete)
-*   **Phase 2 (Prediction & Basic Monetization):** Integrate AI-powered prediction. Introduce basic transaction fees or a simple subscription model. (Partially complete - AI prediction flow exists)
+*   **Phase 2 (Prediction & Basic Monetization):** Integrate AI-powered prediction. Introduce basic transaction fees or a simple subscription model. Implement parking passes. (Largely complete - AI prediction and passes exist)
 *   **Phase 3 (Role Expansion & Advanced Features):**
-    *   Implement `Admin` and `ParkingLotOwner` roles with dashboards/analytics. (Partially complete - Admin dashboard exists)
+    *   Implement `Admin` and `ParkingLotOwner` roles with dashboards/analytics. (Partially complete - Admin dashboard exists, Owner features expanding)
     *   **AR Navigation:** Develop AR-based navigation within parking lots. (Conceptual)
-    *   **Payment Integration:** Implement secure in-app payments. (Partially complete - Wallet system exists, needs real gateway)
+    *   **Payment Integration:** Implement secure in-app payments for wallet top-up and parking pass purchases. (Partially complete - Wallet system exists, needs real gateway for top-up)
     *   **User Profiles & History:** Enhance profile management, reservation history, payment methods. (Largely complete)
 *   **Phase 4 (Expansion & Refinement):** Introduce premium features, expand advertising, develop data insight reports, refine role-specific features, integrate EV charging status.
 *   **Ongoing:** Continuous user testing, performance optimization, security enhancements.
 
 ### Integration & Platform Expansion
 
-*   **Mapping Apps:** Explore integration possibilities with Waze or Google Maps.
+*   **Mapping Apps:** Explore integration possibilities with Waze or Google Maps (partially done with displaying external lots).
 *   **Web Platform:** Current Next.js app serves as the web platform.
-*   **POS Integration:** Develop capabilities for attendant-operated POS devices.
-*   **Calendar Integration:** Allow users to add reservations to personal calendars.
+*   **POS Integration:** Develop capabilities for attendant-operated POS devices (partially considered in UI for TopUp).
+*   **Calendar Integration:** Allow users to add reservations to personal calendars (conceptual, simple .ics download can be added).
 
 ### Environmental Impact
 
