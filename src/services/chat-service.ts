@@ -6,7 +6,7 @@ import {
   where,
   orderBy,
   onSnapshot,
-  Timestamp,
+  Timestamp, // Ensure Timestamp is imported
   doc,
   setDoc,
   getDocs,
@@ -95,7 +95,7 @@ export async function createOrGetConversation(
     if (context && JSON.stringify(context) !== JSON.stringify(existingData.context)) {
       await updateDoc(conversationRef, {
         context: context,
-        updatedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(), // Use imported Timestamp
       });
     }
     return conversationId;
@@ -105,8 +105,8 @@ export async function createOrGetConversation(
       id: conversationId,
       participantIds: [initiator.userId, recipient.userId],
       participants: [initiator, recipient], // Store denormalized participant info
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
+      createdAt: Timestamp.now(), // Use imported Timestamp
+      updatedAt: Timestamp.now(), // Use imported Timestamp
       context: context,
       unreadCounts: { [initiator.userId]: 0, [recipient.userId]: 0 },
     };
@@ -143,7 +143,7 @@ export async function sendMessage(
     senderName,
     senderRole,
     text,
-    timestamp: Timestamp.now(),
+    timestamp: Timestamp.now(), // Use imported Timestamp
     readBy: [senderId], // Sender has "read" it
   };
   await addDoc(messagesColRef, newMessage);

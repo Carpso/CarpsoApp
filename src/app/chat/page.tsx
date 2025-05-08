@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { Timestamp } from 'firebase/firestore'; // Added Timestamp import
 
 export default function ChatPage() {
   const { isAuthenticated, userId, userName, userAvatarUrl, userRole, isOnline } = useContext(AppStateContext)!;
@@ -115,8 +116,19 @@ export default function ChatPage() {
         // This might take a moment for subscribeToUserConversations to update
         // A direct fetch might be better here or rely on the subscription update
         const existingOrNewConv = conversations.find(c => c.id === conversationId) ||
-          { id: conversationId, participantIds: [userId, recipient.userId], participants: [initiator, recipient], createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
-        setSelectedConversation(existingOrNewConv);
+          {
+            id: conversationId,
+            participantIds: [userId, recipient.userId],
+            participants: [initiator, recipient],
+            createdAt: Timestamp.now(), // Use imported Timestamp
+            updatedAt: Timestamp.now(), // Use imported Timestamp
+            lastMessageText: undefined,
+            lastMessageSenderId: undefined,
+            lastMessageTimestamp: undefined,
+            unreadCounts: { [initiator.userId]: 0, [recipient.userId]: 0 },
+            // context is optional
+          };
+        setSelectedConversation(existingOrNewConv as ChatConversation); // Cast as ChatConversation
 
         setIsNewChatModalOpen(false);
         setSelectedUserToChat('');
