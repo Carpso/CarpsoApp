@@ -31,7 +31,7 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
         *   **For Development:**
             *   Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
             *   **IMPORTANT FOR IDX/CLOUDTOP:** If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError` with a specific URL (like `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), you **MUST** add that specific URL pattern to the allowed referrers. For example, if the error mentions `https://6000-idx-studio-12345.cluster-abcdef.cloudworkstations.dev`, you should add `https://*.cloudworkstations.dev/*` or the more specific `https://6000-idx-studio-*.cluster-*.cloudworkstations.dev/*`.
-            *   **The error message `RefererNotAllowedMapError` usually tells you the exact URL that needs to be authorized. For instance, if it says "Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev", then add `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*` to your API key's HTTP referrers.**
+            *   **The error message `RefererNotAllowedMapError` usually tells you the exact URL that needs to be authorized. For instance, if it says "Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev", then you MUST add `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*` to your API key's HTTP referrers.**
         *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
         *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
     *   **API restrictions:** Select "Restrict key". In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API".
@@ -52,7 +52,7 @@ If you see:
 *   `InvalidKeyMapError`: Double-check the key for typos, ensure billing is enabled, and that the key is authorized for Maps JavaScript API & Places API.
 *   `ApiNotActivatedMapError`: Make sure Maps JavaScript API and Places API are explicitly ENABLED in the Google Cloud Console library for your project.
 *   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set in your `.env.local` or production environment.
-*   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions.** The error message usually indicates the exact URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL pattern provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or the more specific one like `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`). For production, it must be your live domain.
+*   `RefererNotAllowedMapError`: **Verify your "HTTP referrers" in the API key restrictions. The error message USUALLY indicates the EXACT URL that needs to be whitelisted. For local dev, `http://localhost:YOUR_PORT/*` is common. For cloud IDEs like IDX, use the URL pattern provided in the error message (e.g., `https://*.cloudworkstations.dev/*` or the more specific one like `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`). Add this exact URL (with `/*` at the end if it's a path) to your API Key's "HTTP referrers (web sites)" list in Google Cloud Console. For production, it must be your live domain.**
 
 Review all steps above, especially Billing, API enablement, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
@@ -423,4 +423,3 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
-
