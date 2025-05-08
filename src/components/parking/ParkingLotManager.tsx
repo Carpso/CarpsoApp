@@ -92,7 +92,7 @@ export default function ParkingLotManager() {
                 newAllLots = JSON.parse(cachedData);
                 console.log("Using valid cached parking lots.");
              } catch (parseError: any) {
-                 console.error("Failed to parse cached locations, will fetch fresh.", parseError);
+                 console.error("Failed to parse cached locations, will fetch fresh.", parseError.message);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
              }
@@ -111,7 +111,7 @@ export default function ParkingLotManager() {
                 localStorage.setItem(cacheTimestampKey, Date.now().toString());
             }
         } catch (fetchError: any) {
-            console.error("Online fetch failed:", fetchError);
+            console.error("Online fetch failed:", fetchError.message);
             if (newAllLots.length === 0) setError("Could not load parking locations. Please check connection.");
             else console.warn("Online fetch failed, continuing with previously cached data if any.");
         }
@@ -134,7 +134,7 @@ export default function ParkingLotManager() {
        const cachedBookmarks = localStorage.getItem('cachedUserBookmarks');
        if (cachedBookmarks) {
            try { setUserBookmarks(JSON.parse(cachedBookmarks)); }
-           catch (parseError: any) { console.error("Failed to parse cached bookmarks", parseError); }
+           catch (parseError: any) { console.error("Failed to parse cached bookmarks", parseError.message); }
        }
     }
     if (!isAuthenticated || !userId || !isOnline) {
@@ -147,10 +147,10 @@ export default function ParkingLotManager() {
         setUserBookmarks(bookmarksData);
         if (typeof window !== 'undefined') {
              try { localStorage.setItem('cachedUserBookmarks', JSON.stringify(bookmarksData)); }
-             catch (cacheError: any) { console.error("Failed to cache bookmarks:", cacheError); }
+             catch (cacheError: any) { console.error("Failed to cache bookmarks:", cacheError.message); }
         }
     } catch (err: any) {
-        console.error("Failed to fetch user bookmarks:", err);
+        console.error("Failed to fetch user bookmarks:", err.message);
         if (isOnline) toast({ title: "Error", description: "Could not refresh saved locations.", variant: "destructive" });
     } finally {
         setIsLoadingBookmarks(false);
@@ -198,14 +198,14 @@ export default function ParkingLotManager() {
              }));
              nearbyLotsJson = JSON.stringify(locationsWithPrice);
          } catch (jsonError: any) {
-             console.error("Error preparing nearbyLots JSON for recommendation:", jsonError);
+             console.error("Error preparing nearbyLots JSON for recommendation:", jsonError.message);
          }
 
          let bookmarksJson = "[]";
          try {
              bookmarksJson = JSON.stringify(currentBookmarks);
          } catch (jsonError: any) {
-              console.error("Error preparing bookmarks JSON for recommendation:", jsonError);
+              console.error("Error preparing bookmarks JSON for recommendation:", jsonError.message);
          }
 
 
@@ -229,7 +229,7 @@ export default function ParkingLotManager() {
         setRecommendations(result.recommendations || []);
 
     } catch (err: any) {
-        console.error("Failed to fetch recommendations:", err);
+        console.error("Failed to fetch recommendations:", err.message);
         if (isOnline) toast({
             title: "Recommendation Error",
             description: "Could not fetch personalized parking recommendations. Please try again later.",
@@ -240,11 +240,6 @@ export default function ParkingLotManager() {
         setIsLoadingRecommendations(false);
     }
   }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline, userLocation]);
-
-  const loadProfileData = useCallback(async (forceRefresh = false) => {
-    if (!userId) return;
-    console.log("loadProfileData called - currently a placeholder in ParkingLotManager for profile-specific data if needed.");
-  }, [userId]);
 
 
   const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput, speakFn: (text: string) => void) => {
@@ -475,7 +470,7 @@ export default function ParkingLotManager() {
     try {
         bookmarksString = JSON.stringify(userBookmarks);
     } catch (jsonError: any) {
-        console.error("Error stringifying bookmarks for voice command:", jsonError);
+        console.error("Error stringifying bookmarks for voice command:", jsonError.message);
     }
     console.log("Processing voice command:", transcript);
     try {
@@ -710,7 +705,7 @@ export default function ParkingLotManager() {
       setPinnedSpot(pinData);
       if (typeof window !== 'undefined') {
            try { localStorage.setItem('pinnedCarLocation', JSON.stringify(pinData)); }
-           catch (cacheError: any) { console.error("Failed to cache pinned location:", cacheError); }
+           catch (cacheError: any) { console.error("Failed to cache pinned location:", cacheError.message); }
       }
 
       setIsPinning(false);
@@ -734,7 +729,7 @@ export default function ParkingLotManager() {
                         localStorage.removeItem('pinnedCarLocation');
                     }
                } catch (parseError: any){
-                    console.error("Failed to parse cached pinned location", parseError);
+                    console.error("Failed to parse cached pinned location", parseError.message);
                     localStorage.removeItem('pinnedCarLocation');
                }
            }
@@ -964,7 +959,7 @@ export default function ParkingLotManager() {
                           apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
                           defaultLatitude={mapCenter?.lat || userLocation?.lat || -15.4167}
                           defaultLongitude={mapCenter?.lng || userLocation?.lng || 28.2833}
-                          customClassName="rounded-md shadow"
+                          customClassName="rounded-md shadow h-[400px]" // Ensure height for map
                           userLocation={userLocation}
                           showUserCar={true}
                           centerCoordinates={mapCenter}
