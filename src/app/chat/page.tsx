@@ -30,8 +30,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Timestamp } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Added Avatar imports
-import { Alert, AlertTitle as AlertTitleSub, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert'; // Aliased to avoid conflict
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Alert, AlertTitle as AlertTitleSub, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert';
 
 export default function ChatPage() {
   const { isAuthenticated, userId, userName, userAvatarUrl, userRole, isOnline } = useContext(AppStateContext)!;
@@ -43,13 +43,20 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<ConversationParticipant[]>([]);
-  const [selectedUserToChatId, setSelectedUserToChatId] = useState<string>(''); // Store ID, not object
+  const [selectedUserToChatId, setSelectedUserToChatId] = useState<string>('');
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false); // Added loading state for users
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
+  const [isClientRender, setIsClientRender] = useState(false);
 
   useEffect(() => {
+    setIsClientRender(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClientRender) return;
+
     if (!isAuthenticated || !userId) {
       toast({ title: "Authentication Required", description: "Please sign in to access chat.", variant: "destructive" });
       router.push('/');
@@ -62,21 +69,15 @@ export default function ChatPage() {
       if (fetchError) {
         console.error("Error fetching conversations:", fetchError);
         setError("Could not load conversations. Please check your connection.");
-        setConversations([]); // Clear conversations on error
+        setConversations([]);
       } else {
         setConversations(fetchedConversations);
         setError(null);
-
-        // If a selected conversation is currently active, update its state from the new list
         if (selectedConversation) {
           const updatedSelectedConv = fetchedConversations.find(c => c.id === selectedConversation.id);
-          if (updatedSelectedConv) {
-            // Check if the object actually changed to avoid unnecessary re-renders
-            if (JSON.stringify(updatedSelectedConv) !== JSON.stringify(selectedConversation)) {
-              setSelectedConversation(updatedSelectedConv);
-            }
-          } else {
-            // Selected conversation no longer exists or is not in the fetched list
+          if (updatedSelectedConv && JSON.stringify(updatedSelectedConv) !== JSON.stringify(selectedConversation)) {
+            setSelectedConversation(updatedSelectedConv);
+          } else if (!updatedSelectedConv) {
             setSelectedConversation(null);
             setMessages([]);
           }
@@ -88,34 +89,33 @@ export default function ChatPage() {
     return () => {
       unsubscribeConversations();
     };
-  }, [isAuthenticated, userId, router, toast, selectedConversation]); // Added selectedConversation to deps for re-sync
+  }, [isClientRender, isAuthenticated, userId, router, toast, selectedConversation]);
 
   useEffect(() => {
-    if (selectedConversation?.id && userId) {
-      setIsLoadingMessages(true);
-      const unsubscribeMessages = subscribeToMessages(selectedConversation.id, (fetchedMessages, fetchError) => {
-        if (fetchError) {
-          console.error(`Error fetching messages for ${selectedConversation.id}:`, fetchError);
-          toast({ title: "Message Error", description: "Could not load messages for this conversation.", variant: "destructive"});
-          setMessages([]);
-        } else {
-          setMessages(fetchedMessages);
-           // Mark messages as read if online and conversation is selected
-          if (isOnline && selectedConversation.unreadCounts?.[userId] && selectedConversation.unreadCounts[userId] > 0) {
-            markMessagesAsRead(selectedConversation.id!, userId).catch(err => console.error("Failed to mark messages as read:", err));
-          }
-        }
-        setIsLoadingMessages(false);
-      });
-      return () => unsubscribeMessages();
-    } else {
+    if (!isClientRender || !selectedConversation?.id || !userId) {
       setMessages([]);
+      return;
     }
-  }, [selectedConversation, userId, isOnline, toast]);
+
+    setIsLoadingMessages(true);
+    const unsubscribeMessages = subscribeToMessages(selectedConversation.id, (fetchedMessages, fetchError) => {
+      if (fetchError) {
+        console.error(`Error fetching messages for ${selectedConversation.id}:`, fetchError);
+        toast({ title: "Message Error", description: "Could not load messages for this conversation.", variant: "destructive"});
+        setMessages([]);
+      } else {
+        setMessages(fetchedMessages);
+        if (isOnline && selectedConversation.unreadCounts?.[userId] && selectedConversation.unreadCounts[userId] > 0) {
+          markMessagesAsRead(selectedConversation.id!, userId).catch(err => console.error("Failed to mark messages as read:", err));
+        }
+      }
+      setIsLoadingMessages(false);
+    });
+    return () => unsubscribeMessages();
+  }, [isClientRender, selectedConversation, userId, isOnline, toast]);
 
   const handleSelectConversation = (conversation: ChatConversation) => {
     setSelectedConversation(conversation);
-    // Optimistically mark as read client-side to improve UX, backend will confirm
     if (isOnline && conversation.unreadCounts?.[userId!] && conversation.unreadCounts[userId!] > 0) {
         markMessagesAsRead(conversation.id!, userId!).catch(err => console.error("Optimistic markRead failed:", err));
     }
@@ -151,10 +151,9 @@ export default function ChatPage() {
         }
         const initiator: ConversationParticipant = { userId, userName, userAvatarUrl: userAvatarUrl || undefined, userRole: userRole || undefined };
         
-        // createOrGetConversation now returns the full ChatConversation object
         const conversation = await createOrGetConversation(initiator, recipient);
         
-        setSelectedConversation(conversation); // Directly set the fetched/created conversation
+        setSelectedConversation(conversation);
 
         setIsNewChatModalOpen(false);
         setSelectedUserToChatId('');
@@ -168,34 +167,47 @@ export default function ChatPage() {
   };
 
    useEffect(() => {
-    if (isNewChatModalOpen && isOnline && userId) {
-      setIsLoadingUsers(true); // Start loading
-      getMockUsersForChat(userId)
-        .then(users => setAvailableUsers(users))
-        .catch(err => {
-            console.error("Error fetching users for new chat:", err);
-            toast({title: "Error", description: "Could not load user list for new chat.", variant: "destructive"});
-            setAvailableUsers([]);
-        })
-        .finally(() => setIsLoadingUsers(false)); // Stop loading
+    if (!isClientRender || !isNewChatModalOpen || !isOnline || !userId) {
+        setAvailableUsers([]);
+        return;
     }
-  }, [isNewChatModalOpen, isOnline, userId, toast]);
+    setIsLoadingUsers(true);
+    getMockUsersForChat(userId)
+      .then(users => setAvailableUsers(users))
+      .catch(err => {
+          console.error("Error fetching users for new chat:", err);
+          toast({title: "Error", description: "Could not load user list for new chat.", variant: "destructive"});
+          setAvailableUsers([]);
+      })
+      .finally(() => setIsLoadingUsers(false));
+  }, [isClientRender, isNewChatModalOpen, isOnline, userId, toast]);
 
-
-  if (!isAuthenticated && typeof window !== 'undefined') { // Added client-side check
-      // This path should ideally not be reached due to the initial useEffect redirect.
-      // But added as a safeguard.
-      return (
-         <div className="flex flex-col items-center justify-center h-screen text-center p-4">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-              <h1 className="text-xl font-semibold">Access Denied</h1>
-              <p className="text-muted-foreground">Please sign in to use the chat feature.</p>
-              <Button onClick={() => router.push('/')} className="mt-4">Go to Home</Button>
-          </div>
-      );
+  if (!isClientRender) {
+    return (
+      <div className="flex h-[calc(100vh-var(--header-height,4rem))] border-t bg-muted/20 dark:bg-muted/5">
+        <div className="w-full md:w-80 border-r flex flex-col h-full bg-sidebar text-sidebar-foreground p-4 space-y-3">
+            <Skeleton className="h-8 w-full" />
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-3 p-1">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="space-y-1 flex-1">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              </div>
+            ))}
+        </div>
+        <div className="flex-1 flex flex-col bg-background items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-muted-foreground mt-2">Loading Chat...</p>
+        </div>
+      </div>
+    );
   }
 
-
+  // The redirection logic in the main useEffect will handle unauthenticated users
+  // by redirecting them. This main return is for authenticated users or the brief moment
+  // before redirection occurs.
   return (
     <div className="flex h-[calc(100vh-var(--header-height,4rem))] border-t bg-muted/20 dark:bg-muted/5">
       <ChatSidebar
@@ -247,7 +259,7 @@ export default function ChatPage() {
                        <UserPlus className="mr-2 h-4 w-4" /> Start New Chat
                     </Button>
                  </>
-            ) : ( // No conversations and not loading/error
+            ) : (
                  <>
                     <MessageSquareOff className="h-12 w-12 text-muted-foreground" />
                     <p className="text-lg font-medium">No conversations yet</p>
