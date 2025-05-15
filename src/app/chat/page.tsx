@@ -131,7 +131,7 @@ export default function ChatPage() {
     try {
       await sendMessage(selectedConversation.id, userId, userName, userRole || undefined, text);
     } catch (err: any) {
-      console.error('Failed to send message:', err);
+      console.error('Failed to send message:', err.message);
       toast({ title: "Send Error", description: err.message || "Could not send message.", variant: "destructive"});
     }
   };
@@ -159,7 +159,7 @@ export default function ChatPage() {
         setSelectedUserToChatId('');
         toast({ title: "Chat Ready", description: `You can now chat with ${recipient.userName}`});
     } catch (err: any) {
-        console.error("Failed to start new chat:", err);
+        console.error("Failed to start new chat:", err.message);
         toast({ title: "Chat Error", description: err.message || "Could not start new conversation.", variant: "destructive"});
     } finally {
         setIsCreatingConversation(false);

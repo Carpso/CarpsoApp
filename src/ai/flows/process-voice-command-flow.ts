@@ -25,19 +25,19 @@ const ProcessVoiceCommandOutputSchema = z.object({
     'find_parking',
     'reserve_spot',
     'check_availability',
-    'cancel_reservation', // Added intent
+    'cancel_reservation',
     'get_directions',   // Added intent
-    'report_issue',     // Added intent
-    'add_bookmark',     // Intent to add a saved location
+    'report_issue',
+    'add_bookmark',
     'unknown',
   ]).describe('The primary goal identified from the user\'s command.'),
   entities: z.object({
-    destination: z.string().optional().describe('The target location or address mentioned for finding parking or directions (could be a bookmark label like "Home" or "Work").'),
+    destination: z.string().optional().describe('The target location or address mentioned for finding parking or directions (could be a bookmark label like "Home" or "Work", or "my car" or "pinned car").'),
     spotId: z.string().optional().describe('The specific parking spot ID mentioned (e.g., A5, LotB-S10).'),
     locationId: z.string().optional().describe('The parking lot ID mentioned (e.g., lot_A, Downtown Garage).'),
-    issueType: z.string().optional().describe('The type of issue being reported (e.g., occupied, blocked).'), // Added entity
-    bookmarkLabel: z.string().optional().describe('The label for a new bookmark to be added (e.g., "Home", "Gym").'), // Added entity
-    bookmarkLocation: z.string().optional().describe('The location details for a new bookmark (e.g., "current location", "123 Main St").'), // Added entity
+    issueType: z.string().optional().describe('The type of issue being reported (e.g., occupied, blocked).'),
+    bookmarkLabel: z.string().optional().describe('The label for a new bookmark to be added (e.g., "Home", "Gym").'),
+    bookmarkLocation: z.string().optional().describe('The location details for a new bookmark (e.g., "current location", "123 Main St").'),
   }).describe('Specific pieces of information extracted from the command.'),
   responseText: z.string().describe('A natural language response to be spoken back to the user, confirming understanding or asking for clarification.'),
 });
@@ -62,9 +62,7 @@ export async function processVoiceCommand(input: ProcessVoiceCommandInput): Prom
           JSON.parse(input.userBookmarks);
       } catch (e) {
            console.error("Invalid JSON format for userBookmarks:", e);
-           // Decide how to handle: proceed without bookmarks or return error?
            input.userBookmarks = undefined; // Proceed without bookmarks
-           // Or: return { intent: 'unknown', entities: {}, responseText: "Sorry, I had trouble loading your saved locations." };
       }
   }
 
@@ -100,7 +98,7 @@ Possible Intents:
 - unknown: The intent is unclear or not related to parking.
 
 Relevant Entities:
-- destination: A place name, address, or bookmark label (e.g., "123 Main St", "the mall", "airport", "Home", "Work"). If a bookmark label is used, prioritize it.
+- destination: A place name, address, bookmark label (e.g., "123 Main St", "the mall", "airport", "Home", "Work"), or "my car", "pinned car". If a bookmark label is used, prioritize it.
 - spotId: A specific spot identifier (e.g., "A5", "spot 12", "lot_B-S22").
 - locationId: A specific parking lot name or ID (e.g., "Downtown Garage", "lot_A").
 - issueType: The nature of the problem being reported (e.g., "occupied", "blocked", "damaged").
@@ -111,8 +109,9 @@ Instructions:
 1. Determine the most likely 'intent' based on the command.
 2. Extract any 'entities' mentioned.
     - If the destination mentioned matches a label in the User Bookmarks, set the destination entity to that label.
+    - If "my car" or "pinned car" is mentioned for directions, set destination to "pinned car".
     - Normalize spot/location IDs if possible (e.g., "spot a five" -> "A5").
-3. Generate a concise 'responseText' to confirm understanding or ask for clarification if needed. If the intent is unknown, say so politely. If asking to reserve, confirm the spot ID. If finding parking, confirm the destination (using the bookmark label if applicable). If adding a bookmark, confirm the label and location.
+3. Generate a concise 'responseText' to confirm understanding or ask for clarification if needed. If the intent is unknown, say so politely. If asking to reserve, confirm the spot ID. If finding parking, confirm the destination (using the bookmark label if applicable). If adding a bookmark, confirm the label and location. For directions, confirm the destination.
 
 Example 1:
 Command: "Find parking near the train station"
@@ -130,20 +129,20 @@ Example 4:
 Command: "What's the weather like?"
 Output: { intent: 'unknown', entities: {}, responseText: "Sorry, I can only help with parking tasks." }
 
-Example 5:
+Example 5 (Get Directions to Lot):
 Command: "Get directions to Downtown Garage"
-Output: { intent: 'get_directions', entities: { destination: 'Downtown Garage' }, responseText: 'Okay, getting directions to Downtown Garage.' } // Destination can be a specific lot name too
+Output: { intent: 'get_directions', entities: { destination: 'Downtown Garage' }, responseText: 'Okay, getting directions to Downtown Garage.' }
 
-Example 6:
+Example 6 (Report Issue):
 Command: "Report spot A5 is occupied"
 Output: { intent: 'report_issue', entities: { spotId: 'A5', issueType: 'occupied' }, responseText: 'Okay, I can help report an issue with spot A5. Can you confirm the license plate of the occupying vehicle?' }
 
-Example 7 (with Bookmarks):
+Example 7 (Directions with Bookmarks):
 User Bookmarks: [{ "id": "bm_1", "label": "Home", "address": "10 Residential St" }]
 Command: "Get directions home"
 Output: { intent: 'get_directions', entities: { destination: 'Home' }, responseText: 'Okay, getting directions to Home.' }
 
-Example 8 (with Bookmarks):
+Example 8 (Find Parking with Bookmarks):
 User Bookmarks: [{ "id": "bm_2", "label": "Work", "address": "1 Business Ave" }]
 Command: "Find parking near work"
 Output: { intent: 'find_parking', entities: { destination: 'Work' }, responseText: 'Okay, looking for parking near Work.' }
@@ -156,6 +155,9 @@ Example 10 (Add Bookmark with address):
 Command: "Add University at 1 College Way"
 Output: { intent: 'add_bookmark', entities: { bookmarkLabel: 'University', bookmarkLocation: '1 College Way' }, responseText: 'Got it. Add "University" at 1 College Way?' }
 
+Example 11 (Get Directions to Pinned Car):
+Command: "Hey Carpso, where did I park my car?" or "Hey Carpso, get directions to my car"
+Output: { intent: 'get_directions', entities: { destination: 'pinned car' }, responseText: 'Okay, getting directions to your pinned car location.' }
 
 Now, process the User Command provided above.
 `,
@@ -183,10 +185,10 @@ const processVoiceCommandFlow = ai.defineFlow<
         break; // Success, exit the loop
       } catch (error: any) {
         console.error('Error processing voice command:', error);
-        if (error.message.includes('The model is overloaded')) {
+        if (error.message.includes('The model is overloaded') || error.message.includes('503')) {
           retryCount++;
           console.log(`Retry attempt ${retryCount}/${maxRetries}`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** retryCount) )); // Exponential backoff
         } else {
           // Non-recoverable error, re-throw
           throw error;
@@ -237,7 +239,10 @@ const processVoiceCommandFlow = ai.defineFlow<
              console.error("Error parsing bookmarks during post-processing:", e);
         }
     }
-
+     // Normalize "my car" or "pinned car" to "pinned car"
+    if (output.entities.destination?.toLowerCase().includes("my car") || output.entities.destination?.toLowerCase().includes("pinned car")) {
+        output.entities.destination = "pinned car";
+    }
 
     return output;
   }

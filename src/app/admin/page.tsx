@@ -170,8 +170,8 @@ export default function AdminDashboardPage() {
           }
           // Admin keeps 'all' or their selection
 
-      } catch (err) {
-        console.error("Failed to fetch parking lots:", err);
+      } catch (err: any) {
+        console.error("Failed to fetch parking lots:", err.message);
         setErrorLoadingLots("Could not load parking lots.");
          toast({ title: "Error Loading Lots", description: "Could not fetch parking lot data.", variant: "destructive" });
       } finally {
@@ -203,8 +203,8 @@ export default function AdminDashboardPage() {
 
           const adsWithLocationNames = filteredAds.map(ad => ({ ...ad, targetLotName: parkingLots.find(lot => lot.id === ad.targetLocationId)?.name || (ad.targetLocationId ? 'Unknown Lot' : 'Global') }));
           setAdvertisements(adsWithLocationNames);
-      } catch (err) {
-          console.error("Failed to fetch advertisements:", err);
+      } catch (err: any) {
+          console.error("Failed to fetch advertisements:", err.message);
           setErrorLoadingAds("Could not load advertisements.");
           toast({ title: "Error Loading Ads", description: "Could not fetch advertisement data.", variant: "destructive" });
       } finally {
@@ -234,8 +234,8 @@ export default function AdminDashboardPage() {
             }
 
           setPricingRules(filteredRules.map(rule => ({ ...rule, lotName: parkingLots.find(lot => lot.id === rule.lotId)?.name || 'Global' }))); // Add lot name
-      } catch (err) {
-          console.error("Failed to fetch pricing rules:", err);
+      } catch (err: any) {
+          console.error("Failed to fetch pricing rules:", err.message);
           setErrorLoadingRules("Could not load pricing rules.");
           toast({ title: "Error Loading Rules", description: "Could not fetch pricing rule data.", variant: "destructive" });
       } finally {
@@ -249,8 +249,8 @@ export default function AdminDashboardPage() {
         try {
             const programs = await getLinkedLoyaltyPrograms(currentUserId);
             setLinkedLoyalty(programs);
-        } catch (err) {
-            console.error("Failed to fetch linked loyalty programs:", err);
+        } catch (err: any) {
+            console.error("Failed to fetch linked loyalty programs:", err.message);
             toast({ title: "Error", description: "Could not fetch loyalty program data.", variant: "destructive" });
         } finally {
             setIsLoadingLoyalty(false);
@@ -316,8 +316,8 @@ export default function AdminDashboardPage() {
            link.click();
            document.body.removeChild(link);
            toast({ title: "Download Complete", description: `${filename} has been downloaded.` });
-       } catch (error) {
-           console.error("Failed to generate or download CSV:", error);
+       } catch (error: any) {
+           console.error("Failed to generate or download CSV:", error.message);
            toast({ title: "Download Failed", description: "Could not generate the spreadsheet.", variant: "destructive" });
        } finally {
             setIsDownloading(false);
@@ -339,13 +339,8 @@ export default function AdminDashboardPage() {
 
         if (selectedLotId === 'all' && isAdmin) {
             dataToDownload.push({ scope: scope, revenue: displayedAnalytics.revenue, avgOccupancy: displayedAnalytics.avgOccupancy, activeReservations: displayedAnalytics.activeReservations });
-            // Add daily revenue and signups if needed
-            // displayedAnalytics.dailyRevenue?.forEach(d => dataToDownload.push({ scope: scope, metric: 'Daily Revenue', day: d.day, value: d.revenue }));
-            // displayedAnalytics.userSignups?.forEach(d => dataToDownload.push({ scope: scope, metric: 'User Signups', day: d.day, value: d.signups }));
         } else if (selectedLot) {
             dataToDownload.push({ scope: scope, revenue: displayedAnalytics.revenue, avgOccupancy: displayedAnalytics.avgOccupancy, activeReservations: displayedAnalytics.activeReservations });
-            // Add daily revenue if needed
-            // displayedAnalytics.dailyRevenue?.forEach(d => dataToDownload.push({ scope: scope, metric: 'Daily Revenue', day: d.day, value: d.revenue }));
         }
 
         const filenameScope = selectedLot ? selectedLot.name : 'all-locations';
@@ -375,8 +370,8 @@ export default function AdminDashboardPage() {
             console.log("Fetching records with filters:", filters);
             const records = await getParkingRecords(filters);
             downloadCSV(records, `carpso-parking-records-${scopeName}.csv`);
-         } catch (error) {
-             console.error("Failed to fetch records for download:", error);
+         } catch (error: any) {
+             console.error("Failed to fetch records for download:", error.message);
              toast({ title: "Download Failed", description: "Could not fetch parking records.", variant: "destructive" });
              setIsDownloading(false);
          }
@@ -476,7 +471,7 @@ export default function AdminDashboardPage() {
                 toast({ title: "Ad Saved", description: `"${savedAd.title}" ${currentAd.id ? 'updated' : 'created'}.` });
                 setIsAdModalOpen(false);
             } else { throw new Error("Backend save failed."); }
-        } catch (error) { console.error("Save Ad Error:", error); toast({ title: "Save Failed", variant: "destructive" }); }
+        } catch (error: any) { console.error("Save Ad Error:", error.message); toast({ title: "Save Failed", variant: "destructive" }); }
         finally { setIsSavingAd(false); }
     };
     const handleDeleteAd = async (adId: string) => {
@@ -493,7 +488,7 @@ export default function AdminDashboardPage() {
             const success = await deleteAdvertisement(adId);
             if (success) { setAdvertisements(prevAds => prevAds.filter(ad => ad.id !== adId)); toast({ title: "Ad Deleted" }); }
             else { throw new Error("Backend delete failed."); }
-        } catch (error) { console.error("Delete Ad Error:", error); toast({ title: "Deletion Failed", variant: "destructive" }); }
+        } catch (error: any) { console.error("Delete Ad Error:", error.message); toast({ title: "Deletion Failed", variant: "destructive" }); }
         finally { setIsDeletingAd(false); }
     };
     // --- End Advertisement Management ---
@@ -563,7 +558,7 @@ export default function AdminDashboardPage() {
                 toast({ title: "Rule Saved", description: `Rule "${savedRule.description}" saved.` });
                 setIsRuleModalOpen(false);
             } else { throw new Error("Backend save failed."); }
-        } catch (error) { console.error("Save Rule Error:", error); toast({ title: "Save Failed", variant: "destructive" }); }
+        } catch (error: any) { console.error("Save Rule Error:", error.message); toast({ title: "Save Failed", variant: "destructive" }); }
         finally { setIsSavingRule(false); }
     };
     const handleDeleteRule = async (ruleId: string) => {
@@ -580,7 +575,7 @@ export default function AdminDashboardPage() {
              const success = await deletePricingRule(ruleId);
              if (success) { setPricingRules(prevRules => prevRules.filter(r => r.ruleId !== ruleId)); toast({ title: "Rule Deleted" }); }
              else { throw new Error("Backend delete failed."); }
-         } catch (error) { console.error("Delete Rule Error:", error); toast({ title: "Deletion Failed", variant: "destructive" }); }
+         } catch (error: any) { console.error("Delete Rule Error:", error.message); toast({ title: "Deletion Failed", variant: "destructive" }); }
          finally { setIsDeletingRule(false); }
      };
     // --- End Pricing Rule Management ---
@@ -622,8 +617,8 @@ export default function AdminDashboardPage() {
                  toast({ title: "Subscription Updated" });
                  setIsSubscriptionModalOpen(false);
              } else { throw new Error("Backend update failed."); }
-         } catch (error) {
-             console.error("Subscription Save Error:", error);
+         } catch (error: any) {
+             console.error("Subscription Save Error:", error.message);
              toast({ title: "Update Failed", variant: "destructive" });
          } finally {
              setIsSavingSubscription(false);
@@ -638,8 +633,8 @@ export default function AdminDashboardPage() {
                  await fetchLots();
                  toast({ title: "Trial Started", description: "14-day trial activated." });
              } else { throw new Error("Failed to start trial."); }
-         } catch (error) {
-             console.error("Start Trial Error:", error);
+         } catch (error: any) {
+             console.error("Start Trial Error:", error.message);
              toast({ title: "Operation Failed", variant: "destructive" });
          } finally {
              setIsSavingSubscription(false);
@@ -796,7 +791,7 @@ export default function AdminDashboardPage() {
                                    <TableCell className="font-medium">{user.name}</TableCell><TableCell>{user.email}</TableCell><TableCell>{user.role}</TableCell>
                                    {selectedLotId === 'all' && <TableCell>{user.associatedLots.join(', ')}</TableCell>}
                                    <TableCell className="text-right space-x-1">
-                                     <Button variant="ghost" size="sm" disabled={!isAdmin && !(isParkingLotOwner && user.associatedLots.includes(selectedLotId!))}>Edit</Button> {/* Allow owner to edit users for their lot */}
+                                     <Button variant="ghost" size="sm" disabled={!isAdmin && !(isParkingLotOwner && selectedLotId !== 'all' && user.associatedLots.includes(selectedLotId))}>Edit</Button>
                                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={!isAdmin}> <Trash2 className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Delete</span> </Button>
                                    </TableCell>
                                  </TableRow>
@@ -1289,7 +1284,7 @@ export default function AdminDashboardPage() {
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-title" className="text-right">Title*</Label><Input id="ad-title" name="title" value={currentAd.title || ''} onChange={handleAdFormChange} className="col-span-3" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-start gap-4"><Label htmlFor="ad-description" className="text-right pt-2">Desc*</Label><Textarea id="ad-description" name="description" value={currentAd.description || ''} onChange={handleAdFormChange} className="col-span-3 min-h-[80px]" disabled={isSavingAd} /></div>
                     <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="ad-imageUrl" className="text-right">Image URL</Label><Input id="ad-imageUrl" name="imageUrl" value={currentAd.imageUrl || ''} onChange={handleAdFormChange} className="col-span-3" placeholder="https://..." disabled={isSavingAd} /></div>
-                    {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e) => { e.currentTarget.style.display = 'none'; }} data-ai-hint="advertisement preview"/></div></div>)}
+                    {currentAd.imageUrl && (<div className="grid grid-cols-4 items-center gap-4"><div className="col-start-2 col-span-3"><Image src={currentAd.imageUrl} alt="Ad Preview" width={150} height={75} className="rounded object-cover aspect-[2/1] border" onError={(e: any) => { e.currentTarget.style.display = 'none'; }} data-ai-hint="advertisement preview"/></div></div>)}
                    <div className="grid grid-cols-4 items-center gap-4"> <Label htmlFor="ad-targetLocationId" className="text-right">Location*</Label>
                         <Select name="targetLocationId" value={currentAd.targetLocationId || 'all'} onValueChange={(value) => handleAdSelectChange('targetLocationId', value)} disabled={isSavingAd || (!isAdmin && isParkingLotOwner && getDisplayLots().length <=1 && !currentAd.id)}>
                            <SelectTrigger id="ad-targetLocationId" className="col-span-3"><SelectValue placeholder="Select target location" /></SelectTrigger>

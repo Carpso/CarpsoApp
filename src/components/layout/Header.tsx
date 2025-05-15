@@ -36,9 +36,9 @@ export default function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="pr-0 w-[250px] sm:w-[300px] flex flex-col">
              <SheetHeader className="p-4 pb-2">
-               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+               <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
              </SheetHeader>
-             <SheetClose asChild>
+             <SheetClose asChild> {/* Close when logo link is clicked */}
                  <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
                     <CarpsoLogo className="h-8 w-auto text-primary" />
                     <span className="font-bold sr-only">Carpso</span>
@@ -165,7 +165,7 @@ export default function Header() {
                      </Button>
                  </Link>
             ) : (
-                 null
+                 null // Or <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>
             )}
         </div>
       </div>

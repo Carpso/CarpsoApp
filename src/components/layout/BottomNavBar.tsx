@@ -52,8 +52,9 @@ export default function BottomNavBar({ onAuthClick }: BottomNavBarProps) {
 
   // Determine number of columns based on items + profile button
   const totalItemsForGrid = navItems.length + 1; // +1 for the profile/auth button
-  let gridColsClass = `grid-cols-${totalItemsForGrid}`;
-  if (totalItemsForGrid > 5) gridColsClass = 'grid-cols-5'; // Max 5, others will wrap/scroll if too many
+  // Use a flexible approach with auto-cols-fr to evenly distribute items
+  const gridColsClass = `grid-cols-[repeat(${totalItemsForGrid},minmax(0,1fr))]`;
+
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
@@ -63,7 +64,7 @@ export default function BottomNavBar({ onAuthClick }: BottomNavBarProps) {
            </div>
        )}
       <div className={cn(
-         "container mx-auto flex h-16 max-w-md items-center justify-around px-2",
+         "container mx-auto grid h-16 max-w-md items-center justify-around px-2", // Use grid for even distribution
          gridColsClass
       )}>
         {navItems.map((item) => {

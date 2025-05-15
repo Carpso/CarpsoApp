@@ -596,7 +596,6 @@ export async function redeemPoints(
     // Update wallet - Assuming wallet-service handles internal update
     // This requires wallet-service to expose an update function or handle this internally
     // For mock, we might need direct access (which is bad practice in real apps)
-    // Let's assume a simulated update via an internal function if wallet-service doesn't export one.
     let newWalletBalance = walletData.balance + redeemedAmount;
     // userWallets[userId].balance = newWalletBalance; // Direct update for mock (replace with proper service call)
 
@@ -868,8 +867,8 @@ export function saveUserPreferences(userId: string, preferences: UserPreferences
             const key = `userPreferences_${userId}`;
             localStorage.setItem(key, JSON.stringify(preferences));
             console.log(`Saved preferences for user ${userId}.`);
-        } catch (e) {
-            console.error("Failed to save user preferences:", e);
+        } catch (e: any) {
+            console.error("Failed to save user preferences:", e.message);
         }
     }
 }
@@ -887,8 +886,8 @@ export function loadUserPreferences(userId: string): UserPreferences | null {
             if (storedPrefs) {
                 return JSON.parse(storedPrefs) as UserPreferences;
             }
-        } catch (e) {
-            console.error("Failed to load or parse user preferences:", e);
+        } catch (e: any) {
+            console.error("Failed to load or parse user preferences:", e.message);
              localStorage.removeItem(`userPreferences_${userId}`); // Clear invalid data
         }
     }

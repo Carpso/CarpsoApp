@@ -338,24 +338,36 @@ export default function ParkingLotManager() {
                   let targetLat: number | undefined;
                   let targetLon: number | undefined;
                   let targetName = entities.destination;
-                  const currentBookmarks = userBookmarks;
-                  const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === entities.destination?.toLowerCase());
-                  if (matchedBookmark) {
-                     targetLat = matchedBookmark.latitude;
-                     targetLon = matchedBookmark.longitude;
-                     targetName = matchedBookmark.label;
-                     console.log(`Getting directions to bookmark: ${targetName}`);
-                  } else {
-                      const locationByIdOrName = locations.find(loc => loc.id === entities.destination || loc.name === entities.destination);
-                      if (locationByIdOrName) {
-                           targetLat = locationByIdOrName.latitude;
-                           targetLon = locationByIdOrName.longitude;
-                           targetName = locationByIdOrName.name;
-                           console.log(`Getting directions to parking lot: ${targetName}`);
+
+                  if (targetName === "pinned car") {
+                      if (pinnedSpot) {
+                         targetLat = pinnedSpot.latitude;
+                         targetLon = pinnedSpot.longitude;
+                         targetName = `your pinned car at ${pinnedSpot.spotId}`;
                       } else {
-                           console.log(`Cannot resolve directions target: ${targetName}. Geocoding needed.`);
+                           if (isOnline && isClient && speakFn) speakFn("Sorry, I don't have a pinned car location for you.");
+                           else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                           break;
+                      }
+                  } else {
+                      const currentBookmarks = userBookmarks;
+                      const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === targetName?.toLowerCase());
+                      if (matchedBookmark) {
+                         targetLat = matchedBookmark.latitude;
+                         targetLon = matchedBookmark.longitude;
+                         targetName = matchedBookmark.label;
+                      } else {
+                          const locationByIdOrName = locations.find(loc => loc.id === targetName || loc.name === targetName);
+                          if (locationByIdOrName) {
+                               targetLat = locationByIdOrName.latitude;
+                               targetLon = locationByIdOrName.longitude;
+                               targetName = locationByIdOrName.name;
+                          } else {
+                               console.log(`Cannot resolve directions target: ${targetName}. Geocoding needed or not a known location.`);
+                          }
                       }
                   }
+
 
                   if (targetLat && targetLon) {
                       toast({ title: "Getting Directions", description: `Opening map directions for ${targetName}...` });
@@ -364,9 +376,6 @@ export default function ParkingLotManager() {
                        if (isOnline && isClient && speakFn) speakFn(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
                        else console.warn("Voice assistant speak function not available, offline, or not on client.");
                   }
-             } else if (pinnedSpot) {
-                  toast({ title: "Getting Directions", description: `Opening map directions to your pinned car at ${pinnedSpot.spotId}...` });
-                  if (typeof window !== 'undefined' && pinnedSpot.latitude && pinnedSpot.longitude) window.open(`https://www.google.com/maps/dir/?api=1&destination=${pinnedSpot.latitude},${pinnedSpot.longitude}`, '_blank');
              } else {
                   if (isOnline && isClient && speakFn) speakFn("Where would you like directions to?");
                   else console.warn("Voice assistant speak function not available, offline, or not on client.");
@@ -1041,10 +1050,10 @@ export default function ParkingLotManager() {
              <SelectTrigger className="w-full"> <SelectValue placeholder="Select a parking location..." /> </SelectTrigger>
              <SelectContent>
                 {favoriteLocationObjects.length > 0 && ( <> <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Favorites</div>
-                        {favoriteLocationObjects.map((loc) => ( <SelectItem key={loc.id} value={loc.id}> <span className="flex items-center gap-2"> <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" /> {loc.name} - {loc.address} </span> </SelectItem> ))} <hr className="my-1" /> </> )}
+                        {favoriteLocationObjects.map((loc) => ( <SelectItem key={loc.id} value={loc.id}> <span className="flex items-center gap-2"> <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" /> {loc.name} - {loc.address} </span> </SelectItem> ))} <Separator className="my-1" /> </> )}
                 {carpsoManagedLots.length > 0 && ( <> <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Carpso Locations</div>
                         {carpsoManagedLots.map((loc) => ( <SelectItem key={loc.id} value={loc.id}> <span className="flex items-center gap-2"> {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />} {loc.name} - {loc.address} <Badge variant="outline" className="ml-auto text-xs">{loc.subscriptionStatus === 'active' ? 'Active' : loc.subscriptionStatus === 'trial' ? 'Trial' : 'Inactive'}</Badge> </span> </SelectItem> ))} </> )}
-                 {externalLots.length > 0 && ( <> <hr className="my-1" /> <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Other Nearby Locations (via Google)</div>
+                 {externalLots.length > 0 && ( <> <Separator className="my-1" /> <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Other Nearby Locations (via Google)</div>
                         {externalLots.map((loc) => ( <SelectItem key={loc.id} value={loc.id}> <span className="flex items-center gap-2"> {favoriteLocations.includes(loc.id) && <Star className="h-4 w-4 text-yellow-500" />} {loc.name} - {loc.address} <Badge variant="secondary" className="ml-auto text-xs">External</Badge> </span> </SelectItem> ))} </> )}
              </SelectContent>
            </Select>
