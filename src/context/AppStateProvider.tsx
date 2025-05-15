@@ -9,14 +9,15 @@ interface UserState {
   userId: string | null;
   userName: string | null;
   userAvatarUrl: string | null;
-  userRole: UserRole | null; // Use imported UserRole type
+  userRole: UserRole | null;
 }
 
 interface AppStateContextProps extends UserState {
-  isOnline: boolean; // Added online status
-  login: (userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => void; // Use UserRole type
+  isOnline: boolean;
+  login: (userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => void;
   logout: () => void;
   updateUserProfile: (name: string, avatarUrl?: string | null) => void;
+  requestNotificationPermission: () => Promise<void>; // Added for FCM
 }
 
 export const AppStateContext = createContext<AppStateContextProps | undefined>(undefined);
@@ -26,49 +27,39 @@ interface AppStateProviderProps {
 }
 
 const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
-  const [isClient, setIsClient] = useState(false); // Track if component has mounted
-  const [userState, setUserState] = useState<UserState>({ // Default initial state (matches server)
+  const [isClient, setIsClient] = useState(false);
+  const [userState, setUserState] = useState<UserState>({
       isAuthenticated: false,
       userId: null,
       userName: null,
       userAvatarUrl: null,
       userRole: null,
   });
-  const [isOnline, setIsOnline] = useState(true); // Default to true, check on mount
+  const [isOnline, setIsOnline] = useState(true);
 
-  // Effect to run only on the client after mounting
   useEffect(() => {
     setIsClient(true);
-
-    // Initialize state from localStorage
     const storedUser = localStorage.getItem('carpsoUser');
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser) as UserState;
-        // Basic validation
         if (parsedUser.isAuthenticated && parsedUser.userId) {
           setUserState(parsedUser);
         } else {
-             // Clear invalid state
              localStorage.removeItem('carpsoUser');
         }
       } catch (e) {
         console.error("Failed to parse stored user state:", e);
-        localStorage.removeItem('carpsoUser'); // Clear invalid state
+        localStorage.removeItem('carpsoUser');
       }
     }
 
-     // Check initial online status and add listeners
      if (typeof navigator !== 'undefined') {
        setIsOnline(navigator.onLine);
-
        const handleOnline = () => setIsOnline(true);
        const handleOffline = () => setIsOnline(false);
-
        window.addEventListener('online', handleOnline);
        window.addEventListener('offline', handleOffline);
-
-       // Cleanup listeners on component unmount
        return () => {
          window.removeEventListener('online', handleOnline);
          window.removeEventListener('offline', handleOffline);
@@ -76,18 +67,15 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
      }
   }, []);
 
-
-  const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => { // Use UserRole type
-    // In a real app, you'd verify credentials/token before setting state
+  const login = useCallback((userId: string, name: string, avatarUrl?: string | null, role?: UserRole | null) => {
      const newState: UserState = {
        isAuthenticated: true,
        userId: userId,
        userName: name,
        userAvatarUrl: avatarUrl || null,
-       userRole: role || 'User', // Default to 'User' role if not provided
+       userRole: role || 'User',
      };
     setUserState(newState);
-    // Persist login state (e.g., localStorage)
      if (typeof window !== 'undefined') {
          localStorage.setItem('carpsoUser', JSON.stringify(newState));
      }
@@ -102,37 +90,15 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
         userRole: null,
       };
     setUserState(loggedOutState);
-    // Clear persisted login state
      if (typeof window !== 'undefined') {
          localStorage.removeItem('carpsoUser');
-     }
-    // Clear cached data on logout
-    if (typeof window !== 'undefined') {
-        // Clear user-specific cache keys
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('cachedUserDetails_') ||
-                key.startsWith('cachedBillingInfo_') ||
-                key.startsWith('cachedParkingHistory_') ||
-                key.startsWith('cachedVehicles_') ||
-                key.startsWith('cachedPaymentMethods_') ||
-                key.startsWith('cachedGamification_') ||
-                key.startsWith('cachedPointsTxns_') ||
-                key.startsWith('cachedUserWallet_') ||
-                key.startsWith('cachedUserWalletTxns_') ||
-                key.startsWith('cachedUserBookmarks_') ||
-                key.startsWith('userPreferences_') || // Clear user preferences
-                key.endsWith('_timestamp')) { // Also remove timestamps
+         Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('cached') || key.startsWith('userPreferences_') || key.startsWith('lastLoginTimestamp_') || key === 'pinnedCarLocation') {
                 localStorage.removeItem(key);
             }
         });
-         // Clear general cache if needed (careful not to clear unrelated data)
-         localStorage.removeItem('cachedParkingLots');
-         localStorage.removeItem('cachedParkingLotsTimestamp');
-         localStorage.removeItem('cachedExchangeRates');
-         localStorage.removeItem('cachedExchangeRates_timestamp');
-         localStorage.removeItem('pinnedCarLocation'); // Clear pinned car
-         console.log("Cleared user-specific cache and preferences on logout.");
-    }
+        console.log("Cleared user-specific cache and preferences on logout.");
+     }
   }, []);
 
    const updateUserProfile = useCallback((name: string, avatarUrl?: string | null) => {
@@ -140,9 +106,8 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
             const newState = {
                ...prevState,
                userName: name,
-               userAvatarUrl: avatarUrl !== undefined ? avatarUrl : prevState.userAvatarUrl, // Update avatar only if provided
+               userAvatarUrl: avatarUrl !== undefined ? avatarUrl : prevState.userAvatarUrl,
            };
-            // Update persisted state if needed
             if (typeof window !== 'undefined' && newState.isAuthenticated) {
                 localStorage.setItem('carpsoUser', JSON.stringify(newState));
             }
@@ -150,14 +115,30 @@ const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
        });
    }, []);
 
-   // If not yet mounted on client, return null or a basic loading state to avoid hydration mismatch
-   // Or, always render children but ensure the initial userState matches the server (logged out)
-   // if (!isClient) {
-   //    return null; // Or a loading spinner, but this might cause layout shifts
-   // }
+  // Placeholder for FCM permission request
+  const requestNotificationPermission = useCallback(async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          console.log('Notification permission granted.');
+          // TODO: Get FCM token and send it to your server
+          // const token = await getFCMToken(); // Placeholder
+          // if (token) { sendTokenToServer(token); }
+        } else {
+          console.warn('Notification permission denied.');
+        }
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
+      }
+    } else {
+      console.warn('Push notifications not supported by this browser or environment.');
+    }
+  }, []);
+
 
   return (
-    <AppStateContext.Provider value={{ ...userState, isOnline, login, logout, updateUserProfile }}>
+    <AppStateContext.Provider value={{ ...userState, isOnline, login, logout, updateUserProfile, requestNotificationPermission }}>
       {children}
     </AppStateContext.Provider>
   );

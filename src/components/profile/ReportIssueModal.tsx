@@ -1,7 +1,7 @@
 // src/components/profile/ReportIssueModal.tsx
 'use client';
 
-import React, { useState, useRef, useContext } from 'react'; // Added useContext
+import React, { useState, useRef, useContext } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,34 +13,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info, WifiOff, Printer } from 'lucide-react'; // Added Printer
+import { Textarea } from "@/components/ui/textarea";
+import { AlertTriangle, Loader2, Camera, ImagePlus, CheckCircle, CircleAlert, Info, WifiOff, Printer, MessageSquare } from 'lucide-react'; // Added MessageSquare
 import { useToast } from '@/hooks/use-toast';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AppStateContext } from '@/context/AppStateProvider'; // Import context
-import Receipt from '@/components/common/Receipt'; // Import Receipt component
-import { checkPlateWithAuthority } from '@/services/authority-check'; // Import authority check
-
-// Extend ParkingHistoryEntry if needed, or use props directly
-interface ParkingHistoryEntry {
-  id: string;
-  spotId: string;
-  locationName: string;
-  locationId: string;
-  startTime: string;
-  endTime: string;
-  cost: number;
-  status: 'Completed' | 'Active' | 'Upcoming';
-}
+import { Alert, AlertDescription as AlertDescriptionSub } from '@/components/ui/alert'; // Use Sub alias
+import { AppStateContext } from '@/context/AppStateProvider';
+import { checkPlateWithAuthority } from '@/services/authority-check';
+import type { ParkingRecord } from '@/services/pricing-service'; // Import ParkingRecord type
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 interface ReportIssueModalProps {
   isOpen: boolean;
   onClose: () => void;
-  reservation: ParkingHistoryEntry | null;
+  reservation: ParkingRecord | null; // Use ParkingRecord type
   userId: string;
 }
 
-// Mock function to simulate report submission with escalation
 const submitParkingIssueReport = async (data: {
     reservationId: string;
     userId: string;
@@ -49,35 +37,28 @@ const submitParkingIssueReport = async (data: {
     reportedPlateNumber: string;
     details: string;
     photoDataUri?: string;
-    timestamp: string; // Add timestamp for receipt
+    timestamp: string;
 }): Promise<{ success: boolean; message: string; caseId?: string; timestamp: string }> => {
     console.log("Submitting issue report:", data);
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 1500)); 
 
-    // Simulate success/failure and potential external API interaction
-    const isPlateValid = data.reportedPlateNumber.length > 3; // Basic validation
-    const apiCheckSuccess = Math.random() > 0.2; // Simulate RTSA/authority check
+    const isPlateValid = data.reportedPlateNumber.length > 3; 
+    const apiCheckSuccess = Math.random() > 0.2; 
     const caseId = "REP" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    // Simulate Escalation Logic
     console.log(`Report ${caseId}: Notifying Attendant for location ${data.locationId}...`);
-    // await notifyAttendant(data.locationId, caseId, data); // Replace with actual notification
     await new Promise(resolve => setTimeout(resolve, 300));
     console.log(`Report ${caseId}: Escalating to Owner for location ${data.locationId}...`);
-    // await notifyOwner(data.locationId, caseId, data); // Replace with actual notification
-     await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 300));
     console.log(`Report ${caseId}: Logging for Carpso Management review...`);
-    // await logForManagement(caseId, data); // Replace with actual logging
 
     let message = `Report submitted successfully. It has been forwarded to the parking attendant and owner. Case ID: ${caseId}`;
     let success = true;
 
     if (!isPlateValid) {
-        message = `Invalid license plate. ${message}`; // Prepend validation message
-        // Still consider it a successful submission in terms of logging
+        message = `Invalid license plate. ${message}`; 
     } else if (!apiCheckSuccess) {
-         message = `Could not verify plate with authority. ${message}`; // Prepend verification message
-         // Still consider it a successful submission
+         message = `Could not verify plate with authority. ${message}`;
     }
 
     return { success: success, message: message, caseId: caseId, timestamp: data.timestamp };
@@ -85,16 +66,17 @@ const submitParkingIssueReport = async (data: {
 
 
 export default function ReportIssueModal({ isOpen, onClose, reservation, userId }: ReportIssueModalProps) {
-  const { isOnline } = useContext(AppStateContext)!; // Get online status
+  const { isOnline } = useContext(AppStateContext)!;
   const [plateNumber, setPlateNumber] = useState('');
   const [details, setDetails] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingPlate, setIsCheckingPlate] = useState(false); // State for authority check
+  const [isCheckingPlate, setIsCheckingPlate] = useState(false);
   const [plateCheckResult, setPlateCheckResult] = useState<{ registeredOwner?: string, vehicleMake?: string } | null | 'error'>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const router = useRouter(); // Initialize router
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -114,13 +96,11 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
    const handlePlateNumberChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const newPlateNumber = e.target.value.toUpperCase();
         setPlateNumber(newPlateNumber);
-        setPlateCheckResult(null); // Reset check result on change
+        setPlateCheckResult(null); 
 
-         // Don't check if offline
          if (!isOnline) return;
 
-        // Basic check before hitting the 'API'
-        if (newPlateNumber.length >= 4) { // Example: check only if length >= 4
+        if (newPlateNumber.length >= 4) { 
             setIsCheckingPlate(true);
             try {
                 const result = await checkPlateWithAuthority(newPlateNumber);
@@ -134,10 +114,8 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         }
    };
 
-   // --- Simulate Printing Report Confirmation ---
     const handlePrintReportConfirmation = (reportData: any) => {
         if (!reportData) return;
-
         console.log("Simulating print report confirmation:", reportData);
         const printWindow = window.open('', '_blank', 'height=600,width=400');
         if (printWindow) {
@@ -169,8 +147,13 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
         }
         toast({ title: "Printing Confirmation...", description: "Browser print dialog should open.", duration: 3000 });
     };
-    // --- End Simulate Printing ---
 
+    const handleChatWithSupport = () => {
+        if (!reservation || !isOnline) return;
+        // Navigate to chat page with context
+        router.push(`/chat?startWithSupport=true&contextType=reservation_issue&relatedId=${reservation.recordId}`);
+        onClose(); // Close this modal
+    };
 
   const handleSubmit = async () => {
     if (!isOnline) {
@@ -184,7 +167,6 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
     setIsLoading(true);
     let photoDataUri: string | undefined = undefined;
     if (photoFile) {
-        // Reuse the preview if available, otherwise read the file again (should be rare)
         if(photoPreview) {
             photoDataUri = photoPreview;
         } else {
@@ -200,26 +182,25 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
 
     try {
       const result = await submitParkingIssueReport({
-        reservationId: reservation.id,
+        reservationId: reservation.recordId, // Use recordId from reservation
         userId: userId,
         spotId: reservation.spotId,
         locationId: reservation.locationId,
         reportedPlateNumber: plateNumber,
         details: details,
         photoDataUri: photoDataUri,
-        timestamp: reportTimestamp, // Pass timestamp
+        timestamp: reportTimestamp,
       });
 
-      // Even if plate check failed, the report is considered "submitted" for logging
       const reportDataForReceipt = {
              timestamp: result.timestamp,
              caseId: result.caseId,
              spotId: reservation.spotId,
-             locationName: reservation.locationName,
+             locationName: reservation.lotName, // Use lotName from reservation
              reportedPlateNumber: plateNumber,
              details: details,
              photoSubmitted: !!photoPreview,
-             plateCheckResult: plateCheckResult, // Include check result for printing context
+             plateCheckResult: plateCheckResult,
          };
 
       toast({
@@ -227,7 +208,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
           description: (
               <div className="flex flex-col gap-2">
                   <span>{result.message}</span>
-                  {result.caseId && ( // Only show print button if a case ID was generated
+                  {result.caseId && ( 
                     <Button
                         variant="secondary"
                         size="sm"
@@ -239,11 +220,10 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                   )}
               </div>
           ),
-          variant: result.success ? "default" : "warning", // Use warning if plate check failed
-          duration: 10000, // Longer duration
+          variant: result.success ? "default" : "warning", 
+          duration: 10000, 
       });
-      onClose(); // Close modal
-      // Reset form state after a delay
+      onClose();
          setTimeout(() => {
              setPlateNumber('');
              setDetails('');
@@ -252,7 +232,7 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
              setPlateCheckResult(null);
          }, 300);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting report:", error);
       toast({ title: "Error", description: "An unexpected error occurred. Please try again.", variant: "destructive" });
     } finally {
@@ -268,14 +248,13 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
              <AlertTriangle className="h-5 w-5 text-destructive" /> Report Issue for Spot {reservation?.spotId.split('-')[1]}
           </DialogTitle>
           <DialogDescription>
-            Spot: {reservation?.spotId} at {reservation?.locationName}. <br/>
+            Spot: {reservation?.spotId} at {reservation?.lotName}. <br/> {/* Use lotName */}
             Report if the spot you reserved is occupied by another vehicle.
             {!isOnline && <span className="text-destructive font-medium ml-1">(Offline)</span>}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
-           {/* License Plate Input */}
            <div className="grid grid-cols-4 items-center gap-4">
              <Label htmlFor="plateNumber" className="text-right col-span-1">
                License Plate*
@@ -285,51 +264,46 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                    id="plateNumber"
                    value={plateNumber}
                    onChange={handlePlateNumberChange}
-                   className="uppercase" // Ensure uppercase display
+                   className="uppercase" 
                    placeholder="e.g., ABX 1234"
                    disabled={isLoading || !isOnline}
-                   maxLength={10} // Example max length
+                   maxLength={10}
                  />
                   {isCheckingPlate && isOnline && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
              </div>
            </div>
 
-           {/* Plate Check Result Display */}
             {plateCheckResult && plateCheckResult !== 'error' && isOnline && (
                  <Alert variant="default" className="col-span-4 mt-[-8px] bg-green-50 border-green-200">
                     <CheckCircle className="h-4 w-4 text-green-600" />
-                     <AlertDescription className="text-xs text-green-800">
+                     <AlertDescriptionSub className="text-xs text-green-800">
                          Vehicle Found (Simulated): {plateCheckResult.vehicleMake} owned by {plateCheckResult.registeredOwner}.
-                     </AlertDescription>
+                     </AlertDescriptionSub>
                  </Alert>
             )}
             {plateCheckResult === null && plateNumber.length >= 4 && !isCheckingPlate && isOnline && (
                  <Alert variant="destructive" className="col-span-4 mt-[-8px]">
                     <CircleAlert className="h-4 w-4" />
-                     <AlertDescription className="text-xs">
+                     <AlertDescriptionSub className="text-xs">
                          License plate not found in authority records (Simulated). Report can still be submitted.
-                     </AlertDescription>
+                     </AlertDescriptionSub>
                  </Alert>
             )}
              {plateCheckResult === 'error' && isOnline && (
                  <Alert variant="destructive" className="col-span-4 mt-[-8px]">
                     <CircleAlert className="h-4 w-4" />
-                     <AlertDescription className="text-xs">
+                     <AlertDescriptionSub className="text-xs">
                          Error checking license plate with authority. Report can still be submitted.
-                     </AlertDescription>
+                     </AlertDescriptionSub>
                  </Alert>
              )}
              {!isOnline && (
                   <Alert variant="warning" className="col-span-4 mt-[-8px]">
                      <WifiOff className="h-4 w-4" />
-                      <AlertDescription className="text-xs">
-                          Offline: License plate check unavailable.
-                      </AlertDescription>
+                      <AlertDescriptionSub className="text-xs">Offline: License plate check unavailable.</AlertDescriptionSub>
                   </Alert>
              )}
 
-
-           {/* Details Textarea */}
            <div className="grid grid-cols-4 items-start gap-4">
              <Label htmlFor="details" className="text-right col-span-1 pt-2">
                Details
@@ -344,7 +318,6 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
              />
            </div>
 
-           {/* Photo Upload */}
             <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="photo" className="text-right col-span-1">
                     Photo (Optional)
@@ -366,19 +339,17 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                             id="photo"
                             type="file"
                             accept="image/*"
-                            capture="environment" // Encourage using the camera directly on mobile
+                            capture="environment"
                             ref={fileInputRef}
                             onChange={handleFileChange}
-                            className="hidden" // Hide the default input
+                            className="hidden"
                             disabled={isLoading || !isOnline}
                         />
                         {photoPreview ? (
                             <div className="relative h-10 w-16 rounded border overflow-hidden">
                                 <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
                             </div>
-                        ) : (
-                            <span className="text-xs text-muted-foreground"></span>
-                        )}
+                        ) : null }
                     </div>
                     <span className="text-xs text-muted-foreground ml-1 mt-1">
                          Accepted formats: JPG, PNG.
@@ -386,24 +357,27 @@ export default function ReportIssueModal({ isOpen, onClose, reservation, userId 
                 </div>
             </div>
 
-           {/* Information Note */}
             <Alert variant="default" className="col-span-4 mt-2 bg-blue-50 border-blue-200">
                 <Info className="h-4 w-4 text-blue-600" />
-                 <AlertDescription className="text-xs text-blue-800">
+                 <AlertDescriptionSub className="text-xs text-blue-800">
                      Your report will be sent to the parking attendant, owner, and logged by Carpso management. False reports may affect your account status. The license plate will be checked against official records where possible.
-                 </AlertDescription>
+                 </AlertDescriptionSub>
              </Alert>
-
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={isLoading || !plateNumber || isCheckingPlate || !isOnline}>
-             {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Submit Report
-          </Button>
+        <DialogFooter className="flex-col sm:flex-row sm:justify-between gap-2">
+            <Button variant="outline" onClick={handleChatWithSupport} disabled={isLoading || !isOnline || !reservation}>
+                <MessageSquare className="mr-2 h-4 w-4" /> Chat with Support
+            </Button>
+            <div className="flex gap-2">
+                <Button variant="outline" onClick={onClose} disabled={isLoading}>
+                    Cancel
+                </Button>
+                <Button onClick={handleSubmit} disabled={isLoading || !plateNumber || isCheckingPlate || !isOnline}>
+                    {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Submit Report
+                </Button>
+            </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -4,7 +4,7 @@ import type { ChatConversation, ConversationParticipant } from '@/services/chat-
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { UserPlus, WifiOff, MessageSquareText, Loader2 } from 'lucide-react'; // Added MessageSquareText
+import { UserPlus, WifiOff, MessageSquareText, Loader2, Users } from 'lucide-react'; // Added Users for group
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -28,8 +28,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onNewChat,
   isOnline,
 }) => {
-  const getOtherParticipant = (conversation: ChatConversation): ConversationParticipant | undefined => {
-    return conversation.participants?.find(p => p.userId !== currentUserId);
+  const getConversationDisplayDetails = (conversation: ChatConversation): { name: string; avatarUrl?: string; isOnline?: boolean } => {
+    if (conversation.isGroupChat) {
+      return {
+        name: conversation.context?.groupName || conversation.participants.filter(p=>p.userId !== currentUserId).map(p => p.userName).join(', ') || 'Group Chat',
+        avatarUrl: `https://placehold.co/40x40.png?text=${(conversation.context?.groupName || 'G').charAt(0)}`, // Simple group avatar
+        isOnline: undefined, // Online status for groups is more complex
+      };
+    }
+    const otherParticipant = conversation.participants?.find(p => p.userId !== currentUserId);
+    return {
+      name: otherParticipant?.userName || 'Unknown User',
+      avatarUrl: otherParticipant?.userAvatarUrl,
+      isOnline: undefined, // Placeholder for individual online status
+    };
   };
 
   return (
@@ -76,7 +88,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
            </div>
         ) : (
           conversations.map((conv) => {
-            const otherParticipant = getOtherParticipant(conv);
+            const displayDetails = getConversationDisplayDetails(conv);
             const lastMessageTime = conv.lastMessageTimestamp
               ? formatDistanceToNowStrict(conv.lastMessageTimestamp.toDate(), { addSuffix: true })
               : '';
@@ -96,22 +108,28 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 disabled={!isOnline && selectedConversationId !== conv.id}
                 aria-current={selectedConversationId === conv.id ? "page" : undefined}
               >
-                <Avatar className="h-10 w-10 mr-3 border-2 border-sidebar-border/50">
-                  <AvatarImage src={otherParticipant?.userAvatarUrl || `https://picsum.photos/seed/${otherParticipant?.userId || 'default'}/40/40`} alt={otherParticipant?.userName || "User Avatar"} data-ai-hint="profile avatar" />
-                  <AvatarFallback className="bg-sidebar-accent/50 text-sidebar-accent-foreground/80">{otherParticipant?.userName?.charAt(0)?.toUpperCase() || '?'}</AvatarFallback>
+                <Avatar className="h-10 w-10 mr-3 border-2 border-sidebar-border/50 relative">
+                  <AvatarImage src={displayDetails.avatarUrl || `https://placehold.co/40x40.png?text=${displayDetails.name.charAt(0)}`} alt={displayDetails.name} data-ai-hint="profile avatar" />
+                  <AvatarFallback className="bg-sidebar-accent/50 text-sidebar-accent-foreground/80">{displayDetails.name?.charAt(0)?.toUpperCase() || '?'}</AvatarFallback>
+                  {/* Placeholder for online status indicator */}
+                  {/* {displayDetails.isOnline && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-sidebar-background" />} */}
                 </Avatar>
                 <div className="flex-1 overflow-hidden">
                   <div className="flex justify-between items-center">
-                    <h3 className={cn("font-semibold text-sm truncate", selectedConversationId === conv.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground")}>
-                        {otherParticipant?.userName || 'Unknown User'}
-                        {otherParticipant?.userRole && <span className={cn("ml-1.5 text-[10px] opacity-70", selectedConversationId === conv.id ? "text-sidebar-primary-foreground/80" : "text-sidebar-foreground/70")}>({otherParticipant.userRole})</span>}
+                    <h3 className={cn("font-semibold text-sm truncate flex items-center", selectedConversationId === conv.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground")}>
+                        {conv.isGroupChat && <Users className="h-3 w-3 mr-1.5 opacity-70" />}
+                        {displayDetails.name}
+                        {!conv.isGroupChat && conv.participants.find(p=>p.userId !== currentUserId)?.userRole && <span className={cn("ml-1.5 text-[10px] opacity-70", selectedConversationId === conv.id ? "text-sidebar-primary-foreground/80" : "text-sidebar-foreground/70")}>({conv.participants.find(p=>p.userId !== currentUserId)?.userRole})</span>}
                     </h3>
                     <span className={cn("text-xs whitespace-nowrap", selectedConversationId === conv.id ? "text-sidebar-primary-foreground/80" : "text-sidebar-foreground/70")}>{lastMessageTime}</span>
                   </div>
                   <div className="flex justify-between items-center mt-0.5">
                     <p className={cn("text-xs truncate", selectedConversationId === conv.id ? "text-sidebar-primary-foreground/90" : "text-sidebar-foreground/80", unreadCount > 0 && "font-medium")}>
                         {conv.lastMessageSenderId === currentUserId ? "You: " : ""}
-                        {conv.lastMessageText || 'No messages yet'}
+                        {conv.typing && Object.values(conv.typing).some(t => t === true) && Object.keys(conv.typing).filter(uid => uid !== currentUserId && conv.typing?.[uid]).length > 0
+                            ? <span className="italic text-primary">typing...</span>
+                            : conv.lastMessageText || (conv.lastMessageSenderId ? 'Sent an attachment' : 'No messages yet')
+                        }
                     </p>
                     {unreadCount > 0 && (
                         <Badge variant="default" className="ml-2 bg-accent text-accent-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full h-4 min-w-[16px] flex items-center justify-center">
