@@ -30,8 +30,8 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
     *   **Application restrictions:** Select "HTTP referrers (web sites)".
         *   **For Development:**
             *   Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
-            *   **IMPORTANT FOR IDX/CLOUDTOP:** If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError` with a specific URL (like `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), you **MUST** add that specific URL pattern to the allowed referrers. For example, if the error mentions `https://6000-idx-studio-12345.cluster-abcdef.cloudworkstations.dev`, you should add `https://*.cloudworkstations.dev/*` or the more specific `https://6000-idx-studio-*.cluster-*.cloudworkstations.dev/*`.
-            *   **The error message `RefererNotAllowedMapError` usually tells you the exact URL that needs to be authorized. For instance, if it says "Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev", then you MUST add `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*` to your API key's HTTP referrers.**
+            *   **IMPORTANT FOR IDX/CLOUDTOP:** If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError` with a specific URL (like `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), you **MUST** add that specific URL pattern to the allowed referrers.
+            *   **The error message `RefererNotAllowedMapError` usually tells you the exact URL that needs to be authorized. For instance, if it says "Your site URL to be authorized: https://6000-idx-studio-12345.cluster-abcdef.cloudworkstations.dev", then you MUST add `https://6000-idx-studio-12345.cluster-abcdef.cloudworkstations.dev/*` to your API key's HTTP referrers.** Add any other URLs that might appear in similar error messages.
         *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
         *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
     *   **API restrictions:** Select "Restrict key". In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API".
@@ -149,7 +149,8 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                          allow write: if request.auth != null && (isAdmin() || isServerAdmin()); // Allow admin or server to update
                      }
                      match /userBookmarks/{userId}/bookmarks/{bookmarkId} {
-                        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+                        allow read, create, update, delete: if request.auth != null && request.auth.uid == userId
+                                                               && isValidBookmarkData(request.resource.data);
                      }
 
 
@@ -197,6 +198,13 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                         return userDoc.data.role == 'ParkingAttendant' &&
                                userDoc.data.assignedLotId == lotId;
                       }
+                      function isValidBookmarkData(data) {
+                          return data.keys().hasOnly(['label', 'address', 'latitude', 'longitude'])
+                                 && data.label is string
+                                 && (data.address is string || !('address' in data))
+                                 && (data.latitude is number || !('latitude' in data))
+                                 && (data.longitude is number || !('longitude' in data));
+                       }
                   }
                 }
                 ```
@@ -426,3 +434,4 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
+
