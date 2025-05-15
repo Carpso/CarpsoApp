@@ -1,83 +1,114 @@
 // src/app/layout.tsx
-'use client';
+// Removed 'use client'; directive to make this a Server Component
 
 import './globals.css';
-// import { Inter } from 'next/font/google'; // Keep Inter commented out if using Geist
-// import { GeistSans } from 'geist/font/sans'; // Import Geist Sans
-// import { GeistMono } from 'geist/font/mono'; // Removed Geist Mono import
-import Header from '@/components/layout/Header';
-import { Toaster } from "@/components/ui/toaster"; // Ensure Toaster is imported
-import AppStateProvider from '@/context/AppStateProvider'; // Import the provider
-import React, { useEffect, useState } from 'react';
-import Head from 'next/head'; // Import Head for metadata
-import { ThemeProvider } from '@/components/theme/ThemeProvider'; // Import ThemeProvider
-
-
-// If using Geist fonts, uncomment these lines and ensure the package is installed
-// const geistSans = GeistSans({
-//   variable: '--font-geist-sans',
-//   subsets: ['latin'],
-// });
-// const geistMono = GeistMono({ // Keep this commented out if not used or installed
-//   variable: '--font-geist-mono',
-//   subsets: ['latin'],
-// });
-
-// Define fallback font variables if Geist is not used or to avoid reference errors
+// Fallback font variables if Geist is not used
 const fallbackFontVariables = '';
-// const geistSansVariable = typeof GeistSans !== 'undefined' ? GeistSans.variable : '';
-// const geistMonoVariable = typeof GeistMono !== 'undefined' ? GeistMono.variable : '';
+import Header from '@/components/layout/Header';
+import { Toaster } from "@/components/ui/toaster";
+import AppStateProvider from '@/context/AppStateProvider';
+import React, { useEffect, useState } from 'react';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import type { Metadata } from 'next'; // Import Metadata type
 
+// Define a CSS variable for header height
+const HEADER_HEIGHT = '4rem';
 
-// Define a CSS variable for header height if not already globally available
-const HEADER_HEIGHT = '4rem'; // Example: 64px, adjust if your header height is different
-
+// Metadata export for App Router - This is now allowed
+export const metadata: Metadata = {
+  title: 'Carpso - Smart Parking',
+  description: 'Find, predict, and reserve parking spots.',
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The isClient state and useEffect for Tawk.to are client-side concerns.
+  // While they might work here after hydration, encapsulating them in a
+  // dedicated Client Component would be a cleaner pattern if issues arise.
+  // For now, let's see if removing 'use client' and keeping the useEffect
+  // functions as is (they will run on client post-hydration).
+
+  // Note: Since this is now a Server Component, directly using useState and useEffect
+  // for the Tawk.to script like before might be problematic if not handled carefully.
+  // For this fix, we assume the Tawk.to logic will be moved to a Client Component if needed.
+  // The original Tawk.to useEffect logic is removed from here to ensure this is a Server Component.
+  // If Tawk.to is still needed, it must be initialized within a Client Component.
+
+  return (
+    // No whitespace before <html>
+    <html lang="en" suppressHydrationWarning> {/* Remove default class, add suppressHydrationWarning */}
+      <head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        {/* title and meta description are now handled by the exported metadata object */}
+        <style>{`:root { --header-height: ${HEADER_HEIGHT}; }`}</style>
+      </head>
+      <body className={`${fallbackFontVariables} antialiased min-h-screen bg-background font-sans`}>
+        <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+        >
+            <AppStateProvider>
+                <div className="relative flex min-h-screen flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+                    <Header />
+                    <main className="flex-1" style={{ minHeight: `calc(100vh - var(--header-height))` }}>
+                        {children}
+                    </main>
+                </div>
+                <Toaster />
+            </AppStateProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+
+// If Tawk.to functionality is critical, create a new Client Component like this:
+// src/components/layout/TawkToInitializer.tsx
+/*
+'use client';
+
+import React, { useEffect, useState } from 'react';
+
+export default function TawkToInitializer() {
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-      setIsClient(true);
+    setIsClient(true);
   }, []);
 
   useEffect(() => {
-      if (!isClient) return;
+    if (!isClient) return;
 
     const tawkPropertyId = process.env.NEXT_PUBLIC_TAWKTO_PROPERTY_ID;
     const tawkWidgetId = process.env.NEXT_PUBLIC_TAWKTO_WIDGET_ID;
     
-    // More robust check: ensure they are not just empty strings but have some length,
-    // and are not the placeholder values.
     const isConfigured = 
         tawkPropertyId && tawkPropertyId.trim() !== '' &&
         tawkWidgetId && tawkWidgetId.trim() !== '' &&
         tawkPropertyId !== 'YOUR_PROPERTY_ID' && 
         tawkWidgetId !== 'YOUR_WIDGET_ID';
 
-
     if (!isConfigured) {
-      console.log('Tawk.to environment variables (NEXT_PUBLIC_TAWKTO_PROPERTY_ID, NEXT_PUBLIC_TAWKTO_WIDGET_ID) are not set or are placeholders. Live chat will be disabled.');
-      return; // Exit early if not configured
+      console.log('Tawk.to environment variables are not set or are placeholders. Live chat will be disabled.');
+      return;
     }
-
-    // If configured, proceed with script injection
-    console.log("Tawk.to is configured. Attempting to inject script with Property ID:", tawkPropertyId, "Widget ID:", tawkWidgetId);
 
     if (document.getElementById('tawkto-script')) {
       console.log("Tawk.to script already exists.");
       if (!(window as any).Tawk_API) {
-           console.warn("Tawk.to script found, but Tawk_API not initialized. This might indicate a problem with the script or a previous loading attempt.");
+           console.warn("Tawk.to script found, but Tawk_API not initialized.");
       } else {
            console.log("Tawk.to API is available.");
       }
       return;
     }
 
-    if (!(window as any).Tawk_API) { // Check again, in case it was injected by another means but failed
+    if (!(window as any).Tawk_API) {
       (window as any).Tawk_API = (window as any).Tawk_API || {};
       (window as any).Tawk_LoadStart = new Date();
 
@@ -91,18 +122,16 @@ export default function RootLayout({
 
       s1.onload = () => {
           console.log("Tawk.to script loaded successfully via onload event.");
-          if (!(window as any).Tawk_API?.onLoad && !(window as any).Tawk_API?.showWidget) { // Check for API presence
-               console.error("Tawk.to script 'onload' triggered, but Tawk_API seems uninitialized or incomplete. Check Tawk.to dashboard for configuration issues.");
+          if (!(window as any).Tawk_API?.onLoad && !(window as any).Tawk_API?.showWidget) {
+               console.error("Tawk.to script 'onload' triggered, but Tawk_API seems uninitialized.");
           }
       };
-      s1.onerror = (event) => { // event can be an ErrorEvent or just an Event
+      s1.onerror = (event) => {
           console.error(
-              "Error loading Tawk.to script. This might be due to incorrect Property/Widget IDs, network issues, ad-blockers, or the Tawk.to service itself.",
-              "Attempted to use Property ID:", tawkPropertyId, 
+              "Error loading Tawk.to script. Attempted Property ID:", tawkPropertyId, 
               "Widget ID:", tawkWidgetId, 
-              "Error details:", event // Log the actual event/error object
+              "Error details:", event 
           );
-          // You could add a user-facing notification here if critical
       };
 
       s0?.parentNode?.insertBefore(s1, s0);
@@ -110,35 +139,18 @@ export default function RootLayout({
     }
   }, [isClient]);
 
-  return (
-    // No whitespace before <html>
-    <html lang="en" suppressHydrationWarning> {/* Remove default class, add suppressHydrationWarning */}
-      <Head>
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <title>Carpso - Smart Parking</title>
-        <meta name="description" content="Find, predict, and reserve parking spots." />
-        {/* Define CSS variable for header height */}
-        <style>{`:root { --header-height: ${HEADER_HEIGHT}; }`}</style>
-      </Head>
-      <body className={`${fallbackFontVariables} antialiased min-h-screen bg-background font-sans`}>
-        <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-        >
-            <AppStateProvider>{/* Wrap with the provider */}
-                <div className="relative flex min-h-screen flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}> {/* Add padding-bottom for BottomNavBar on mobile */}
-                    <Header />
-                    {/* Main content takes remaining height, consider header height */}
-                    <main className="flex-1" style={{ minHeight: `calc(100vh - var(--header-height))` }}>
-                        {children}
-                    </main>
-                </div>
-                <Toaster />
-            </AppStateProvider>
-        </ThemeProvider>
-      </body>
-    </html>
-  );
+  return null; // This component doesn't render anything visible
 }
+
+// Then, in layout.tsx, you would import and use it:
+// import TawkToInitializer from '@/components/layout/TawkToInitializer';
+// ...
+// <body ...>
+//   <ThemeProvider ...>
+//     <AppStateProvider>
+//       ...
+//       <TawkToInitializer /> // Add this
+//     </AppStateProvider>
+//   </ThemeProvider>
+// </body>
+*/
