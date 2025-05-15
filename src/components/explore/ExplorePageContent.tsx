@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Fuel, CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Building, Send, Info, ExternalLink, WifiOff } from "lucide-react";
+import { Fuel, CalendarDays, Megaphone, Sparkles, MapPin, BadgeCent, SprayCan, Wifi, Loader2, ServerCrash, Bath, ConciergeBell, Building, Send, Info, ExternalLink, WifiOff, Car, Shield, Wrench, LifeBuoy, ShoppingBag, Sun, Moon, SparklesIcon as CarpsoSpaceIcon } from "lucide-react"; // Added Car, Shield, Wrench, LifeBuoy, ShoppingBag, Sun, Moon, CarpsoSpaceIcon
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,8 +16,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
-import ParkingLotMap from '@/components/map/ParkingLotMap'; // Import the map component
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import ParkingLotMap from '@/components/map/ParkingLotMap';
+import { Separator } from '@/components/ui/separator'; // Added Separator
 
 interface FeaturedService {
     id: number | string;
@@ -32,12 +33,88 @@ interface FeaturedService {
     longitude?: number;
 }
 
+// New interface for Carpso Space Services
+interface CarpsoSpaceService {
+  id: string;
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  imageUrl?: string;
+  category: 'Maintenance' | 'Insurance' | 'Accessories' | 'Emergency' | 'Financing' | 'Fleet';
+  detailsLink?: string;
+  priceInfo?: string; // e.g., "Starting from K500" or "Request Quote"
+}
+
 const submitLotRecommendation = async (name: string, location: string, reason: string): Promise<boolean> => {
     console.log("Submitting recommendation:", { name, location, reason });
     await new Promise(resolve => setTimeout(resolve, 700));
     const success = Math.random() > 0.1;
     return success;
 };
+
+// Mock data for Carpso Space Services
+const carpsoSpaceServices: CarpsoSpaceService[] = [
+    {
+        id: 'cs_roadside',
+        title: 'Carpso Roadside Assist',
+        description: '24/7 breakdown assistance, towing, and emergency support. Drive with peace of mind.',
+        icon: LifeBuoy,
+        imageUrl: 'https://placehold.co/600x400.png', // Replace with actual image
+        category: 'Emergency',
+        priceInfo: 'From K150/month',
+        detailsLink: '/services/roadside-assist' // Example link
+    },
+    {
+        id: 'cs_insurance',
+        title: 'Carpso Car Insurance',
+        description: 'Comprehensive and third-party insurance tailored for Zambian drivers. Get a quote today!',
+        icon: Shield,
+        imageUrl: 'https://placehold.co/600x400.png', // Replace with actual image
+        category: 'Insurance',
+        priceInfo: 'Request a Quote',
+        detailsLink: '/services/insurance'
+    },
+    {
+        id: 'cs_maintenance',
+        title: 'Certified Garage Network',
+        description: 'Access our network of vetted garages for reliable car maintenance and repairs.',
+        icon: Wrench,
+        imageUrl: 'https://placehold.co/600x400.png', // Replace with actual image
+        category: 'Maintenance',
+        priceInfo: 'Varies by service',
+        detailsLink: '/services/garages'
+    },
+    {
+        id: 'cs_accessories',
+        title: 'Carpso Auto Shop',
+        description: 'Find quality car accessories, from phone holders to emergency kits, delivered to you.',
+        icon: ShoppingBag,
+        imageUrl: 'https://placehold.co/600x400.png', // Replace with actual image
+        category: 'Accessories',
+        detailsLink: '/shop'
+    },
+    {
+        id: 'cs_fleet',
+        title: 'Carpso Fleet Solutions',
+        description: 'Smart parking and vehicle management solutions for businesses with multiple vehicles.',
+        icon: Car,
+        imageUrl: 'https://placehold.co/600x400.png',
+        category: 'Fleet',
+        priceInfo: 'Custom Quotes',
+        detailsLink: '/services/fleet'
+    },
+    {
+        id: 'cs_financing',
+        title: 'Vehicle Financing Aid',
+        description: 'Explore options for vehicle financing through our trusted partners.',
+        icon: BadgeCent,
+        imageUrl: 'https://placehold.co/600x400.png',
+        category: 'Financing',
+        priceInfo: 'Partner Rates Apply',
+        detailsLink: '/services/financing'
+    }
+];
+
 
 export default function ExplorePageContent() {
     const [ads, setAds] = useState<Advertisement[]>([]);
@@ -50,7 +127,7 @@ export default function ExplorePageContent() {
     const [isSubmittingRecommendation, setIsSubmittingRecommendation] = useState(false);
     const { toast } = useToast();
     const { isOnline, userId, userRole } = useContext(AppStateContext)!;
-    const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null); // State for map centering
+    const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
     useEffect(() => {
         const fetchExploreData = async () => {
@@ -69,13 +146,11 @@ export default function ExplorePageContent() {
             }
 
             if (!isOnline && cachedAds.length > 0 && cachedLots.length > 0) {
-                console.log("Offline: Using cached explore data.");
                 setAds(cachedAds);
                 setLots(cachedLots);
                 setIsLoadingAds(false);
                 setIsLoadingLots(false);
-                // Set map center to first cached lot if available
-                if (cachedLots[0]) {
+                if (cachedLots[0] && !mapCenter) {
                     setMapCenter({ lat: cachedLots[0].latitude, lng: cachedLots[0].longitude });
                 }
                 return;
@@ -90,16 +165,15 @@ export default function ExplorePageContent() {
                     const activeAds = adsData.filter(ad => ad.status === 'active' && (!ad.endDate || new Date(ad.endDate) >= new Date()));
                     setAds(activeAds);
                     setLots(lotsData);
-                    if (lotsData.length > 0 && !mapCenter) { // Set initial map center
+                    if (lotsData.length > 0 && !mapCenter) {
                         setMapCenter({ lat: lotsData[0].latitude, lng: lotsData[0].longitude });
                     }
-
 
                      if (typeof window !== 'undefined') {
                          try {
                               localStorage.setItem('cachedExploreAds', JSON.stringify(activeAds));
                               localStorage.setItem('cachedExploreLots', JSON.stringify(lotsData));
-                         } catch (e) { console.error("Failed to cache explore data:", e); }
+                         } catch (e: any) { console.error("Failed to cache explore data:", e.message); }
                      }
 
                 } catch (error) {
@@ -122,12 +196,11 @@ export default function ExplorePageContent() {
                    console.warn("Offline: No cached explore data available.");
                    setIsLoadingAds(false);
                    setIsLoadingLots(false);
-                   // Set a default map center if offline and no cache
-                   if (!mapCenter) setMapCenter({ lat: -15.4167, lng: 28.2833 }); // Default to Lusaka
+                   if (!mapCenter) setMapCenter({ lat: -15.4167, lng: 28.2833 });
               }
         };
         fetchExploreData();
-    }, [isOnline, toast, userId, userRole, mapCenter]); // Added mapCenter to dependencies
+    }, [isOnline, toast, userId, userRole, mapCenter]);
 
     const featuredServices: FeaturedService[] = lots.flatMap(lot =>
         (lot.services || []).map(service => ({
@@ -138,7 +211,7 @@ export default function ExplorePageContent() {
             description: `Available at ${lot.name}.`,
             icon: getServiceIcon(service),
             serviceType: service,
-            imageUrl: lot.id.startsWith('g_place') ? `https://picsum.photos/seed/${lot.id}-${service}/400/200` : `https://picsum.photos/seed/${lot.id}-${service}/400/200`,
+            imageUrl: lot.id.startsWith('g_place') ? `https://placehold.co/400x200.png` : `https://placehold.co/400x200.png`,
             latitude: lot.latitude,
             longitude: lot.longitude,
         }))
@@ -183,8 +256,8 @@ export default function ExplorePageContent() {
             } else {
                 throw new Error("Simulated submission failure.");
             }
-        } catch (error) {
-            console.error("Failed to submit recommendation:", error);
+        } catch (error: any) {
+            console.error("Failed to submit recommendation:", error.message);
             toast({ title: "Submission Failed", description: "Could not send your recommendation at this time.", variant: "destructive" });
         } finally {
             setIsSubmittingRecommendation(false);
@@ -206,7 +279,6 @@ export default function ExplorePageContent() {
                </Alert>
            )}
 
-           {/* Map View of All Parking Lots */}
             <section className="mb-12">
                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                      <MapPin className="h-6 w-6 text-primary" /> Explore Parking Locations Map
@@ -218,8 +290,6 @@ export default function ExplorePageContent() {
                             defaultLatitude={mapCenter.lat}
                             defaultLongitude={mapCenter.lng}
                             customClassName="h-full w-full rounded-md"
-                            // Add markers for lots in future if needed, or integrate with selectedLot from ParkingLotManager
-                            // For now, it just centers based on first lot or default
                         />
                     ) : GOOGLE_MAPS_API_KEY && isLoadingLots ? (
                         <div className="flex items-center justify-center h-full bg-muted rounded-md">
@@ -238,8 +308,6 @@ export default function ExplorePageContent() {
                 </Card>
             </section>
 
-
-            {/* Section 1: Featured Promotions/Advertisements */}
             <section className="mb-12">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                     <Megaphone className="h-6 w-6 text-primary" /> Promotions & News
@@ -255,7 +323,7 @@ export default function ExplorePageContent() {
                             <Card key={ad.id} className="overflow-hidden flex flex-col">
                                 <div className="relative h-40 w-full">
                                     <Image
-                                        src={ad.imageUrl || `https://picsum.photos/seed/${ad.id}/400/200`}
+                                        src={ad.imageUrl || `https://placehold.co/400x200.png`}
                                         alt={ad.title}
                                         layout="fill"
                                         objectFit="cover"
@@ -295,10 +363,70 @@ export default function ExplorePageContent() {
                 )}
             </section>
 
-            {/* Section 2: Available Services */}
+            <Separator className="my-12" />
+
+            {/* Carpso Space Section */}
             <section className="mb-12">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                    <Sparkles className="h-6 w-6 text-accent" /> Available Services
+                     <CarpsoSpaceIcon className="h-6 w-6 text-primary" /> Carpso Space - Value Added Services
+                </h2>
+                <CardDescription className="mb-6">Explore additional car-related services offered by Carpso and our partners to enhance your vehicle ownership experience.</CardDescription>
+                 {carpsoSpaceServices.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {carpsoSpaceServices.map(service => {
+                            const ServiceIcon = service.icon;
+                            return (
+                                <Card key={service.id} className="overflow-hidden flex flex-col hover:shadow-lg transition-shadow">
+                                    <div className="relative h-40 w-full">
+                                        <Image
+                                            src={service.imageUrl || `https://placehold.co/400x200.png`}
+                                            alt={service.title}
+                                            layout="fill"
+                                            objectFit="cover"
+                                            data-ai-hint={`car ${service.category.toLowerCase()}`}
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
+                                        <Badge variant="default" className="absolute top-2 left-2 text-xs bg-primary/80 text-primary-foreground border-none">
+                                            <CarpsoSpaceIcon className="h-3 w-3 mr-1" /> Carpso
+                                        </Badge>
+                                    </div>
+                                    <CardHeader className="pb-2 pt-4">
+                                        <CardTitle className="text-md flex items-center gap-2">
+                                             <ServiceIcon className="h-5 w-5 text-primary" /> {service.title}
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="flex-grow">
+                                         <p className="text-xs text-muted-foreground mb-2">{service.description}</p>
+                                         {service.priceInfo && <Badge variant="outline" size="sm">{service.priceInfo}</Badge>}
+                                    </CardContent>
+                                    <CardFooter>
+                                         {service.detailsLink ? (
+                                             <Button variant="default" size="sm" asChild className="w-full">
+                                                 <a href={service.detailsLink} target="_blank" rel="noopener noreferrer">
+                                                     Learn More <ExternalLink className="ml-2 h-3 w-3" />
+                                                 </a>
+                                             </Button>
+                                         ) : (
+                                             <Button variant="secondary" size="sm" className="w-full" disabled>
+                                                 More Info Soon
+                                             </Button>
+                                         )}
+                                    </CardFooter>
+                                </Card>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="text-muted-foreground text-center py-4">Carpso Space services coming soon!</p>
+                )}
+            </section>
+
+            <Separator className="my-12" />
+
+
+            <section className="mb-12">
+                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                    <Sparkles className="h-6 w-6 text-accent" /> Available Parking Services
                 </h2>
                  {isLoadingLots ? (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -310,7 +438,7 @@ export default function ExplorePageContent() {
                             const ServiceIcon = getServiceIcon(serviceType);
                             const count = lots.filter(lot => lot.services?.includes(serviceType)).length;
                             const exampleLot = lots.find(lot => lot.services?.includes(serviceType));
-                            const exampleImage = exampleLot ? `https://picsum.photos/seed/${exampleLot.id}-${serviceType}/300/150?blur=1` : `https://picsum.photos/seed/${serviceType}/300/150?blur=1`;
+                            const exampleImage = exampleLot ? `https://placehold.co/300x150.png?text=${serviceType.replace(/\s/g, '+')}` : `https://placehold.co/300x150.png?text=${serviceType.replace(/\s/g, '+')}`;
                             const serviceHint = `${serviceType.toLowerCase()} parking`;
                             return (
                                 <Card key={serviceType} className="overflow-hidden relative text-white flex flex-col justify-end items-start p-4 min-h-[110px] hover:shadow-lg transition-shadow">
@@ -340,7 +468,6 @@ export default function ExplorePageContent() {
                 )}
             </section>
 
-            {/* Section 3: Featured Services (Detailed List) */}
              <section className="mb-12">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                     <Sparkles className="h-6 w-6 text-accent" /> Featured Services Near You
@@ -384,7 +511,8 @@ export default function ExplorePageContent() {
                 )}
             </section>
 
-            {/* Section 4: Recommend a Parking Lot */}
+            <Separator className="my-12" />
+
             <section>
                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                     <Building className="h-6 w-6 text-secondary-foreground" /> Know a Parking Spot?
