@@ -7,7 +7,23 @@ This application relies on several external services that require API keys and p
 
 ### **1. Google Maps API Key (ESSENTIAL for Map Functionality)**
 
-If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or `RefererNotAllowedMapError`, or if maps are simply not loading, it is **EXTREMELY LIKELY** due to an issue with your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` or its configuration in the Google Cloud Console.
+If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or **`RefererNotAllowedMapError`**, or if maps are simply not loading, it is **EXTREMELY LIKELY** due to an issue with your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` or its configuration in the Google Cloud Console.
+
+**IF YOU ARE USING GOOGLE IDX (or a similar cloud IDE) AND SEE `RefererNotAllowedMapError`:**
+The error message itself will tell you the exact URL that needs to be authorized.
+**FOR EXAMPLE:** If your error message says:
+`Google Maps JavaScript API error: RefererNotAllowedMapError`
+`Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev`
+
+**YOU MUST ADD THIS EXACT URL PATTERN TO YOUR API KEY'S "HTTP referrers (web sites)" list in the Google Cloud Console:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) -> APIs & Services -> Credentials.
+2. Select the API key used for `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+3. Under "Application restrictions", select "HTTP referrers (web sites)".
+4. Click "ADD AN ITEM" and paste:
+   `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`
+   **(Ensure you include the `/*` at the end)**
+5. Click "Done" and then "Save".
+6. Wait a few minutes and restart your Next.js development server.
 
 **PLEASE FOLLOW THESE STEPS METICULOUSLY for both Development and Production environments:**
 
@@ -32,12 +48,7 @@ If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `Missing
             *   Add `http://localhost:PORT/*` (e.g., `http://localhost:9002/*`). Ensure `PORT` matches your development port.
         *   **For Development (IDX/Cloud IDEs - VERY IMPORTANT!):**
             *   If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError`, **the error message will tell you the exact URL that needs to be authorized.**
-            *   **FOR EXAMPLE: If your error message says:**
-                `Google Maps JavaScript API error: RefererNotAllowedMapError`
-                `Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev`
-            *   **THEN YOU MUST ADD THIS EXACT URL PATTERN TO YOUR API KEY'S "HTTP referrers (web sites)" list in the Google Cloud Console:**
-                `https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev/*`
-            *   **Always include the `/*` at the end of the URL pattern.**
+            *   **REFER TO THE TOP OF THIS SECTION FOR SPECIFIC IDX INSTRUCTIONS.**
             *   If you see a different URL in your error message (e.g., `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), add that specific pattern instead.
         *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
         *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
@@ -63,9 +74,7 @@ If you see:
 *   `ApiNotActivatedMapError`: Make sure "Maps JavaScript API" and "Places API" are explicitly ENABLED in the Google Cloud Console library for your project.
 *   `MissingKeyMapError`: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is correctly set (and not empty) in your `.env.local` or production environment.
 *   `RefererNotAllowedMapError`: **CRITICAL: Verify your "HTTP referrers" in the API key restrictions within the Google Cloud Console. THE ERROR MESSAGE ITSELF USUALLY TELLS YOU THE EXACT URL that needs to be whitelisted.**
-    *   **For IDX/Cloud IDEs:** The error message will look like:
-        `Your site URL to be authorized: https://YOUR_SPECIFIC_IDX_URL.cloudworkstations.dev`
-        You **MUST** add `https://YOUR_SPECIFIC_IDX_URL.cloudworkstations.dev/*` to your API Key's "HTTP referrers (web sites)" list.
+    *   **For IDX/Cloud IDEs:** REFER TO THE PROMINENT INSTRUCTIONS AT THE TOP OF THE "Google Maps API Key" SECTION.
     *   **For Local Dev:** `http://localhost:YOUR_PORT/*` is common.
     *   **For Production:** It must be your live domain (e.g., `https://your-app.com/*`).
 
@@ -446,5 +455,3 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
-```
-    
