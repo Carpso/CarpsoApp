@@ -9,6 +9,7 @@ import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator"; // Added Separator import
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon, LocateFixed, Car } from 'lucide-react';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import { AppStateContext } from '@/context/AppStateProvider';
 import BottomNavBar from '@/components/layout/BottomNavBar';
 import { recommendParking, RecommendParkingOutput } from '@/ai/flows/recommend-parking-flow';
 import { getUserBookmarks, addBookmark, UserBookmark, saveUserPreferences, loadUserPreferences, UserRole } from '@/services/user-service';
-import { calculateEstimatedCost, ParkingRecord } from '@/services/pricing-service'; // Ensure ParkingRecord is imported
+import { calculateEstimatedCost, ParkingRecord } from '@/services/pricing-service';
 import { useVoiceAssistant, VoiceAssistantState } from '@/hooks/useVoiceAssistant';
 import { processVoiceCommand, ProcessVoiceCommandOutput } from '@/ai/flows/process-voice-command-flow';
 import { cn } from '@/lib/utils';
@@ -74,6 +75,12 @@ export default function ParkingLotManager() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const voiceAssistant = useVoiceAssistant({
+    onCommand: (transcript) => handleVoiceCommand(transcript, voiceAssistant.speak),
+    onStateChange: (newState) => {
+        setCurrentVoiceState(newState);
+    }
+  });
 
   const fetchLocationsData = useCallback(async (forceRefresh = false) => {
     setIsLoadingLocations(true);
@@ -229,7 +236,7 @@ export default function ParkingLotManager() {
         setRecommendations(result.recommendations || []);
 
     } catch (err: any) {
-        console.error("Failed to fetch recommendations:", err.message);
+        console.error("Failed to fetch recommendations:", err);
         if (isOnline) toast({
             title: "Recommendation Error",
             description: "Could not fetch personalized parking recommendations. Please try again later.",
@@ -463,13 +470,6 @@ export default function ParkingLotManager() {
   }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient, fetchUserBookmarksData, userLocation, fetchRecommendationsData]);
 
 
-  const { startListening, stopListening, speak, isSupported: isVoiceSupported, error: voiceError, state: liveVoiceState } = useVoiceAssistant({
-      onCommand: (transcript) => handleVoiceCommand(transcript, speak),
-      onStateChange: (newState) => {
-          setCurrentVoiceState(newState);
-      }
-   });
-
    const handleVoiceCommand = useCallback(async (transcript: string, speakFn: (text: string) => void) => {
     if (!isOnline) {
          toast({ title: "Offline", description: "Voice commands require an internet connection.", variant: "destructive" });
@@ -491,13 +491,13 @@ export default function ParkingLotManager() {
         if (error.message && error.message.includes('overloaded')) {
              errorMsg = "The AI service is a bit busy right now. Please try your command again in a moment.";
         }
-        if (isOnline && isClient && speakFn) {
-            speak(errorMsg);
+        if (isOnline && isClient && voiceAssistant.speak) { // Check if speak function is available
+            voiceAssistant.speak(errorMsg);
         } else {
             toast({ title: "Voice Command Error", description: errorMsg, variant: "destructive" });
         }
     }
-  }, [isOnline, toast, userBookmarks, isClient, speak, handleVoiceCommandResult]);
+  }, [isOnline, toast, userBookmarks, isClient, voiceAssistant, handleVoiceCommandResult]);
 
 
   useEffect(() => {
@@ -614,12 +614,12 @@ export default function ParkingLotManager() {
        if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated && userId) {
            fetchRecommendationsDataRef.current(destinationForRecommendation?.label, destinationForRecommendation?.address, destinationForRecommendation?.latitude, destinationForRecommendation?.longitude);
        }
-   }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, userId, locations.length, destinationForRecommendation]);
+   }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, userId, locations, destinationForRecommendation]);
 
 
     useEffect(() => {
-       setCurrentVoiceState(liveVoiceState);
-    }, [liveVoiceState]);
+       setCurrentVoiceState(voiceAssistant.state);
+    }, [voiceAssistant.state]);
 
   useEffect(() => {
       setIsClient(true);
@@ -632,15 +632,15 @@ export default function ParkingLotManager() {
   }, [userId]);
 
    useEffect(() => {
-       if (isClient && voiceError) {
+       if (isClient && voiceAssistant.error) {
            toast({
                title: "Voice Assistant Error",
-               description: voiceError,
+               description: voiceAssistant.error,
                variant: "destructive",
                duration: 4000
            });
        }
-   }, [isClient, voiceError, toast]);
+   }, [isClient, voiceAssistant.error, toast]);
 
    useEffect(() => {
     if (locations.length > 0) {
@@ -782,7 +782,7 @@ export default function ParkingLotManager() {
  const getVoiceButtonIcon = () => {
      if (!isClient) return <MicOff key="disabled-mic-not-client" className="h-5 w-5 text-muted-foreground opacity-50" />;
      if (!isOnline) return <MicOff key="disabled-mic-offline" className="h-5 w-5 text-muted-foreground opacity-50" />;
-     if (!isVoiceSupported) return <MicOff key="disabled-mic-notsupported" className="h-5 w-5 text-muted-foreground opacity-50" />;
+     if (!voiceAssistant.isSupported) return <MicOff key="disabled-mic-notsupported" className="h-5 w-5 text-muted-foreground opacity-50" />;
 
      switch (currentVoiceState) {
           case 'activated': return <CheckSquare key="activated" className="h-5 w-5 text-green-600 animate-pulse" />;
@@ -795,21 +795,21 @@ export default function ParkingLotManager() {
  };
 
   const handleVoiceButtonClick = () => {
-       if (!isClient || !isVoiceSupported || !isOnline) return;
-       if (currentVoiceState === 'listening' || currentVoiceState === 'activated') stopListening();
-       else startListening();
+       if (!isClient || !voiceAssistant.isSupported || !isOnline) return;
+       if (currentVoiceState === 'listening' || currentVoiceState === 'activated') voiceAssistant.stopListening();
+       else voiceAssistant.startListening();
   };
 
    const getVoiceButtonTooltip = () => {
        if (!isClient) return "Loading voice assistant...";
         if (!isOnline) return "Voice commands unavailable offline";
-        if (!isVoiceSupported) return "Voice commands not supported by your browser";
+        if (!voiceAssistant.isSupported) return "Voice commands not supported by your browser";
         switch (currentVoiceState) {
              case 'activated': return "Say your command...";
              case 'listening': return "Listening for 'Hey Carpso' or command...";
              case 'processing': return "Processing...";
              case 'speaking': return "Speaking...";
-             case 'error': return `Error: ${voiceError || 'Unknown'}`;
+             case 'error': return `Error: ${voiceAssistant.error || 'Unknown'}`;
              case 'idle': default: return "Start voice command";
         }
    };
@@ -850,15 +850,15 @@ export default function ParkingLotManager() {
                </Button>
                 <Button
                     variant="outline" size="icon" onClick={handleVoiceButtonClick}
-                    disabled={!isClient || !isVoiceSupported || !isOnline || currentVoiceState === 'processing' || currentVoiceState === 'speaking'}
+                    disabled={!isClient || !voiceAssistant.isSupported || !isOnline || currentVoiceState === 'processing' || currentVoiceState === 'speaking'}
                     aria-label={getVoiceButtonTooltip()}
                     title={getVoiceButtonTooltip()}
                     className={cn("transition-opacity",
-                        (!isClient || !isVoiceSupported || !isOnline) && "opacity-50 cursor-not-allowed",
-                        isClient && isVoiceSupported && isOnline && currentVoiceState === 'activated' && "border-primary",
-                        isClient && isVoiceSupported && isOnline && currentVoiceState === 'listening' && "border-blue-600",
-                        isClient && isVoiceSupported && isOnline && currentVoiceState === 'error' && "border-destructive",
-                        isClient && isVoiceSupported && isOnline && (currentVoiceState === 'processing' || currentVoiceState === 'speaking') && "opacity-50 cursor-not-allowed"
+                        (!isClient || !voiceAssistant.isSupported || !isOnline) && "opacity-50 cursor-not-allowed",
+                        isClient && voiceAssistant.isSupported && isOnline && currentVoiceState === 'activated' && "border-primary",
+                        isClient && voiceAssistant.isSupported && isOnline && currentVoiceState === 'listening' && "border-blue-600",
+                        isClient && voiceAssistant.isSupported && isOnline && currentVoiceState === 'error' && "border-destructive",
+                        isClient && voiceAssistant.isSupported && isOnline && (currentVoiceState === 'processing' || currentVoiceState === 'speaking') && "opacity-50 cursor-not-allowed"
                     )}
                 >
                     {getVoiceButtonIcon()}
@@ -866,13 +866,13 @@ export default function ParkingLotManager() {
               {!isAuthenticated && <Button onClick={() => setIsAuthModalOpen(true)}>Sign In / Sign Up</Button>}
           </div>
       </div>
-       {isClient && isVoiceSupported && isOnline && currentVoiceState !== 'idle' && (
+       {isClient && voiceAssistant.isSupported && isOnline && currentVoiceState !== 'idle' && (
            <p className="text-sm text-muted-foreground text-center mb-4 italic">
                 {currentVoiceState === 'activated' && "Say your command..."}
                 {currentVoiceState === 'listening' && "Listening..."}
                 {currentVoiceState === 'processing' && "Processing command..."}
                 {currentVoiceState === 'speaking' && "Speaking..."}
-                {currentVoiceState === 'error' && `Error: ${voiceError || 'Unknown'}`}
+                {currentVoiceState === 'error' && `Error: ${voiceAssistant.error || 'Unknown'}`}
            </p>
        )}
 
@@ -1102,3 +1102,39 @@ export default function ParkingLotManager() {
    </div>
  );
 }
+
+// Mock function to simulate report submission with escalation
+const submitParkingIssueReport = async (data: {
+    reservationId: string;
+    userId: string;
+    spotId: string;
+    locationId: string;
+    reportedPlateNumber: string;
+    details: string;
+    photoDataUri?: string;
+    timestamp: string;
+}): Promise<{ success: boolean; message: string; caseId?: string; timestamp: string }> => {
+    console.log("Submitting issue report:", data);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const isPlateValid = data.reportedPlateNumber.length > 3;
+    const apiCheckSuccess = Math.random() > 0.2;
+    const caseId = "REP" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    console.log(`Report ${caseId}: Notifying Attendant for location ${data.locationId}...`);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    console.log(`Report ${caseId}: Escalating to Owner for location ${data.locationId}...`);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    console.log(`Report ${caseId}: Logging for Carpso Management review...`);
+
+    let message = `Report submitted successfully. It has been forwarded to the parking attendant and owner. Case ID: ${caseId}`;
+    let success = true;
+
+    if (!isPlateValid) {
+        message = `Invalid license plate. ${message}`;
+    } else if (!apiCheckSuccess) {
+         message = `Could not verify plate with authority. ${message}`;
+    }
+
+    return { success: success, message: message, caseId: caseId, timestamp: data.timestamp };
+};
