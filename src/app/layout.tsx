@@ -7,7 +7,7 @@ const fallbackFontVariables = '';
 import Header from '@/components/layout/Header';
 import { Toaster } from "@/components/ui/toaster";
 import AppStateProvider from '@/context/AppStateProvider';
-import React, { useEffect, useState } from 'react';
+import React from 'react'; // Keep React for JSX, remove useEffect, useState
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import type { Metadata } from 'next'; // Import Metadata type
 
