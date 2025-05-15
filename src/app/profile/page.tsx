@@ -500,7 +500,7 @@ export default function ProfilePage() {
             setIsLoading(false); setIsLoadingWallet(false); setIsLoadingGamification(false); setIsLoadingVehicles(false); setIsLoadingPaymentMethods(false); setIsLoadingBookmarks(false); setIsLoadingReferrals(false); setIsLoadingRates(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, userRole, isOnline, toast]); // Removed userName & userAvatarUrl
+    }, [userId, userRole, isOnline, toast]); 
 
     const refreshWalletData = useCallback(async () => {
         if (!userId || !isOnline) {
@@ -748,8 +748,8 @@ export default function ProfilePage() {
     };
 
      const handleCancelEdit = () => {
-        const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId!)) || userDetails; // Added non-null assertion for userId
-        const currentVehicles = getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId!)) || vehicles; // Added non-null assertion for userId
+        const currentDetails = getCachedData<UserDetails>(CACHE_KEYS.userDetails(userId!)) || userDetails; 
+        const currentVehicles = getCachedData<Vehicle[]>(CACHE_KEYS.vehicles(userId!)) || vehicles; 
 
         setEditName(currentDetails?.name || userName || '');
         setEditAvatarUrl(currentDetails?.avatarUrl || userAvatarUrl || '');
@@ -1256,7 +1256,7 @@ export default function ProfilePage() {
                                         </SelectContent>
                                      </Select>
                                     <Button variant="outline" size="sm" onClick={refreshWalletData} disabled={isLoadingWallet || !isOnline}>
-                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
+                                         {!isOnline ? <WifiOff className="mr-2 h-4 w-4" /> : isLoadingWallet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh
                                     </Button>
                                 </div>
                              </div>
@@ -2012,7 +2012,7 @@ const ProfileSkeleton = () => (
         <Separator />
          <div className="space-y-4">
             <Skeleton className="h-6 w-1/4 mb-3" />
-            <Skeleton className="h-36 w-full mb-4 rounded-lg" />
+            <Skeleton className="h-36 w-full mb-4 rounded-lg" /> 
             <Skeleton className="h-5 w-1/3 mb-2"/>
             <Skeleton className="h-10 w-full rounded-md"/>
             <Skeleton className="h-10 w-full rounded-md"/>
