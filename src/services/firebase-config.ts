@@ -8,12 +8,12 @@ import { getStorage, type FirebaseStorage } from 'firebase/storage';
 // Firebase configuration using environment variables
 // User has provided specific values, these will override environment variables for local testing.
 const firebaseConfig = {
-  apiKey: "AIzaSyCC67PuNVKIFxgebRmfuO7eFljCv5ybWEI",
-  authDomain: "carpso-11zv0.firebaseapp.com",
-  projectId: "carpso-11zv0",
-  storageBucket: "carpso-11zv0.firebasestorage.app", // Corrected: removed ".appspot.com" as per user input
-  messagingSenderId: "29146253573",
-  appId: "1:29146253573:web:19e0732a64f8623aa00f6c", // User provided a new App ID
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyCC67PuNVKIFxgebRmfuO7eFljCv5ybWEI",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "carpso-11zv0.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "carpso-11zv0",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "carpso-11zv0.appspot.com", // Keep .appspot.com for storage
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "29146253573",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:29146253573:web:19e0732a64f8623aa00f6c",
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Keep measurementId from env or undefined
 };
 
@@ -30,28 +30,14 @@ const requiredConfigKeys: (keyof typeof firebaseConfig)[] = [
 let missingKeys = false;
 for (const key of requiredConfigKeys) {
   if (!firebaseConfig[key]) {
-    // Construct the expected environment variable name string for the error message
-    let expectedEnvVar = `NEXT_PUBLIC_FIREBASE_`;
-    if (key === 'apiKey') expectedEnvVar += 'API_KEY';
-    else if (key === 'authDomain') expectedEnvVar += 'AUTH_DOMAIN';
-    else if (key === 'projectId') expectedEnvVar += 'PROJECT_ID';
-    else if (key === 'storageBucket') expectedEnvVar += 'STORAGE_BUCKET';
-    else if (key === 'messagingSenderId') expectedEnvVar += 'MESSAGING_SENDER_ID';
-    else if (key === 'appId') expectedEnvVar += 'APP_ID';
-    else if (key === 'measurementId' && !firebaseConfig.measurementId) { // Check measurementId specifically if it's part of required but not provided
-        // Measurement ID is optional, so this log might be too strict if it's not actually required for the app to function.
-        // console.warn(`Firebase config warning: Optional environment variable ${expectedEnvVar} is not set.`);
-        continue; // Don't mark as missing if it's optional
-    }
-
-
-    console.error(`Firebase config error: Missing value for ${key}. Check Firebase console or environment variables (${expectedEnvVar}).`);
+    // Simplified error message
+    console.error(`Firebase config error: Missing value for '${key}'. This should be provided either via environment variables (e.g., NEXT_PUBLIC_FIREBASE_${key.toUpperCase()}) or directly in the firebaseConfig object in firebase-config.ts.`);
     missingKeys = true;
   }
 }
 
 if (missingKeys) {
-  console.error("One or more Firebase configuration values are missing. Firebase services will not be initialized correctly. Please check your Firebase console and ensure all necessary values are provided in your .env.local file (prefixed with NEXT_PUBLIC_FIREBASE_...) or environment configuration.");
+  console.error("One or more Firebase configuration values are missing. Firebase services will not be initialized correctly. Please check your Firebase console and ensure all necessary values are provided.");
 }
 
 // Initialize Firebase
@@ -60,9 +46,9 @@ if (!getApps().length) {
   if (!missingKeys) {
     try {
         app = initializeApp(firebaseConfig);
-        console.log("Firebase app initialized successfully with provided config.");
+        console.log("Firebase app initialized successfully.");
     } catch(e: any) {
-        console.error("Critical Firebase initialization error with provided config:", e.message);
+        console.error("Critical Firebase initialization error:", e.message);
         app = {} as FirebaseApp; // Fallback to dummy app
         missingKeys = true; // Treat as missing if init fails
     }
@@ -73,7 +59,7 @@ if (!getApps().length) {
   }
 } else {
   app = getApps()[0];
-  console.log("Firebase app already initialized.");
+  // console.log("Firebase app already initialized."); // Less verbose
 }
 
 // Conditionally initialize Firebase services
@@ -90,7 +76,7 @@ if (isRealFirebaseApp && !missingKeys) {
     firestore = getFirestore(app);
     storage = getStorage(app);
     // analytics = typeof window !== 'undefined' ? getAnalytics(app) : undefined; // Optional
-    console.log("Firebase services (Auth, Firestore, Storage) initialized.");
+    // console.log("Firebase services (Auth, Firestore, Storage) initialized."); // Less verbose
   } catch (e: any) {
     console.error("Error initializing Firebase services. This might be due to invalid configuration values:", e);
     auth = undefined;

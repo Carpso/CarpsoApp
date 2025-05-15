@@ -95,12 +95,10 @@ let sampleCarpsoLots: ParkingLot[] = [
 
 /**
  * Asynchronously retrieves a list of available parking lots, potentially including external sources.
- * In a real application, this would fetch data from a backend API or database, which might aggregate
- * data from Carpso's own system and external APIs like Google Places.
  * Includes basic offline caching support using localStorage.
  * Filters visibility based on user role and lot status/source.
  *
- * @param userRole The role of the user requesting the lots ('User', 'Admin', 'ParkingLotOwner', 'ParkingAttendant', 'Premium').
+ * @param userRole The role of the user requesting the lots.
  * @param userId The ID of the user requesting the lots.
  * @param forceRefresh Bypasses cache and fetches fresh data if true.
  * @returns A promise that resolves to an array of ParkingLot objects.
@@ -110,7 +108,7 @@ export async function getAvailableParkingLots(
     userId?: string,
     forceRefresh: boolean = false
 ): Promise<ParkingLot[]> {
-  const cacheKey = 'cachedParkingLotsWithExternal_v2'; // Updated cache key
+  const cacheKey = 'cachedParkingLotsWithExternal_v2';
   const cacheTimestampKey = `${cacheKey}Timestamp`;
   const maxCacheAge = 60 * 60 * 1000; // 1 hour cache validity
   let isOnline = true;
@@ -120,17 +118,15 @@ export async function getAvailableParkingLots(
   }
 
   let allLots: ParkingLot[] = [];
-  let needsServerFetch = true; // Assume we need to fetch unless valid cache found
+  let needsServerFetch = true;
 
-  // 1. Try loading from cache first (unless forceRefresh)
   if (!forceRefresh && typeof window !== 'undefined') {
     const cachedTimestamp = localStorage.getItem(cacheTimestampKey);
     const cachedData = localStorage.getItem(cacheKey);
     if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
       try {
         allLots = JSON.parse(cachedData);
-        console.log("Using valid cached parking lots.");
-        needsServerFetch = false; // Cache is valid, no need to fetch initially
+        needsServerFetch = false;
       } catch (e: any) {
         console.error("Failed to parse cached locations, will fetch fresh.", e.message);
         localStorage.removeItem(cacheKey);
@@ -140,13 +136,11 @@ export async function getAvailableParkingLots(
     }
   }
 
-  // 2. Fetch from server if needed (cache invalid/missing/forced or online)
   if (needsServerFetch && isOnline) {
     try {
-      console.log("Fetching fresh parking lots (including external simulation)...");
-      await new Promise(resolve => setTimeout(resolve, 900)); // Simulate API call delay
+      // console.log("Fetching fresh parking lots (including external simulation)...");
+      await new Promise(resolve => setTimeout(resolve, 900));
 
-      // --- Simulate fetching BOTH Carpso lots AND External Lots ---
       const carpsoLotsData = sampleCarpsoLots.map(lot => {
          let updatedStatus = lot.subscriptionStatus;
          let occupancy = lot.currentOccupancy;
@@ -179,7 +173,6 @@ export async function getAvailableParkingLots(
         try {
           localStorage.setItem(cacheKey, JSON.stringify(allLots));
           localStorage.setItem(cacheTimestampKey, Date.now().toString());
-          console.log("Cached combined parking lots.");
         } catch (e: any) {
           console.error("Failed to cache parking lots:", e.message);
         }
@@ -187,27 +180,22 @@ export async function getAvailableParkingLots(
     } catch (error: any) {
       console.warn("Online fetch failed, using potentially stale/empty cache:", error.message);
       if (allLots.length === 0) {
-           // Do not throw error, just return empty or stale cache if available.
-           // Error is handled by UI showing "could not load"
+         // Do not throw, UI will handle "could not load"
       }
     }
   } else if (needsServerFetch && !isOnline) {
-      console.warn("Offline and no valid cache available.");
-      // Return empty if offline and no valid cache, UI should handle this state
+      console.warn("Offline and no valid cache available for parking lots.");
       allLots = [];
   }
 
-  // 3. Filter based on user role and status/source (ALWAYS apply this filter)
   let visibleLots: ParkingLot[];
   if (userRole === 'Admin') {
-    visibleLots = allLots; // Admins see everything
+    visibleLots = allLots;
   } else if (userRole === 'ParkingLotOwner' && userId) {
-    // Owners see their lots + all external lots
     const ownerUser = sampleUsers.find(user => user.id === userId && user.role === 'ParkingLotOwner');
     const ownerLots = ownerUser?.associatedLots || [];
     visibleLots = allLots.filter(lot => (ownerLots.includes('*')) || (lot.isCarpsoManaged && lot.ownerUserId === userId) || (lot.isCarpsoManaged && ownerLots.includes(lot.id)) || !lot.isCarpsoManaged);
   } else {
-    // Regular users & attendants see active/trial Carpso lots + all external lots
     visibleLots = allLots.filter(lot =>
       (lot.isCarpsoManaged && (lot.subscriptionStatus === 'active' || (lot.subscriptionStatus === 'trial' && (!lot.trialEndDate || new Date(lot.trialEndDate) >= new Date())))) ||
       !lot.isCarpsoManaged
@@ -216,21 +204,10 @@ export async function getAvailableParkingLots(
   return visibleLots;
 }
 
-
-/**
- * Asynchronously retrieves details for a specific parking lot.
- * (Note: This function currently lacks offline caching, consider adding if needed)
- *
- * @param lotId The ID of the parking lot to retrieve.
- * @returns A promise that resolves to a ParkingLot object or null if not found.
- */
 export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | null> {
-   // Simulate API call delay
   await new Promise(resolve => setTimeout(resolve, 300));
 
-   // In a real app, this might fetch from cache first, then backend/Google Places Details API
-   // Combine Carpso and simulated external data for lookup
-   const allPossibleLots = [...sampleCarpsoLots, ...(await fetchGooglePlacesParking("Zambia", process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "dummy_key", 100))]; // Fetch simulated external again for details lookup
+   const allPossibleLots = [...sampleCarpsoLots, ...(await fetchGooglePlacesParking("Zambia", process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "dummy_key", 100))];
    let lot = allPossibleLots.find(l => l.id === lotId);
 
    if (lot) {
@@ -238,66 +215,50 @@ export async function getParkingLotDetails(lotId: string): Promise<ParkingLot | 
        let occupancy = lot.currentOccupancy;
 
        if (lot.isCarpsoManaged) {
-           // Check and update trial status before returning
            updatedStatus = (lot.subscriptionStatus === 'trial' && lot.trialEndDate && new Date(lot.trialEndDate) < new Date()) ? 'expired' : lot.subscriptionStatus;
-           // Simulate current occupancy if not present
            occupancy = lot.currentOccupancy ?? Math.floor(Math.random() * lot.capacity * 0.9);
        } else {
-           // Ensure external lots have correct status and no occupancy from Carpso system
            occupancy = undefined;
            updatedStatus = 'external';
-           // Simulate fetching details like phone/website if it's an external lot
-           // (In real app, call Google Places Details API here if needed)
-           if (!lot.phoneNumber) lot.phoneNumber = `+260 9X XXX ${Math.floor(1000 + Math.random() * 9000)}`; // Simulated phone
-           if (!lot.website) lot.website = `https://www.google.com/maps/search/?api=1&query=${lot.latitude},${lot.longitude}&query_place_id=${lot.id}`; // Link to Google Maps place
+           if (!lot.phoneNumber) lot.phoneNumber = `+260 9X XXX ${Math.floor(1000 + Math.random() * 9000)}`;
+           if (!lot.website) lot.website = `https://www.google.com/maps/search/?api=1&query=${lot.latitude},${lot.longitude}&query_place_id=${lot.id}`;
        }
      return { ...lot, subscriptionStatus: updatedStatus, currentOccupancy: occupancy };
    }
   return null;
 }
 
-// Mock function to update services for a lot (Admin/Owner)
-// (Note: This function inherently requires an online connection)
 export async function updateParkingLotServices(lotId: string, services: ParkingLotService[]): Promise<boolean> {
-    console.log(`Simulating update services for lot ${lotId}:`, services);
     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
     if (!isOnline) {
        console.error("Cannot update services: Offline.");
-       // TODO: Queue update if offline
        return false;
     }
     await new Promise(resolve => setTimeout(resolve, 800));
-    // In a real app, update the backend data source
-    const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged); // Can only update managed lots
+    const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged);
     if (lotIndex !== -1) {
         sampleCarpsoLots[lotIndex].services = services;
-        // Invalidate or update cache (simplified: remove cache, next fetch will get fresh)
         if (typeof window !== 'undefined') {
             localStorage.removeItem('cachedParkingLotsWithExternal_v2');
             localStorage.removeItem('cachedParkingLotsWithExternal_v2Timestamp');
         }
-        return true; // Indicate success
+        return true;
     }
     console.warn(`Cannot update services for non-Carpso managed lot or lot not found: ${lotId}`);
-    return false; // Indicate failure
+    return false;
 }
 
-
-// Mock function to update subscription status (Admin)
 export async function updateLotSubscriptionStatus(lotId: string, status: ParkingLot['subscriptionStatus'], trialEndDate?: string): Promise<boolean> {
-    console.log(`Simulating update subscription for lot ${lotId}:`, { status, trialEndDate });
     let isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
     if (!isOnline) {
        console.error("Cannot update subscription: Offline.");
-       // TODO: Queue update if offline
        return false;
     }
     await new Promise(resolve => setTimeout(resolve, 500));
-    const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged); // Can only update managed lots
+    const lotIndex = sampleCarpsoLots.findIndex(l => l.id === lotId && l.isCarpsoManaged);
     if (lotIndex !== -1) {
         sampleCarpsoLots[lotIndex].subscriptionStatus = status;
-        sampleCarpsoLots[lotIndex].trialEndDate = status === 'trial' ? trialEndDate : undefined; // Only set trial end date if status is trial
-         // Invalidate or update cache
+        sampleCarpsoLots[lotIndex].trialEndDate = status === 'trial' ? trialEndDate : undefined;
         if (typeof window !== 'undefined') {
              localStorage.removeItem('cachedParkingLotsWithExternal_v2');
              localStorage.removeItem('cachedParkingLotsWithExternal_v2Timestamp');
@@ -308,56 +269,37 @@ export async function updateLotSubscriptionStatus(lotId: string, status: Parking
     return false;
 }
 
-// Function to start a trial period for a lot (Admin)
 export async function startLotTrial(lotId: string, trialDays: number = 14): Promise<boolean> {
     const endDate = futureDate(trialDays);
     return updateLotSubscriptionStatus(lotId, 'trial', endDate);
 }
 
-// --- Google Places API Helper (Conceptual & Simulated) ---
-
-/**
- * Fetches parking locations from Google Places API for a given region.
- * NOTE: This is a SIMULATED function. Replace with actual Google Places API calls.
- *       Requires setting up Google Places API and handling API keys securely.
- *       Also requires handling pagination for more than 20-60 results.
- *
- * @param region The region to search within (e.g., "Zambia").
- * @param apiKey Your Google Maps API Key (required, even if unused in simulation).
- * @param maxResults Maximum number of simulated results to generate.
- * @returns A promise resolving to an array of ParkingLot objects derived from simulated Google Places data.
- */
-async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 100): Promise<ParkingLot[]> { // Increased default maxResults
-    console.log(`SIMULATING Google Places parking search for region: ${region} (Max: ${maxResults})`);
+async function fetchGooglePlacesParking(region: string, apiKey: string, maxResults: number = 100): Promise<ParkingLot[]> {
+    // console.log(`SIMULATING Google Places parking search for region: ${region} (Max: ${maxResults})`);
     if (!apiKey) {
          console.warn("Google API Key missing - simulation will proceed but real fetch would fail.");
-         // return []; // Optionally return empty if key is critical
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1200)); // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1200));
 
-    // --- Simulation Logic ---
-    // Generate more varied simulated results in Zambia
     const zambiaLatRange = [-18.0, -8.0];
     const zambiaLonRange = [22.0, 34.0];
     const simulatedResults: ParkingLot[] = [];
     const names = ["Central", "North", "South", "East", "West", "Plaza", "Tower", "Square", "Junction", "Heights", "Park", "Complex", "Center"];
     const suffixes = ["Parking", "Garage", "Lot", "Parkade", "Deck", "Area", "Spot"];
     const cities = ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Livingstone", "Chipata", "Kasama", "Solwezi", "Chingola", "Mongu"];
-
-    // Simple deduplication helper (based on name and city)
     const generatedNames = new Set<string>();
 
-    for (let i = 0; i < maxResults * 1.5 && simulatedResults.length < maxResults; i++) { // Generate more initially to allow for duplicates
+    for (let i = 0; i < maxResults * 1.5 && simulatedResults.length < maxResults; i++) {
         const lat = Math.random() * (zambiaLatRange[1] - zambiaLatRange[0]) + zambiaLatRange[0];
         const lon = Math.random() * (zambiaLonRange[1] - zambiaLonRange[0]) + zambiaLonRange[0];
         const city = cities[Math.floor(Math.random() * cities.length)];
         const namePart1 = names[Math.floor(Math.random() * names.length)];
         const namePart2 = suffixes[Math.floor(Math.random() * suffixes.length)];
-        const name = `${namePart1} ${city} ${namePart2} #${i % 10 + 1}`; // Keep number small to increase potential duplicates for demo
+        const name = `${namePart1} ${city} ${namePart2} #${i % 10 + 1}`;
         const nameKey = `${name}-${city}`;
 
-        if (generatedNames.has(nameKey)) continue; // Skip duplicate name/city combo
+        if (generatedNames.has(nameKey)) continue;
 
         generatedNames.add(nameKey);
         const place_id = `g_sim_${city.toLowerCase()}_${i}_${Date.now().toString().slice(-4)}`;
@@ -366,143 +308,71 @@ async function fetchGooglePlacesParking(region: string, apiKey: string, maxResul
             id: place_id,
             name: name,
             address: `${Math.floor(100 + Math.random() * 900)} ${namePart1} Rd, ${city}, ${region}`,
-            capacity: Math.floor(20 + Math.random() * 280), // Random capacity
+            capacity: Math.floor(20 + Math.random() * 280),
             latitude: parseFloat(lat.toFixed(6)),
             longitude: parseFloat(lon.toFixed(6)),
-            services: Math.random() > 0.8 ? ['Restroom'] : [], // Occasionally add a service
+            services: Math.random() > 0.8 ? ['Restroom'] : [],
             subscriptionStatus: 'external',
             isCarpsoManaged: false,
             dataSource: 'google_places_simulated',
-            // Simulate contact details occasionally
-            phoneNumber: Math.random() > 0.5 ? `+260 9${Math.floor(Math.random()*3)+5} XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
+            phoneNumber: Math.random() > 0.5 ? `+260 9X XXX ${Math.floor(1000 + Math.random() * 9000)}` : undefined,
             website: Math.random() > 0.6 ? `https://www.google.com/maps/search/?api=1&query_place_id=${place_id}` : undefined,
-            contactStatus: 'prospect', // Mark as prospect
+            contactStatus: 'prospect',
         });
     }
-    // --- End Simulation Logic ---
-
-    // --- Real API Call Placeholder ---
-    // try {
-    //   // --- Google Places Text Search API Call ---
-    //   // NOTE: This usually requires enabling billing on your Google Cloud project.
-    //   let nextPageToken: string | undefined = undefined;
-    //   let allPlaces: any[] = [];
-    //   const MAX_API_RESULTS = 60; // Google limits to ~60 results total even with pagination for nearby/text search
-    //   const BATCH_SIZE = 20; // Max per page token usually
-    //
-    //   while (allPlaces.length < MAX_API_RESULTS) {
-    //       let searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=parking+in+${encodeURIComponent(region)}&key=${apiKey}`;
-    //       if (nextPageToken) {
-    //           searchUrl += `&pagetoken=${nextPageToken}`;
-    //           await new Promise(resolve => setTimeout(resolve, 2000)); // Required delay before using next_page_token
-    //       }
-    //
-    //       const response = await fetch(searchUrl);
-    //       if (!response.ok) throw new Error(`Google Places Text Search API error: ${response.statusText}`);
-    //       const data = await response.json();
-    //
-    //       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    //            throw new Error(`Google Places Text Search API Status: ${data.status} - ${data.error_message || ''}`);
-    //       }
-    //
-    //       allPlaces.push(...(data.results || []));
-    //       nextPageToken = data.next_page_token;
-    //
-    //       if (!nextPageToken || data.results?.length === 0) break; // Exit loop if no more pages
-    //   }
-    //
-    //   // --- Optional: Fetch Details for Each Place (Expensive!) ---
-    //   // This significantly increases cost and time. Only fetch details if absolutely necessary (e.g., for phone/website).
-    //   const detailedPlaces = await Promise.all(allPlaces.map(async (place) => {
-    //       try {
-    //           const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=place_id,name,formatted_address,vicinity,geometry/location,formatted_phone_number,website&key=${apiKey}`;
-    //           const detailsResponse = await fetch(detailsUrl);
-    //           if (!detailsResponse.ok) throw new Error(`Details API error: ${detailsResponse.statusText}`);
-    //           const detailsData = await detailsResponse.json();
-    //           if (detailsData.status !== 'OK') throw new Error(`Details API Status: ${detailsData.status}`);
-    //           return { ...place, details: detailsData.result }; // Combine original place with details
-    //       } catch (detailsError) {
-    //           console.error(`Failed to fetch details for place ${place.place_id}:`, detailsError);
-    //           return place; // Return original place data on details error
-    //       }
-    //   }));
-    //
-    //   // --- Map to ParkingLot Structure ---
-    //   const externalLots: ParkingLot[] = detailedPlaces.map((place: any) => ({
-    //     id: place.place_id,
-    //     name: place.name,
-    //     address: place.details?.formatted_address || place.formatted_address || place.vicinity || 'Address unavailable',
-    //     capacity: 0, // Usually unknown from Places API
-    //     latitude: place.geometry.location.lat,
-    //     longitude: place.geometry.location.lng,
-    //     phoneNumber: place.details?.formatted_phone_number,
-    //     website: place.details?.website,
-    //     services: [], // Cannot reliably get services from Places API
-    //     subscriptionStatus: 'external',
-    //     isCarpsoManaged: false,
-    //     dataSource: 'google_places',
-    //     contactStatus: 'prospect',
-    //   }));
-    //
-    //   return externalLots;
-    // } catch (error) {
-    //   console.error("Error contacting Google Places API:", error);
-    //   throw error; // Re-throw
-    // }
-    // --- End Real API Call Placeholder ---
-
-    // Return simulated results
     return simulatedResults;
 }
 
-// Added sampleUsers definition from admin page for filtering logic
 const sampleUsers = [
   { id: 'usr_1', name: 'Alice Smith', email: 'alice@example.com', role: 'User', associatedLots: ['lot_A'] },
-  { id: 'usr_2', name: 'Bob Johnson', email: 'bob@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_B', 'lot_D'] }, // Owns B and D
+  { id: 'usr_2', name: 'Bob Johnson', email: 'bob@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_B', 'lot_D'] },
   { id: 'usr_3', name: 'Charlie Brown', email: 'charlie@example.com', role: 'User', associatedLots: ['lot_A', 'lot_C'] },
-  { id: 'usr_4', name: 'Diana Prince', email: 'diana@example.com', role: 'Admin', associatedLots: ['*'] }, // '*' means all lots
-  { id: 'usr_5', name: 'Eve Adams', email: 'eve@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_C'] }, // Owns C
+  { id: 'usr_4', name: 'Diana Prince', email: 'diana@example.com', role: 'Admin', associatedLots: ['*'] },
+  { id: 'usr_5', name: 'Eve Adams', email: 'eve@example.com', role: 'ParkingLotOwner', associatedLots: ['lot_C'] },
 ];
 
-// --- Illustrative block where the error might occur if added by the user ---
-// This block is for illustration and fixing the syntax error reported.
-// It's assumed this or similar code was added by the user to src/services/parking-lot.ts
-// which caused the parsing error at line 605.
 
-// export interface FeaturedService { // Assuming this interface is defined somewhere, possibly in this file or imported
-//     id: string;
-//     name: string;
-//     location: string;
-//     locationId?: string;
-//     description: string;
-//     icon: React.ElementType; // Or a string for icon names
-//     serviceType: ParkingLotService;
-//     imageUrl?: string;
-//     latitude?: number;
-//     longitude?: number;
-// }
+export interface FeaturedService {
+    id: string;
+    name: string;
+    location: string;
+    locationId?: string;
+    description: string;
+    icon: React.ElementType;
+    serviceType: ParkingLotService;
+    imageUrl?: string;
+    latitude?: number;
+    longitude?: number;
+}
 
-// Placeholder function for icon retrieval
-// function getServiceIcon(service: ParkingLotService): React.ElementType {
-//     // In a real scenario, import Lucide icons or use a mapping
-//     // For this fix, a placeholder is fine.
-//     return 'div' as unknown as React.ElementType;
-// }
+// Helper function to get Lucide icon component based on service type
+export function getServiceIcon(service: ParkingLotService): React.ElementType {
+    // Assuming you have Lucide icons imported or a mapping
+    // Example:
+    // import { EvStation, LocalCarWash, ... } from 'lucide-react';
+    // switch (service) {
+    //   case 'EV Charging': return EvStation;
+    //   case 'Car Wash': return LocalCarWash;
+    //   ...
+    // }
+    return 'div' as unknown as React.ElementType; // Placeholder
+}
 
-// const lotsDataForFeatured: ParkingLot[] = []; // This would be populated with actual lot data
-// const featuredServices: FeaturedService[] = lotsDataForFeatured.flatMap(lot =>
-//     (lot.services || []).map(service => ({ // Object literal starts
-//         id: `${lot.id}-${service}`, // <<< COMMA WAS MISSING HERE - This is the FIX
+// Example of how you might populate featuredServices if lots data is available
+// This specific constant would likely be generated within a component that has `lots` state.
+// For the service file, just exporting the type is usually sufficient.
+// const exampleLotsData: ParkingLot[] = []; // Assume this is populated
+// export const exampleFeaturedServices: FeaturedService[] = exampleLotsData.flatMap(lot =>
+//     (lot.services || []).map(service => ({
+//         id: `${lot.id}-${service}`,
 //         name: service,
 //         location: lot.name,
 //         locationId: lot.id,
 //         description: `Available at ${lot.name}.`,
-//         icon: getServiceIcon(service),
+//         icon: getServiceIcon(service), // Make sure getServiceIcon is defined and accessible
 //         serviceType: service,
 //         imageUrl: `https://picsum.photos/seed/${lot.id}-${service}/400/200`, // Placeholder
 //         latitude: lot.latitude,
 //         longitude: lot.longitude,
 //     }))
 // );
-// console.log(featuredServices); // Example usage to prevent unused variable error
-// --- End of illustrative block ---
