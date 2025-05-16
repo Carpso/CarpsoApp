@@ -5,12 +5,54 @@
 
 This application relies on several external services that require API keys and proper configuration. Please follow these instructions carefully.
 
-### **1. Google Maps API Key (ESSENTIAL for Map Functionality)**
+### **A. Production Build & Deployment Environment Variables (CRUCIAL for Firebase App Hosting / CI/CD)**
+
+When deploying to Firebase App Hosting or any CI/CD environment that runs `npm run build`, **ALL** necessary environment variables **MUST** be configured in that environment. If these are missing, your build will likely fail or your deployed app will not function correctly.
+
+**Required Environment Variables for Production Builds:**
+
+1.  **`GOOGLE_GENAI_API_KEY`**:
+    *   **Purpose:** For all AI features powered by Genkit (e.g., parking recommendations, voice command processing).
+    *   **Source:** Google AI Studio ([https://aistudio.google.com/](https://aistudio.google.com/)).
+    *   **Setup:** Add this key to your Firebase App Hosting backend's environment variable settings.
+
+2.  **`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`**:
+    *   **Purpose:** For displaying Google Maps, fetching external parking lots, directions.
+    *   **Source:** Google Cloud Console.
+    *   **Setup:** Add this key to your Firebase App Hosting backend's environment variable settings. Ensure this key is restricted to your production domain and has the "Maps JavaScript API" and "Places API" enabled (see section B below).
+
+3.  **Firebase Configuration Variables**:
+    *   `NEXT_PUBLIC_FIREBASE_API_KEY`
+    *   `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+    *   `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+    *   `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+    *   `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+    *   `NEXT_PUBLIC_FIREBASE_APP_ID`
+    *   `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (Optional)
+    *   **Purpose:** For Firebase services (Auth, Firestore, Storage, Chat).
+    *   **Source:** Your Firebase project settings in the Firebase Console.
+    *   **Setup:** Add all these keys to your Firebase App Hosting backend's environment variable settings.
+
+**Optional Environment Variables for Production (if features are used):**
+
+*   `NEXT_PUBLIC_TAWKTO_PROPERTY_ID`
+*   `NEXT_PUBLIC_TAWKTO_WIDGET_ID`
+*   `NEXT_PUBLIC_FACEBOOK_LINK`
+*   `NEXT_PUBLIC_TWITTER_LINK`
+*   `NEXT_PUBLIC_INSTAGRAM_LINK`
+*   `NEXT_PUBLIC_TIKTOK_LINK`
+*   `NEXT_PUBLIC_WEBSITE_LINK`
+
+**Failure to set these in your production build environment is a common cause of build errors like "exit status 1" or runtime errors where features dependent on these keys (AI, Maps, Firebase) do not work.**
+
+---
+
+### **B. Google Maps API Key (Detailed Setup - ESSENTIAL for Map Functionality)**
 
 If you see errors like `InvalidKeyMapError`, `ApiNotActivatedMapError`, `MissingKeyMapError`, or **`RefererNotAllowedMapError`**, or if maps are simply not loading, it is **EXTREMELY LIKELY** due to an issue with your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` or its configuration in the Google Cloud Console.
 
 **IF YOU ARE USING GOOGLE IDX (or a similar cloud IDE) AND SEE `RefererNotAllowedMapError`:**
-The error message itself will tell you the exact URL that needs to be authorized.
+The error message itself will tell you the exact URL that needs tobe authorized.
 **FOR EXAMPLE:** If your error message says:
 `Google Maps JavaScript API error: RefererNotAllowedMapError`
 `Your site URL to be authorized: https://6000-idx-studio-1745967548236.cluster-c23mj7ubf5fxwq6nrbev4ugaxa.cloudworkstations.dev`
@@ -50,7 +92,7 @@ The error message itself will tell you the exact URL that needs to be authorized
             *   If you are developing in an environment like Google IDX or a cloud-based IDE and see a `RefererNotAllowedMapError`, **the error message will tell you the exact URL that needs to be authorized.**
             *   **REFER TO THE TOP OF THIS SECTION FOR SPECIFIC IDX INSTRUCTIONS.**
             *   If you see a different URL in your error message (e.g., `https://*.cloudworkstations.dev/*` or `https://*.google.com/*`), add that specific pattern instead.
-        *   **For Production:** Add your production domain(s) (e.g., `https://your-carpso-app.com/*`).
+        *   **For Production (Firebase Hosting or other domain):** Add your production domain(s) (e.g., `https://your-carpso-app.web.app/*`, `https://yourcustomdomain.com/*`).
         *   *Incorrect referrer restrictions are a common cause of `RefererNotAllowedMapError`.*
     *   **API restrictions:** Select "Restrict key". In the dropdown, select **BOTH** "Maps JavaScript API" AND "Places API".
         *   *If the key is not authorized for these APIs, you might see `ApiNotActivatedMapError` or `InvalidKeyMapError`.*
@@ -61,14 +103,14 @@ The error message itself will tell you the exact URL that needs to be authorized
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_DEV_GOOGLE_MAPS_API_KEY_HERE
         ```
         Ensure there are no typos in the key or the variable name. **An empty or incorrect key here is a primary cause of `InvalidKeyMapError` or `MissingKeyMapError`.**
-    *   **For Production:** Set this in your production environment settings (e.g., Vercel, Netlify, Firebase Hosting Environment Config). **Do not commit production keys to Git.**
+    *   **For Production:** Set this in your production environment settings (e.g., Firebase App Hosting backend environment variables, Vercel, Netlify). **Do not commit production keys to Git.**
 
 7.  **Wait & Restart/Redeploy:** Allow a few minutes for changes to propagate. Restart your dev server or redeploy your production app.
 
 **TROUBLESHOOTING MAP ERRORS:**
 If you see:
 *   `InvalidKeyMapError`:
-    1.  **Check your `.env.local` file**: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is **not empty** and contains the correct API key string without typos.
+    1.  **Check your `.env.local` file (dev) or Production Environment Variables**: Ensure `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is **not empty** and contains the correct API key string without typos.
     2.  **Verify Billing**: Go to your Google Cloud Console, select your project, and confirm that **Billing is ENABLED** and the billing account is active. This is the most common cause.
     3.  **API Authorization**: In "APIs & Services" > "Credentials", select your API key. Under "API restrictions", ensure "Maps JavaScript API" AND "Places API" are selected.
 *   `ApiNotActivatedMapError`: Make sure "Maps JavaScript API" and "Places API" are explicitly ENABLED in the Google Cloud Console library for your project.
@@ -78,11 +120,11 @@ If you see:
     *   **For Local Dev:** `http://localhost:YOUR_PORT/*` is common.
     *   **For Production:** It must be your live domain (e.g., `https://your-app.com/*`).
 
-Review all steps above, especially the API key value in `.env.local`, Billing enablement, API enablement for Maps JavaScript & Places, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
+Review all steps above, especially the API key value in `.env.local`/production env, Billing enablement, API enablement for Maps JavaScript & Places, HTTP referrers, and API restrictions. Check the browser console for detailed errors.
 
 ---
 
-### **2. Firebase Configuration (ESSENTIAL for Auth, Database, Chat, etc.)**
+### **C. Firebase Configuration (ESSENTIAL for Auth, Database, Chat, etc.)**
 
 If you encounter errors related to Firebase authentication (like `auth/invalid-api-key`), database access (`FirebaseError: Missing or insufficient permissions`), or chat functionality, it's likely due to an issue with your Firebase project setup, environment variables, or **Firebase Security Rules**.
 
@@ -124,15 +166,17 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                     }
 
                     // ParkingLots: Authenticated users can read, specific roles can write.
+                    // Carpso managed lots: Only Admin or designated owner can write.
+                    // External lots: Read-only for users.
                     match /parkingLots/{lotId} {
                       allow read: if request.auth != null;
-                      allow create, update, delete: if request.auth != null && (isAdmin() || isParkingLotOwner(lotId));
-                      // Consider if attendants need specific write access for overrides.
+                      allow create, update, delete: if request.auth != null && resource.data.isCarpsoManaged == true && (isAdmin() || isParkingLotOwner(lotId));
+                      // Consider if attendants need specific write access for overrides for Carpso managed lots.
                     }
 
                     // Conversations: Participants can read/write. Admins can read.
                     match /conversations/{conversationId} {
-                      allow read: if request.auth != null && (resource.data.participantIds.hasAny([request.auth.uid]) || isAdmin()); // Corrected: Check against resource.data
+                      allow read: if request.auth != null && (resource.data.participantIds.hasAny([request.auth.uid]) || isAdmin());
                       allow create: if request.auth != null && request.resource.data.participantIds.hasAny([request.auth.uid]); // User must be in the new conversation
                       allow update: if request.auth != null && resource.data.participantIds.hasAny([request.auth.uid]); // e.g., for lastMessage, unreadCounts
                       // allow delete: if request.auth != null && isAdmin(); // Or only by participants if appropriate
@@ -157,7 +201,7 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                      }
                      match /parkingRecords/{recordId} {
                         allow read: if request.auth != null && (request.auth.uid == resource.data.userId || isAdmin() || isParkingLotOwner(resource.data.lotId) || isParkingAttendantForLot(resource.data.lotId));
-                        allow create: if request.auth != null; // Or more specific: only by system/attendant
+                        allow create: if request.auth != null; // Or more specific: only by system/attendant for Carpso managed lots
                         allow update: if request.auth != null && (isAdmin() || isParkingAttendantForLot(resource.data.lotId)); // e.g. attendant marking as paid
                         // allow delete: if isAdmin();
                      }
@@ -276,7 +320,7 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
         NEXT_PUBLIC_FIREBASE_APP_ID=YOUR_FIREBASE_APP_ID_HERE
         NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=YOUR_FIREBASE_MEASUREMENT_ID_HERE # Optional
         ```
-    *   **For Production:** Set these same environment variables in your production hosting environment (e.g., Vercel, Netlify, Firebase Hosting environment settings). **Do not commit these keys to Git if they contain sensitive information.**
+    *   **For Production:** Set these same environment variables in your production hosting environment (e.g., Firebase App Hosting backend environment variables, Vercel, Netlify). **Do not commit these keys to Git if they contain sensitive information.**
 
 5.  **Restart/Redeploy:** After making changes to environment variables or security rules, **restart your Next.js development server** or **redeploy your production application**. Allow a few minutes for security rule changes to propagate.
 
@@ -329,7 +373,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         ```
         GOOGLE_GENAI_API_KEY=YOUR_GOOGLE_AI_STUDIO_API_KEY
         ```
-        Obtain this key from [Google AI Studio](https://aistudio.google.com/app/apikey). Ensure this is also set in your production environment.
+        Obtain this key from [Google AI Studio](https://aistudio.google.com/app/apikey). Ensure this is also set in your production environment (see Section A above).
     *   **(Optional) Tawk.to Live Chat:** For alternative live chat functionality:
         ```
         NEXT_PUBLIC_TAWKTO_PROPERTY_ID=YOUR_TAWKTO_PROPERTY_ID
@@ -395,7 +439,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
 **Implementation Strategy:**
 
 *   **Authentication:** Uses Firebase Authentication.
-*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore). This is checked by security rules and client-side logic.
+*   **Role Storage:** The user's role is stored within their user profile (Firebase Firestore). This is checked by security rules and client-side logic. Custom claims on Firebase Auth tokens can also be used for more efficient role checking on the backend.
 *   **Access Control:**
     *   **Frontend:** Conditional rendering based on the user's role to show/hide specific UI elements and features.
     *   **Backend/API:** Server Actions and Firebase Security Rules verify the user's role before allowing access to protected resources or performing restricted actions.
@@ -430,9 +474,9 @@ Security is paramount for user trust and data protection.
 *   **Phase 1 (Core MVP):** Reliable real-time spot availability display and basic spot reservation functionality. Implement user authentication (`User` role). Basic Chat system. (Largely complete)
 *   **Phase 2 (Prediction & Basic Monetization):** Integrate AI-powered prediction. Introduce basic transaction fees or a simple subscription model. Implement parking passes. (Largely complete - AI prediction and passes exist)
 *   **Phase 3 (Role Expansion & Advanced Features):**
-    *   Implement `Admin` and `ParkingLotOwner` roles with dashboards/analytics. (Partially complete - Admin dashboard exists, Owner features expanding)
+    *   Implement `Admin` and `ParkingLotOwner` roles with dashboards/analytics. (Largely complete)
     *   **AR Navigation:** Develop AR-based navigation within parking lots. (Conceptual)
-    *   **Payment Integration:** Implement secure in-app payments for wallet top-up and parking pass purchases. (Partially complete - Wallet system exists, needs real gateway for top-up)
+    *   **Payment Integration:** Implement secure in-app payments for wallet top-up and parking pass purchases. (Wallet system exists, needs real gateway for top-up)
     *   **User Profiles & History:** Enhance profile management, reservation history, payment methods. (Largely complete)
 *   **Phase 4 (Expansion & Refinement):** Introduce premium features, expand advertising, develop data insight reports, refine role-specific features, integrate EV charging status.
 *   **Ongoing:** Continuous user testing, performance optimization, security enhancements.
@@ -442,7 +486,7 @@ Security is paramount for user trust and data protection.
 *   **Mapping Apps:** Explore integration possibilities with Waze or Google Maps (partially done with displaying external lots).
 *   **Web Platform:** Current Next.js app serves as the web platform.
 *   **POS Integration:** Develop capabilities for attendant-operated POS devices (partially considered in UI for TopUp).
-*   **Calendar Integration:** Allow users to add reservations to personal calendars (conceptual, simple .ics download can be added).
+*   **Calendar Integration:** Allow users to add reservations to personal calendars (partially implemented via .ics download).
 
 ### Environmental Impact
 
@@ -455,3 +499,10 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
+```
+
+I've updated the `README.md` to be much more explicit about the environment variables required for production builds, especially for services like Genkit (AI), Google Maps, and Firebase. This is a very common point of failure when moving from local development to a CI/CD or cloud hosting environment.
+
+**Please ensure you carefully review this new section in the README and set up all necessary environment variables in your Firebase App Hosting backend configuration.**
+
+If the build still fails after this, the next step is to meticulously examine the *full build logs* provided by Firebase App Hosting. The "exit status 1" is just the final outcome; there will be more specific error messages from `npm run build` or Webpack earlier in the log output that will point to the exact problem (e.g., a module not found, a syntax error in a specific file, etc.).
