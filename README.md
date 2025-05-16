@@ -1,20 +1,30 @@
 
 # Carpso - Smart Parking
 
-## **VERY IMPORTANT: API Key Setup for Development & Production**
+## **VERY IMPORTANT: API Key & Environment Variable Setup for Development & Production**
 
-This application relies on several external services that require API keys and proper configuration. Please follow these instructions carefully.
+This application relies on several external services that require API keys and proper configuration. **Build failures in Firebase App Hosting or other CI/CD environments are MOST OFTEN due to missing or incorrect environment variables during the cloud build process.** Please follow these instructions meticulously.
+
+---
 
 ### **A. Production Build & Deployment Environment Variables (CRUCIAL for Firebase App Hosting / CI/CD)**
 
-When deploying to Firebase App Hosting or any CI/CD environment that runs `npm run build`, **ALL** necessary environment variables **MUST** be configured in that environment. If these are missing, your build will likely fail or your deployed app will not function correctly.
+When deploying to Firebase App Hosting or any CI/CD environment that runs `npm run build`, **ALL** necessary environment variables **MUST** be configured in that environment *before* the build starts. If these are missing, your build will likely fail with generic errors like "exit status 1" or "pack failed", or your deployed app will not function correctly.
+
+**How to Set Environment Variables in Firebase App Hosting:**
+1. Go to the [Firebase Console](https://console.firebase.google.com/).
+2. Select your project (e.g., `carpso-11zv0`).
+3. Navigate to **Build** > **App Hosting**.
+4. Select your backend.
+5. Go to the **Environment variables** tab.
+6. Click **"Add variable"** for each required variable listed below and set its correct production value.
 
 **Required Environment Variables for Production Builds:**
 
 1.  **`GOOGLE_GENAI_API_KEY`**:
     *   **Purpose:** For all AI features powered by Genkit (e.g., parking recommendations, voice command processing).
     *   **Source:** Google AI Studio ([https://aistudio.google.com/](https://aistudio.google.com/)).
-    *   **Setup:** Add this key to your Firebase App Hosting backend's environment variable settings.
+    *   **Setup:** Add this key to your Firebase App Hosting backend's environment variable settings. **If this is missing, Genkit initialization during `npm run build` can fail.**
 
 2.  **`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`**:
     *   **Purpose:** For displaying Google Maps, fetching external parking lots, directions.
@@ -28,10 +38,10 @@ When deploying to Firebase App Hosting or any CI/CD environment that runs `npm r
     *   `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
     *   `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
     *   `NEXT_PUBLIC_FIREBASE_APP_ID`
-    *   `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (Optional)
+    *   `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (Optional, but if used, set it)
     *   **Purpose:** For Firebase services (Auth, Firestore, Storage, Chat).
-    *   **Source:** Your Firebase project settings in the Firebase Console.
-    *   **Setup:** Add all these keys to your Firebase App Hosting backend's environment variable settings.
+    *   **Source:** Your Firebase project settings in the Firebase Console (Project settings > General > Your apps > Web app > SDK setup and configuration).
+    *   **Setup:** Add ALL these keys to your Firebase App Hosting backend's environment variable settings. **If these are missing, Firebase initialization during `npm run build` or at runtime can fail.**
 
 **Optional Environment Variables for Production (if features are used):**
 
@@ -43,7 +53,16 @@ When deploying to Firebase App Hosting or any CI/CD environment that runs `npm r
 *   `NEXT_PUBLIC_TIKTOK_LINK`
 *   `NEXT_PUBLIC_WEBSITE_LINK`
 
-**Failure to set these in your production build environment is a common cause of build errors like "exit status 1" or runtime errors where features dependent on these keys (AI, Maps, Firebase) do not work.**
+**TROUBLESHOOTING BUILD FAILURES (e.g., "exit status 1", "pack failed"):**
+If your Firebase App Hosting build fails:
+1.  **IMMEDIATELY CHECK YOUR ENVIRONMENT VARIABLES** in the Firebase App Hosting console as described above. This is the most common cause.
+2.  **INSPECT DETAILED BUILD LOGS:**
+    *   In the Firebase Console, go to your App Hosting backend.
+    *   Look for a "Build history" or similar link. This will take you to Google Cloud Build.
+    *   Find the failed build and click on it to view its logs.
+    *   **Scroll UP from the final error message.** The *actual* error from `npm run build` (e.g., "Module not found", "SyntaxError", "Error: GOOGLE_GENAI_API_KEY is not set") will be printed *before* the generic "pack failed" or "exit status 1" messages.
+    *   **Share these specific errors if you need further help.** The audit log you've shared only indicates the build initiation failed, not *why* the build steps themselves failed.
+3.  **Build Locally:** Ensure `npm run build` completes without errors in your local environment (or IDX terminal).
 
 ---
 
@@ -268,7 +287,7 @@ If you encounter errors related to Firebase authentication (like `auth/invalid-a
                                  && data.label is string
                                  && (data.address is string || !('address' in data))
                                  && (data.latitude is number || !('latitude' in data))
-                                 && (data.longitude is number || !('longitude' in data));
+                                 && (data.longitude is number);
                        }
                   }
                 }
@@ -385,7 +404,7 @@ This is a NextJS application demonstrating a smart parking solution using IoT se
         NEXT_PUBLIC_FACEBOOK_LINK=YOUR_FACEBOOK_PAGE_URL
         NEXT_PUBLIC_TWITTER_LINK=YOUR_TWITTER_PROFILE_URL
         NEXT_PUBLIC_INSTAGRAM_LINK=YOUR_INSTAGRAM_PROFILE_URL
-        NEXT_PUBLIC_TIKTOK_LINK=YOUR_TIKTOK_PROFILE_URL
+        NEXT_PUBLIC_TIKTOK_LINK=YOUR_TIKTOK_LINK_URL
         NEXT_PUBLIC_WEBSITE_LINK=YOUR_OFFICIAL_WEBSITE_URL
         ```
         Set these in production if these links are desired.
@@ -499,3 +518,5 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
+
+    
