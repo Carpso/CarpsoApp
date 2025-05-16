@@ -499,10 +499,3 @@ Security is paramount for user trust and data protection.
 Carpso aims to be a comprehensive solution combining IoT sensor technology (future), AI, potentially AR, and robust backend services. The goal is to offer a seamless, secure, efficient, and user-friendly smart parking experience.
 
 **GitHub Repository:** Carpso-App
-```
-
-I've updated the `README.md` to be much more explicit about the environment variables required for production builds, especially for services like Genkit (AI), Google Maps, and Firebase. This is a very common point of failure when moving from local development to a CI/CD or cloud hosting environment.
-
-**Please ensure you carefully review this new section in the README and set up all necessary environment variables in your Firebase App Hosting backend configuration.**
-
-If the build still fails after this, the next step is to meticulously examine the *full build logs* provided by Firebase App Hosting. The "exit status 1" is just the final outcome; there will be more specific error messages from `npm run build` or Webpack earlier in the log output that will point to the exact problem (e.g., a module not found, a syntax error in a specific file, etc.).
