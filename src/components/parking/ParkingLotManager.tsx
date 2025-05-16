@@ -8,8 +8,8 @@ import type { ParkingLot, ParkingLotService } from '@/services/parking-lot';
 import { getAvailableParkingLots } from '@/services/parking-lot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator"; // Added Separator import
+import { Badge } from '@/components/ui/badge';
+import { Separator } from "@/components/ui/separator";
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon, LocateFixed, Car } from 'lucide-react';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
@@ -75,17 +75,11 @@ export default function ParkingLotManager() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const voiceAssistant = useVoiceAssistant({
-    onCommand: (transcript) => handleVoiceCommand(transcript, voiceAssistant.speak),
-    onStateChange: (newState) => {
-        setCurrentVoiceState(newState);
-    }
-  });
 
+  // Define data fetching functions first
   const fetchLocationsData = useCallback(async (forceRefresh = false) => {
     setIsLoadingLocations(true);
     setError(null);
-
     const cacheKey = 'cachedParkingLotsWithExternal_v2';
     const cacheTimestampKey = `${cacheKey}Timestamp`;
     const maxCacheAge = isVisibleCtx ? 5 * 60 * 1000 : 60 * 60 * 1000;
@@ -97,7 +91,6 @@ export default function ParkingLotManager() {
         if (cachedData && cachedTimestamp && (Date.now() - parseInt(cachedTimestamp)) < maxCacheAge) {
              try {
                 newAllLots = JSON.parse(cachedData);
-                console.log("Using valid cached parking lots.");
              } catch (parseError: any) {
                  console.error("Failed to parse cached locations, will fetch fresh.", parseError.message);
                  localStorage.removeItem(cacheKey);
@@ -110,7 +103,6 @@ export default function ParkingLotManager() {
 
     if (needsServerFetch && isOnline) {
         try {
-            console.log("Fetching fresh parking lots (including external simulation)...");
             const fetchedLots = await getAvailableParkingLots(userRole || 'User', userId, true);
             newAllLots = fetchedLots;
             if (typeof window !== 'undefined') {
@@ -120,7 +112,6 @@ export default function ParkingLotManager() {
         } catch (fetchError: any) {
             console.error("Online fetch failed:", fetchError.message);
             if (newAllLots.length === 0) setError("Could not load parking locations. Please check connection.");
-            else console.warn("Online fetch failed, continuing with previously cached data if any.");
         }
     } else if (needsServerFetch && !isOnline) {
         setError("Offline: Could not load parking data. No cached data available.");
@@ -134,7 +125,7 @@ export default function ParkingLotManager() {
     });
     setIsLoadingLocations(false);
     setIsRefreshing(false);
-  }, [isOnline, isVisibleCtx, userRole, userId]);
+  }, [isOnline, isVisibleCtx, userRole, userId, toast]);
 
   const fetchUserBookmarksData = useCallback(async () => {
     if (typeof window !== 'undefined') {
@@ -175,21 +166,18 @@ export default function ParkingLotManager() {
     try {
         const currentCoords = userLocation ? { latitude: userLocation.lat, longitude: userLocation.lng } : { latitude: -15.4167, longitude: 28.2833 };
         const currentBookmarks = userBookmarks;
+        let resolvedDestinationLabel = destinationLabel;
+        let resolvedDestinationAddress = destinationAddress;
+        let resolvedDestLat = destLat;
+        let resolvedDestLng = destLng;
 
-         let resolvedDestinationLabel = destinationLabel;
-         let resolvedDestinationAddress = destinationAddress;
-         let resolvedDestLat = destLat;
-         let resolvedDestLng = destLng;
-
-         if (destinationLabel) {
+        if (destinationLabel) {
               const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === destinationLabel.toLowerCase());
              if (matchedBookmark) {
                  resolvedDestLat = matchedBookmark.latitude;
                  resolvedDestLng = matchedBookmark.longitude;
                  resolvedDestinationAddress = matchedBookmark.address || resolvedDestinationAddress;
-                 console.log(`Using coordinates from bookmark "${matchedBookmark.label}" for recommendation.`);
              } else {
-                 console.log(`Destination label "${destinationLabel}" not found in bookmarks.`);
                  if(!destinationAddress) resolvedDestinationAddress = destinationLabel;
              }
          }
@@ -207,15 +195,12 @@ export default function ParkingLotManager() {
          } catch (jsonError: any) {
              console.error("Error preparing nearbyLots JSON for recommendation:", jsonError.message);
          }
-
          let bookmarksJson = "[]";
          try {
              bookmarksJson = JSON.stringify(currentBookmarks);
          } catch (jsonError: any) {
               console.error("Error preparing bookmarks JSON for recommendation:", jsonError.message);
          }
-
-
         const input = {
             userId: userId,
             currentLatitude: currentCoords.latitude,
@@ -229,17 +214,13 @@ export default function ParkingLotManager() {
             userHistorySummary: userHistorySummary,
             userBookmarks: bookmarksJson,
         };
-
-        console.log("Calling recommendParking with input:", JSON.stringify(input, null, 2));
         const result = await recommendParking(input);
-        console.log("Received recommendations:", result);
         setRecommendations(result.recommendations || []);
-
     } catch (err: any) {
-        console.error("Failed to fetch recommendations:", err);
+        console.error("Failed to fetch recommendations:", err.message);
         if (isOnline) toast({
             title: "Recommendation Error",
-            description: "Could not fetch personalized parking recommendations. Please try again later.",
+            description: `Could not fetch recommendations: ${err.message || 'Unknown error'}. Please try again later.`,
             variant: "destructive",
         });
         setRecommendations([]);
@@ -248,18 +229,17 @@ export default function ParkingLotManager() {
     }
   }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline, userLocation]);
 
+  const fetchRecommendationsDataRef = useRef(fetchRecommendationsData);
+  useEffect(() => {
+    fetchRecommendationsDataRef.current = fetchRecommendationsData;
+  }, [fetchRecommendationsData]);
 
+  // Define voice command result handler
   const handleVoiceCommandResult = useCallback(async (commandOutput: ProcessVoiceCommandOutput, speakFn: (text: string) => void) => {
     const { intent, entities, responseText } = commandOutput;
-    console.log("Processed Intent:", intent);
-    console.log("Processed Entities:", entities);
-
     if (isOnline && isClient && speakFn) {
          speakFn(responseText);
-    } else {
-         console.warn("Voice assistant speak function not available, offline, or not on client.");
     }
-
     switch (intent) {
         case 'find_parking':
             if (isOnline) {
@@ -269,15 +249,15 @@ export default function ParkingLotManager() {
                      const matchedBookmark = currentBookmarks.find(bm => bm.label.toLowerCase() === entities.destination?.toLowerCase());
                      if (matchedBookmark) {
                           setDestinationForRecommendation({ label: entities.destination, address: matchedBookmark.address, latitude: matchedBookmark.latitude, longitude: matchedBookmark.longitude });
-                          await fetchRecommendationsData(entities.destination, matchedBookmark.address, matchedBookmark.latitude, matchedBookmark.longitude);
+                          await fetchRecommendationsDataRef.current(entities.destination, matchedBookmark.address, matchedBookmark.latitude, matchedBookmark.longitude);
                      } else {
                           setDestinationForRecommendation({ label: entities.destination, address: entities.destination });
-                          await fetchRecommendationsData(entities.destination, entities.destination);
+                          await fetchRecommendationsDataRef.current(entities.destination, entities.destination);
                      }
                  } else {
                      toast({ title: "Finding Parking", description: `Showing general recommendations.` });
                      setDestinationForRecommendation(null);
-                     await fetchRecommendationsData();
+                     await fetchRecommendationsDataRef.current();
                  }
             } else {
                  toast({ title: "Offline", description: "Recommendations require an internet connection.", variant: "destructive"});
@@ -290,18 +270,15 @@ export default function ParkingLotManager() {
                     setSelectedLocationId(locationForSpot.id);
                     toast({ title: "Action Required", description: `Navigating to ${locationForSpot.name}. Please confirm reservation for ${entities.spotId} on screen.` });
                      setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
-                     console.warn(`Need mechanism to auto-open reservation dialog for ${entities.spotId}`);
                 } else {
                      let msg = `Sorry, I couldn't identify the location for spot ${entities.spotId}.`;
                      if (!locations.find(loc => entities.spotId?.startsWith(loc.id))) {
                           msg += " It might be an external parking lot which doesn't support reservations through Carpso.";
                      }
                      if (isOnline && isClient && speakFn) speakFn(msg);
-                     else console.warn("Voice assistant speak function not available, offline, or not on client.");
                 }
             } else {
                 if (isOnline && isClient && speakFn) speakFn("Sorry, I didn't catch the spot ID you want to reserve. Please try again.");
-                else console.warn("Voice assistant speak function not available, offline, or not on client.");
             }
             break;
         case 'check_availability':
@@ -313,11 +290,9 @@ export default function ParkingLotManager() {
                      setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 500);
                       if (!locationForSpot.isCarpsoManaged) {
                           if (isOnline && isClient && speakFn) speakFn(`I can show you ${locationForSpot.name}, but real-time spot availability isn't available for this external location.`);
-                          else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      }
                 } else {
                       if (isOnline && isClient && speakFn) speakFn(`Sorry, I couldn't identify the location for spot ${entities.spotId}.`);
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
              } else if (entities.locationId) {
                  const locationByIdOrName = locations.find(loc => loc.id === entities.locationId || loc.name === entities.locationId);
@@ -327,14 +302,12 @@ export default function ParkingLotManager() {
                      if (isOnline && isClient && speakFn) {
                          if (available !== undefined) speakFn(`Okay, ${locationByIdOrName.name} currently has about ${available} spots available.`);
                          else speakFn(`Okay, showing ${locationByIdOrName.name}. Real-time availability data isn't available for this external location.`);
-                     } else console.warn("Voice assistant speak function not available, offline, or not on client.");
+                     }
                  } else {
                       if (isOnline && isClient && speakFn) speakFn(`Sorry, I couldn't find the location ${entities.locationId}.`);
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
              } else {
                 if (isOnline && isClient && speakFn) speakFn("Which spot or location would you like me to check?");
-                else console.warn("Voice assistant speak function not available, offline, or not on client.");
              }
             break;
         case 'cancel_reservation':
@@ -353,7 +326,6 @@ export default function ParkingLotManager() {
                          targetName = `your pinned car at ${pinnedSpot.spotId}`;
                       } else {
                            if (isOnline && isClient && speakFn) speakFn("Sorry, I don't have a pinned car location for you.");
-                           else console.warn("Voice assistant speak function not available, offline, or not on client.");
                            break;
                       }
                   } else {
@@ -369,23 +341,17 @@ export default function ParkingLotManager() {
                                targetLat = locationByIdOrName.latitude;
                                targetLon = locationByIdOrName.longitude;
                                targetName = locationByIdOrName.name;
-                          } else {
-                               console.log(`Cannot resolve directions target: ${targetName}. Geocoding needed or not a known location.`);
                           }
                       }
                   }
-
-
                   if (targetLat && targetLon) {
                       toast({ title: "Getting Directions", description: `Opening map directions for ${targetName}...` });
                       if (typeof window !== 'undefined') window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`, '_blank');
                   } else {
                        if (isOnline && isClient && speakFn) speakFn(`Sorry, I couldn't find or get coordinates for ${targetName}.`);
-                       else console.warn("Voice assistant speak function not available, offline, or not on client.");
                   }
              } else {
                   if (isOnline && isClient && speakFn) speakFn("Where would you like directions to?");
-                  else console.warn("Voice assistant speak function not available, offline, or not on client.");
              }
             break;
         case 'report_issue':
@@ -405,23 +371,19 @@ export default function ParkingLotManager() {
                      setIsReportModalOpen(true);
                  } else if (!isAuthenticated) {
                       if (isOnline && isClient && speakFn) speakFn("Please sign in to report an issue.");
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                       setIsAuthModalOpen(true);
                  } else {
                       let msg = `Sorry, I couldn't identify the location for spot ${entities.spotId}.`;
                       if (!locations.find(loc => loc.isCarpsoManaged && entities.spotId?.startsWith(loc.id))) msg += " You can only report issues for Carpso-managed locations.";
                       if (isOnline && isClient && speakFn) speakFn(msg);
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                  }
             } else {
                 if (isOnline && isClient && speakFn) speakFn("Which spot are you reporting an issue for?");
-                else console.warn("Voice assistant speak function not available, offline, or not on client.");
             }
             break;
         case 'add_bookmark':
              if (!isAuthenticated || !userId) {
                 if (isOnline && isClient && speakFn) speakFn("Please sign in to save locations.");
-                else console.warn("Voice assistant speak function not available, offline, or not on client.");
                 setIsAuthModalOpen(true);
                 break;
              }
@@ -440,67 +402,73 @@ export default function ParkingLotManager() {
                         addr = "Current Location (Detected)";
                      } else {
                          if(isOnline && isClient && speakFn) speakFn("Sorry, I can't get your current location to save it. Please try again or provide an address.");
-                         else console.warn("Voice assistant speak function not available, offline, or not on client.");
                          toast({ title: "Location Error", description: "Could not get current location for bookmark.", variant: "destructive"});
                          break;
                      }
                  }
                  else addr = entities.bookmarkLocation;
-
                  try {
                      await addBookmark(userId, { label: entities.bookmarkLabel, address: addr, latitude: lat, longitude: lon });
                      await fetchUserBookmarksData();
                      if (isOnline && isClient && speakFn) speakFn(`Okay, saved "${entities.bookmarkLabel}".`);
-                     else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      toast({ title: "Bookmark Added", description: `Saved "${entities.bookmarkLabel}".` });
                  } catch (error: any) {
                      console.error("Error adding bookmark via voice:", error);
                       if (isOnline && isClient && speakFn) speakFn(`Sorry, I couldn't save the bookmark. ${error.message || error}`);
-                      else console.warn("Voice assistant speak function not available, offline, or not on client.");
                      toast({ title: "Save Failed", description: error.message || error, variant: "destructive" });
                  }
              } else {
                   if (isOnline && isClient && speakFn) speakFn("What label and location do you want to save?");
-                  else console.warn("Voice assistant speak function not available, offline, or not on client.");
              }
             break;
         case 'unknown':
+            // Default responseText is usually fine here
             break;
     }
-  }, [locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient, fetchUserBookmarksData, userLocation, fetchRecommendationsData]);
+  }, [
+    locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient,
+    fetchUserBookmarksData, userLocation, fetchRecommendationsDataRef // Use the ref here now
+  ]);
 
-
-   const handleVoiceCommand = useCallback(async (transcript: string, speakFn: (text: string) => void) => {
+  // Define the command processor for the voice assistant
+  const processRecognizedCommand = useCallback(async (transcript: string, speakFn: (text: string) => void) => {
     if (!isOnline) {
-         toast({ title: "Offline", description: "Voice commands require an internet connection.", variant: "destructive" });
-         return;
+        toast({ title: "Offline", description: "Voice commands require an internet connection.", variant: "destructive" });
+        return;
     }
-    let bookmarksString: string | undefined = undefined;
+    let bookmarksString: string | undefined;
     try {
         bookmarksString = JSON.stringify(userBookmarks);
     } catch (jsonError: any) {
         console.error("Error stringifying bookmarks for voice command:", jsonError.message);
     }
-    console.log("Processing voice command:", transcript);
     try {
-         const commandOutput = await processVoiceCommand({ transcript, userBookmarks: bookmarksString });
-         handleVoiceCommandResult(commandOutput, speakFn);
+        const commandOutput = await processVoiceCommand({ transcript, userBookmarks: bookmarksString });
+        handleVoiceCommandResult(commandOutput, speakFn);
     } catch(error: any) {
         console.error("Error in processVoiceCommand flow:", error);
         let errorMsg = "Sorry, I couldn't process that. Please try again.";
         if (error.message && error.message.includes('overloaded')) {
              errorMsg = "The AI service is a bit busy right now. Please try your command again in a moment.";
         }
-        if (isOnline && isClient && voiceAssistant.speak) { // Check if speak function is available
-            voiceAssistant.speak(errorMsg);
+        if (isOnline && isClient && speakFn) {
+            speakFn(errorMsg);
         } else {
             toast({ title: "Voice Command Error", description: errorMsg, variant: "destructive" });
         }
     }
-  }, [isOnline, toast, userBookmarks, isClient, voiceAssistant, handleVoiceCommandResult]);
+  }, [isOnline, toast, userBookmarks, isClient, handleVoiceCommandResult]);
 
+  // Initialize voice assistant hook AFTER all its callback dependencies are defined
+  const voiceAssistant = useVoiceAssistant({
+    onCommand: processRecognizedCommand,
+    onStateChange: (newState) => {
+        setCurrentVoiceState(newState);
+    }
+  });
 
   useEffect(() => {
+    setIsClient(true);
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
@@ -511,14 +479,14 @@ export default function ParkingLotManager() {
           setUserLocation(newLocation);
           setGeolocationError(null);
         },
-        (error) => {
-          console.error("Error getting user location:", error);
-          let message = `Error getting location: ${error.message}. Please ensure location services are enabled.`;
-          if (error.code === error.PERMISSION_DENIED) {
+        (geoError) => { // Changed error variable name to avoid conflict
+          console.error(`Error getting user location (Code: ${geoError.code}): ${geoError.message}`);
+          let message = `Error getting location: ${geoError.message}. Please ensure location services are enabled.`;
+          if (geoError.code === geoError.PERMISSION_DENIED) {
             message = "Location access denied. Please enable it in your browser settings for full functionality.";
-          } else if (error.code === error.POSITION_UNAVAILABLE) {
+          } else if (geoError.code === geoError.POSITION_UNAVAILABLE) {
             message = "Location information is unavailable at the moment.";
-          } else if (error.code === error.TIMEOUT) {
+          } else if (geoError.code === geoError.TIMEOUT) {
             message = "Getting location timed out. Please try again.";
           }
           setGeolocationError(message);
@@ -534,10 +502,8 @@ export default function ParkingLotManager() {
     } else {
       const noGeoMessage = "Geolocation is not supported by this browser.";
       setGeolocationError(noGeoMessage);
-      console.warn(noGeoMessage);
     }
   }, []);
-
 
    useEffect(() => {
        let currentOfflineToastId: string | null = null;
@@ -562,8 +528,7 @@ export default function ParkingLotManager() {
        return () => {
            if (currentOfflineToastId) dismiss(currentOfflineToastId);
        };
-   }, [isOnline, isClient, toast, dismiss, fetchUserBookmarksData, fetchLocationsData]);
-
+   }, [isOnline, isClient, toast, dismiss, fetchLocationsData, fetchUserBookmarksData, offlineToastId]);
 
   const handleManualRefresh = () => {
       if (!isOnline) {
@@ -583,14 +548,10 @@ export default function ParkingLotManager() {
        const startInterval = () => {
            if (intervalId) clearInterval(intervalId);
            if (isOnline) {
-               const intervalDuration = isVisibleCtx ? 30000 : 120000; // 30s if visible, 2min if not
-               console.log(`Setting location refresh interval to ${intervalDuration / 1000}s (Visible: ${isVisibleCtx})`);
+               const intervalDuration = isVisibleCtx ? 30000 : 120000;
                intervalId = setInterval(() => fetchLocationsData(), intervalDuration);
-           } else {
-               console.log("Offline, clearing location refresh interval.");
            }
        };
-
        fetchLocationsData();
        startInterval();
        return () => { if (intervalId) clearInterval(intervalId); };
@@ -605,24 +566,17 @@ export default function ParkingLotManager() {
        }
    }, [isAuthenticated, userId, isOnline, fetchUserBookmarksData]);
 
-   const fetchRecommendationsDataRef = useRef(fetchRecommendationsData);
-   useEffect(() => {
-     fetchRecommendationsDataRef.current = fetchRecommendationsData;
-   }, [fetchRecommendationsData]);
-
   useEffect(() => {
        if (!isLoadingLocations && !isLoadingBookmarks && locations.length > 0 && isAuthenticated && userId) {
            fetchRecommendationsDataRef.current(destinationForRecommendation?.label, destinationForRecommendation?.address, destinationForRecommendation?.latitude, destinationForRecommendation?.longitude);
        }
    }, [isLoadingLocations, isLoadingBookmarks, isAuthenticated, userId, locations, destinationForRecommendation]);
 
-
     useEffect(() => {
        setCurrentVoiceState(voiceAssistant.state);
     }, [voiceAssistant.state]);
 
   useEffect(() => {
-      setIsClient(true);
       if (userId && typeof window !== 'undefined') {
             const prefs = loadUserPreferences(userId);
             if (prefs && prefs.favoriteLocations) {
@@ -649,7 +603,6 @@ export default function ParkingLotManager() {
             const firstFavorite = favoriteLocations.find(favId => locations.some(loc => loc.id === favId));
             const firstCarpso = locations.find(l => l.isCarpsoManaged);
             const newSelection = firstFavorite || (firstCarpso ? firstCarpso.id : locations[0]?.id);
-
             if (newSelection) {
                  setSelectedLocationId(newSelection);
             }
@@ -659,15 +612,18 @@ export default function ParkingLotManager() {
 
   useEffect(() => {
     const selectedLoc = locations.find(l => l.id === selectedLocationId);
-    if (selectedLoc) {
+    if (destinationForRecommendation?.latitude && destinationForRecommendation?.longitude) {
+        setMapCenter({ lat: destinationForRecommendation.latitude, lng: destinationForRecommendation.longitude });
+    } else if (selectedLoc) {
         setMapCenter({ lat: selectedLoc.latitude, lng: selectedLoc.longitude });
-    } else if (userLocation && !selectedLocationId) {
+    } else if (userLocation) {
         setMapCenter(userLocation);
-    } else if (!selectedLocationId && locations.length === 0 && !userLocation) {
+    } else if (locations.length > 0 && !selectedLoc && !userLocation){
+         setMapCenter({lat: locations[0].latitude, lng: locations[0].longitude});
+    } else if (!selectedLoc && !userLocation && locations.length === 0) {
          setMapCenter({lat: -15.4167, lng: 28.2833});
     }
-  }, [selectedLocationId, locations, userLocation]);
-
+  }, [selectedLocationId, locations, userLocation, destinationForRecommendation]);
 
  const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
@@ -692,17 +648,13 @@ export default function ParkingLotManager() {
       setPinnedSpot(null);
       const locationToPin = locations.find(l => l.id === locationId);
       if (!locationToPin) {
-          console.error("Cannot pin car: Location details not found for", locationId);
           toast({ title: "Pinning Error", description: "Could not find location details.", variant: "destructive" });
           setIsPinning(false);
           return;
       }
       const pinLatitude = typeof locationToPin.latitude === 'number' ? locationToPin.latitude : 0;
       const pinLongitude = typeof locationToPin.longitude === 'number' ? locationToPin.longitude : 0;
-
-      console.log(`Simulating pinning car location at ${spotId} in ${locationToPin.name} (${pinLatitude}, ${pinLongitude})...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
-
       const pinData: PinnedLocationData = {
           spotId,
           locationId,
@@ -716,7 +668,6 @@ export default function ParkingLotManager() {
            try { localStorage.setItem('pinnedCarLocation', JSON.stringify(pinData)); }
            catch (cacheError: any) { console.error("Failed to cache pinned location:", cacheError.message); }
       }
-
       setIsPinning(false);
       toast({
         title: "Car Location Pinned",
@@ -727,11 +678,10 @@ export default function ParkingLotManager() {
    useEffect(() => {
        if (typeof window !== 'undefined') {
            const cachedPin = localStorage.getItem('pinnedCarLocation');
-           const maxPinAge = 6 * 60 * 60 * 1000; // Pin valid for 6 hours
+           const maxPinAge = 6 * 60 * 60 * 1000;
            if (cachedPin) {
                try {
                    const pinData = JSON.parse(cachedPin) as PinnedLocationData;
-                    // Check if latitude and longitude are valid numbers
                     if (typeof pinData.latitude === 'number' && typeof pinData.longitude === 'number' && Date.now() - pinData.timestamp < maxPinAge) {
                         setPinnedSpot(pinData);
                     } else {
@@ -745,7 +695,6 @@ export default function ParkingLotManager() {
        }
    }, []);
 
-
  const clearPinnedLocation = () => {
      setPinnedSpot(null);
       if (typeof window !== 'undefined') localStorage.removeItem('pinnedCarLocation');
@@ -754,7 +703,7 @@ export default function ParkingLotManager() {
 
  const handleSelectLocation = (locationId: string) => {
      setSelectedLocationId(locationId);
-     // Scroll to parking grid section after selection
+     setDestinationForRecommendation(null);
      setTimeout(() => document.getElementById('parking-grid-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
  };
 
@@ -778,12 +727,10 @@ export default function ParkingLotManager() {
 
   const favoriteLocationObjects = favoriteLocations.map(id => locations.find(loc => loc.id === id)).filter((loc): loc is ParkingLot => loc !== undefined);
 
-
  const getVoiceButtonIcon = () => {
      if (!isClient) return <MicOff key="disabled-mic-not-client" className="h-5 w-5 text-muted-foreground opacity-50" />;
      if (!isOnline) return <MicOff key="disabled-mic-offline" className="h-5 w-5 text-muted-foreground opacity-50" />;
      if (!voiceAssistant.isSupported) return <MicOff key="disabled-mic-notsupported" className="h-5 w-5 text-muted-foreground opacity-50" />;
-
      switch (currentVoiceState) {
           case 'activated': return <CheckSquare key="activated" className="h-5 w-5 text-green-600 animate-pulse" />;
          case 'listening': return <Square key="listening" className="h-5 w-5 text-blue-600 animate-pulse" />;
@@ -816,7 +763,6 @@ export default function ParkingLotManager() {
 
    const openExternalMap = (lot: ParkingLot) => {
        if (lot.latitude && lot.longitude && typeof window !== 'undefined') {
-           // Try to get Google Place ID first for more accurate link
            const query = lot.id.startsWith('g_place_') ? `?api=1&query_place_id=${lot.id}` : `?api=1&query=${lot.latitude},${lot.longitude}`;
            window.open(`https://www.google.com/maps/search/${query}`, '_blank');
        } else {
@@ -827,18 +773,13 @@ export default function ParkingLotManager() {
    const carpsoManagedLots = locations.filter(loc => loc.isCarpsoManaged);
    const externalLots = locations.filter(loc => !loc.isCarpsoManaged);
 
-
   const handleSpotReserved = (spotId: string, locationId: string) => {
-    console.log(`Spot ${spotId} at ${locationId} reserved. Simulating car pin.`);
     simulatePinCar(spotId, locationId);
-    fetchLocationsData(true); // Refresh locations to update occupancy status (if applicable)
+    fetchLocationsData(true);
   };
 
-
-   // UI Rendering starts here
    return (
      <div className="container py-8 px-4 md:px-6 lg:px-8">
-       {/* Header and Auth Section */}
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Home</h1>
            <div className="flex items-center gap-2">
@@ -884,7 +825,6 @@ export default function ParkingLotManager() {
         </Alert>
       )}
 
-       {/* Pinned Car Location */}
        {pinnedSpot && (
           <Card className="mb-6 border-primary bg-primary/5">
                <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -904,7 +844,7 @@ export default function ParkingLotManager() {
                                 showUserCar={true}
                                 pinnedCarLocation={pinnedSpot}
                                 centerCoordinates={mapCenter}
-                                defaultMapType="satellite" // Use satellite view for pinned car
+                                defaultMapType="satellite"
                             />
                         ) : (
                             <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-sm">
@@ -920,7 +860,6 @@ export default function ParkingLotManager() {
        )}
        {isPinning && <div className="flex items-center justify-center text-muted-foreground text-sm mb-4"> <Loader2 className="h-4 w-4 mr-2 animate-spin"/> Pinning car location... </div>}
 
-       {/* Favorite Locations */}
        {isAuthenticated && favoriteLocationObjects.length > 0 && (
             <Card className="mb-6 border-yellow-500 bg-yellow-500/5">
                 <CardHeader> <CardTitle className="flex items-center gap-2 text-yellow-700"> <Star className="h-5 w-5 text-yellow-600 fill-yellow-500" /> Your Favorite Locations </CardTitle> </CardHeader>
@@ -950,7 +889,6 @@ export default function ParkingLotManager() {
             </Card>
         )}
 
-       {/* Destination Map View */}
         {isAuthenticated && (
           <Card className="mb-6 border-blue-500 bg-blue-500/5">
               <CardHeader>
@@ -958,17 +896,18 @@ export default function ParkingLotManager() {
                       <LocateFixed className="h-5 w-5" /> Parking Destination Map
                   </CardTitle>
                   <CardDescription>
-                      The map below shows parking locations. Recommendations are based on your current location or a specified destination.
+                      The map below shows parking locations. Recommendations are based on your current location
+                      {destinationForRecommendation?.label && <span> or your specified destination: <span className="font-medium">{destinationForRecommendation.label}</span></span>}.
                       Use voice commands like "Hey Carpso, find parking near [place]" for quick search.
                   </CardDescription>
               </CardHeader>
               <CardContent>
-                  {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? (
+                  {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && mapCenter ? (
                       <ParkingLotMap
                           apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-                          defaultLatitude={mapCenter?.lat || userLocation?.lat || -15.4167}
-                          defaultLongitude={mapCenter?.lng || userLocation?.lng || 28.2833}
-                          customClassName="rounded-md shadow h-[400px]" // Ensure height for map
+                          defaultLatitude={mapCenter.lat}
+                          defaultLongitude={mapCenter.lng}
+                          customClassName="rounded-md shadow h-[400px]"
                           userLocation={userLocation}
                           showUserCar={true}
                           centerCoordinates={mapCenter}
@@ -978,7 +917,7 @@ export default function ParkingLotManager() {
                           <AlertTriangle className="h-4 w-4" />
                           <AlertTitle>Map Service Unavailable</AlertTitle>
                           <AlertDescription>
-                              Google Maps API key is not configured. Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
+                              {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? "Loading map data or no locations available." : "Google Maps API key is not configured."}
                           </AlertDescription>
                       </Alert>
                   )}
@@ -986,11 +925,10 @@ export default function ParkingLotManager() {
           </Card>
         )}
 
-       {/* Parking Recommendations */}
        {isAuthenticated && !isLoadingLocations && (
            <Card className="mb-6 border-accent bg-accent/5">
                <CardHeader> <CardTitle className="flex items-center gap-2"> <Sparkles className="h-5 w-5 text-accent" /> Recommended Carpso Parking </CardTitle>
-                    <CardDescription>Based on your preferences and current conditions. Recommendations focus on Carpso managed/partner locations.</CardDescription>
+                    <CardDescription>Based on your preferences {destinationForRecommendation?.label ? `for ${destinationForRecommendation.label} ` : ''}and current conditions. Recommendations focus on Carpso managed/partner locations.</CardDescription>
                     {!isOnline && <CardDescription className="text-destructive text-xs pt-1">(Recommendations may be outdated or unavailable)</CardDescription>}
                </CardHeader>
                <CardContent>
@@ -1034,8 +972,6 @@ export default function ParkingLotManager() {
            </Card>
        )}
 
-
-     {/* Location Selector */}
      <Card className="mb-6">
         <CardHeader> <CardTitle className="flex items-center gap-2"> <MapPin className="h-5 w-5 text-primary" /> Select Parking Location </CardTitle>
             <CardDescription>Choose a location to view availability or get directions.</CardDescription>
@@ -1061,14 +997,12 @@ export default function ParkingLotManager() {
        </CardContent>
      </Card>
 
-
-      {/* Parking Grid / External Lot Details */}
       {selectedLocation ? (
           selectedLocation.isCarpsoManaged ? (
                <div id="parking-grid-section">
                    <ParkingLotGrid key={selectedLocation.id} location={selectedLocation} onSpotReserved={handleSpotReserved} userTier={userRole === 'Premium' ? 'Premium' : 'Basic'} />
                </div>
-          ) : ( // External Location Details
+          ) : (
               <Card id="parking-grid-section" className="mb-8 border-blue-500 bg-blue-500/5">
                   <CardHeader> <CardTitle className="flex items-center gap-2"> <Building className="h-5 w-5 text-blue-600" /> {selectedLocation.name} (External) </CardTitle> <CardDescription>{selectedLocation.address}</CardDescription> </CardHeader>
                   <CardContent> <p className="text-sm text-muted-foreground mb-4"> This is an external parking location identified via Google Maps. Real-time spot availability and Carpso reservations are not available here. </p>
@@ -1085,56 +1019,17 @@ export default function ParkingLotManager() {
        ) : !isLoadingLocations && !error && locations.length === 0 && isOnline ? ( <p className="text-center text-muted-foreground py-4">No parking locations found in the system.</p>
        ) : null }
 
-
-      {/* Modals */}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
        {isClient && <BottomNavBar onAuthClick={() => setIsAuthModalOpen(true)} />}
-        {/* Report Issue Modal (Now also potentially triggered by voice) */}
         <ReportIssueModal
             isOpen={isReportModalOpen}
             onClose={() => {
                  setIsReportModalOpen(false);
-                 setTimeout(() => setReportingReservation(null), 300); // Delay reset for animation
+                 setTimeout(() => setReportingReservation(null), 300);
             }}
             reservation={reportingReservation}
-            userId={userId || ''} // Pass userId
+            userId={userId || ''}
        />
    </div>
  );
 }
-
-// Mock function to simulate report submission with escalation
-const submitParkingIssueReport = async (data: {
-    reservationId: string;
-    userId: string;
-    spotId: string;
-    locationId: string;
-    reportedPlateNumber: string;
-    details: string;
-    photoDataUri?: string;
-    timestamp: string;
-}): Promise<{ success: boolean; message: string; caseId?: string; timestamp: string }> => {
-    console.log("Submitting issue report:", data);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    const isPlateValid = data.reportedPlateNumber.length > 3;
-    const apiCheckSuccess = Math.random() > 0.2;
-    const caseId = "REP" + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-    console.log(`Report ${caseId}: Notifying Attendant for location ${data.locationId}...`);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    console.log(`Report ${caseId}: Escalating to Owner for location ${data.locationId}...`);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    console.log(`Report ${caseId}: Logging for Carpso Management review...`);
-
-    let message = `Report submitted successfully. It has been forwarded to the parking attendant and owner. Case ID: ${caseId}`;
-    let success = true;
-
-    if (!isPlateValid) {
-        message = `Invalid license plate. ${message}`;
-    } else if (!apiCheckSuccess) {
-         message = `Could not verify plate with authority. ${message}`;
-    }
-
-    return { success: success, message: message, caseId: caseId, timestamp: data.timestamp };
-};
