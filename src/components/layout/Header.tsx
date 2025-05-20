@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy, MessageSquare } from 'lucide-react'; // Added MessageSquare
+import { ShieldCheck, Menu, UserCircle, Compass, Home, User as UserIcon, LifeBuoy, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { AppStateContext } from '@/context/AppStateProvider';
@@ -38,23 +38,25 @@ export default function Header() {
              <SheetHeader className="p-4 pb-2">
                <SheetTitle className="sr-only">Navigation Menu</SheetTitle> {/* Visually hidden title */}
              </SheetHeader>
-             <SheetClose asChild> {/* Close when logo link is clicked */}
-                 <Link href="/" className="flex items-center space-x-2 mb-4 px-4">
+            <SheetClose asChild>
+              <Button variant="ghost" asChild className="justify-start h-auto px-4 py-2 mb-2">
+                <Link href="/" className="flex items-center space-x-2">
                     <CarpsoLogo className="h-8 w-auto text-primary" />
-                    <span className="font-bold sr-only">Carpso</span>
-                 </Link>
-             </SheetClose>
+                    <span className="font-bold text-lg">Carpso</span>
+                </Link>
+              </Button>
+            </SheetClose>
             <nav className="flex flex-col space-y-1 px-2 flex-grow">
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
-                       <Link href="/" className="flex items-center gap-1">
+                       <Link href="/" className="flex items-center gap-2">
                          <Home className="h-4 w-4" /> Home
                        </Link>
                    </Button>
                 </SheetClose>
                 <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
-                     <Link href="/explore" className="flex items-center gap-1">
+                     <Link href="/explore" className="flex items-center gap-2">
                         <Compass className="h-4 w-4" /> Explore
                      </Link>
                    </Button>
@@ -62,7 +64,7 @@ export default function Header() {
                {isAuthenticated && (
                 <SheetClose asChild>
                   <Button variant="ghost" className="justify-start" asChild>
-                    <Link href="/chat" className="flex items-center gap-1">
+                    <Link href="/chat" className="flex items-center gap-2">
                       <MessageSquare className="h-4 w-4" /> Messages
                     </Link>
                   </Button>
@@ -70,7 +72,7 @@ export default function Header() {
                )}
                  <SheetClose asChild>
                    <Button variant="ghost" className="justify-start" asChild>
-                     <Link href="/help" className="flex items-center gap-1">
+                     <Link href="/help" className="flex items-center gap-2">
                         <LifeBuoy className="h-4 w-4" /> Help Centre
                      </Link>
                    </Button>
@@ -78,7 +80,7 @@ export default function Header() {
               {isAuthenticated && isAdminOrOwner && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
-                           <Link href="/admin" className="flex items-center gap-1">
+                           <Link href="/admin" className="flex items-center gap-2">
                               <ShieldCheck className="h-4 w-4" />
                               Admin Dashboard
                            </Link>
@@ -88,7 +90,7 @@ export default function Header() {
                {isAuthenticated && isAttendant && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
-                           <Link href="/attendant" className="flex items-center gap-1">
+                           <Link href="/attendant" className="flex items-center gap-2">
                               <UserIcon className="h-4 w-4" />
                               Attendant Dashboard
                            </Link>
@@ -98,7 +100,7 @@ export default function Header() {
                {isAuthenticated && (
                    <SheetClose asChild>
                        <Button variant="ghost" className="justify-start" asChild>
-                           <Link href="/profile" className="flex items-center gap-1">
+                           <Link href="/profile" className="flex items-center gap-2">
                               <UserCircle className="h-4 w-4" />
                               My Profile
                            </Link>
@@ -118,7 +120,7 @@ export default function Header() {
 
         <div className="flex items-center mr-4">
           <Link href="/" className="flex items-center space-x-2">
-            <CarpsoLogo className="h-8 w-auto text-primary" /> {/* Increased size slightly */}
+            <CarpsoLogo className="h-8 w-auto text-primary" />
             <span className="hidden sm:inline-block font-bold">
               Carpso
             </span>
@@ -126,27 +128,27 @@ export default function Header() {
         </div>
 
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium flex-1">
-             <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+             <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
               <Home className="h-4 w-4" /> Home
             </Link>
-            <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+            <Link href="/explore" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
                <Compass className="h-4 w-4" /> Explore
             </Link>
             {isAuthenticated && (
-              <Link href="/chat" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+              <Link href="/chat" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" /> Messages
               </Link>
             )}
-             <Link href="/help" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+             <Link href="/help" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
                <LifeBuoy className="h-4 w-4" /> Help
             </Link>
             {isAuthenticated && isAdminOrOwner && (
-                <Link href="/admin" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+                <Link href="/admin" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
                    <ShieldCheck className="h-4 w-4" /> Admin
                 </Link>
             )}
             {isAuthenticated && isAttendant && (
-                <Link href="/attendant" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1">
+                <Link href="/attendant" className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-2">
                    <UserIcon className="h-4 w-4" /> Attendant
                 </Link>
             )}
@@ -165,7 +167,7 @@ export default function Header() {
                      </Button>
                  </Link>
             ) : (
-                 null // Or <Button onClick={() => setIsAuthModalOpen(true)}>Sign In</Button>
+                 null // AuthModal is now handled globally by MainLayoutClientWrapper
             )}
         </div>
       </div>
