@@ -11,9 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { MapPin, Loader2, Sparkles, Star, Mic, MicOff, CheckSquare, Square, AlertTriangle, BookMarked, WifiOff, RefreshCcw, StarOff, Search, ExternalLink, Building, Phone, Globe as GlobeIcon, LocateFixed, Car } from 'lucide-react';
-// AuthModal and BottomNavBar are now handled globally by MainLayoutClientWrapper
-// import AuthModal from '@/components/auth/AuthModal';
-// import BottomNavBar from '@/components/layout/BottomNavBar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { AppStateContext } from '@/context/AppStateProvider';
@@ -43,9 +40,6 @@ export default function ParkingLotManager() {
       isAuthenticated,
       userId,
       userRole,
-      // userName, // userName and userAvatarUrl not directly needed here if auth modal is global
-      // userAvatarUrl,
-      // login, // login is handled by MainLayoutClientWrapper
       isOnline,
   } = useContext(AppStateContext)!;
 
@@ -54,7 +48,6 @@ export default function ParkingLotManager() {
   const [isLoadingLocations, setIsLoadingLocations] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // const [isAuthModalOpen, setIsAuthModalOpen] = useState(false); // Handled globally now
   const [pinnedSpot, setPinnedSpot] = useState<PinnedLocationData | null>(null);
   const [isPinning, setIsPinning] = useState(false);
   const [recommendations, setRecommendations] = useState<RecommendParkingOutput['recommendations']>([]);
@@ -77,6 +70,7 @@ export default function ParkingLotManager() {
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
+
   // --- Data Fetching Callbacks ---
   const fetchLocationsDataRef = useRef<((forceRefresh?: boolean) => Promise<void>) | null>(null);
   const fetchUserBookmarksDataRef = useRef<(() => Promise<void>) | null>(null);
@@ -98,7 +92,6 @@ export default function ParkingLotManager() {
              try {
                 newAllLots = JSON.parse(cachedData);
              } catch (parseError: any) {
-                 console.error("Failed to parse cached locations, will fetch fresh.", parseError.message);
                  localStorage.removeItem(cacheKey);
                  localStorage.removeItem(cacheTimestampKey);
              }
@@ -116,7 +109,6 @@ export default function ParkingLotManager() {
                 localStorage.setItem(cacheTimestampKey, Date.now().toString());
             }
         } catch (fetchError: any) {
-            console.error("Online fetch failed for locations:", fetchError.message);
             if (newAllLots.length === 0) setError("Could not load parking locations. Please check connection.");
         }
     } else if (needsServerFetch && !isOnline) {
@@ -132,7 +124,7 @@ export default function ParkingLotManager() {
     setIsLoadingLocations(false);
     setIsRefreshing(false);
   }, [isOnline, isVisibleCtx, userRole, userId]);
-  fetchLocationsDataRef.current = fetchLocationsData;
+
 
   const fetchUserBookmarksData = useCallback(async () => {
     if (typeof window !== 'undefined') {
@@ -155,13 +147,12 @@ export default function ParkingLotManager() {
              catch (cacheError: any) { console.error("Failed to cache bookmarks:", cacheError.message); }
         }
     } catch (err: any) {
-        console.error("Failed to fetch user bookmarks:", err.message);
         if (isOnline) toast({ title: "Error", description: "Could not refresh saved locations.", variant: "destructive" });
     } finally {
         setIsLoadingBookmarks(false);
     }
   }, [isAuthenticated, userId, isOnline, toast]);
-  fetchUserBookmarksDataRef.current = fetchUserBookmarksData;
+
 
   const fetchRecommendationsData = useCallback(async (destinationLabel?: string, destinationAddress?: string, destLat?: number, destLng?: number) => {
     if (!isAuthenticated || !userId || locations.length === 0 || !isOnline) {
@@ -227,7 +218,6 @@ export default function ParkingLotManager() {
         const result = await recommendParking(input);
         setRecommendations(result.recommendations || []);
     } catch (err: any) {
-        console.error("Failed to fetch recommendations:", err.message);
         if (isOnline) toast({
             title: "Recommendation Error",
             description: `Could not fetch recommendations: ${err.message || 'Unknown error'}. Please try again later.`,
@@ -238,6 +228,11 @@ export default function ParkingLotManager() {
         setIsLoadingRecommendations(false);
     }
   }, [isAuthenticated, userId, locations, userPreferredServices, userHistorySummary, toast, userRole, userBookmarks, isOnline, userLocation]);
+
+
+  // Assign to refs after definition
+  fetchLocationsDataRef.current = fetchLocationsData;
+  fetchUserBookmarksDataRef.current = fetchUserBookmarksData;
   fetchRecommendationsDataRef.current = fetchRecommendationsData;
 
   // --- Voice Command Handling ---
@@ -377,7 +372,6 @@ export default function ParkingLotManager() {
                      setIsReportModalOpen(true);
                  } else if (!isAuthenticated) {
                       if (isOnline && isClient && speakFn) speakFn("Please sign in to report an issue.");
-                      // setIsAuthModalOpen(true); // Auth modal is global now, how to trigger?
                  } else {
                       let msg = `Sorry, I couldn't identify the location for spot ${entities.spotId}.`;
                       if (!locations.find(loc => loc.isCarpsoManaged && entities.spotId?.startsWith(loc.id))) msg += " You can only report issues for Carpso-managed locations.";
@@ -390,7 +384,6 @@ export default function ParkingLotManager() {
         case 'add_bookmark':
              if (!isAuthenticated || !userId) {
                 if (isOnline && isClient && speakFn) speakFn("Please sign in to save locations.");
-                // setIsAuthModalOpen(true); // Auth modal is global now
                 break;
              }
               if (!isOnline) {
@@ -434,7 +427,9 @@ export default function ParkingLotManager() {
     }
   }, [
     locations, pinnedSpot, isAuthenticated, toast, userId, userBookmarks, isOnline, isClient,
-    userLocation
+    userLocation,
+    fetchRecommendationsDataRef, // Include refs
+    fetchUserBookmarksDataRef   // Include refs
   ]);
 
   const processRecognizedCommand = useCallback(async (transcript: string, speakFn: (text: string) => void) => {
@@ -502,7 +497,7 @@ export default function ParkingLotManager() {
         },
         {
           enableHighAccuracy: true,
-          timeout: 30000,
+          timeout: 30000, // Increased timeout
           maximumAge: 0,
         }
       );
@@ -615,7 +610,8 @@ export default function ParkingLotManager() {
     if (locations.length > 0) {
         const currentSelectionValid = locations.some(loc => loc.id === selectedLocationId);
         if (!currentSelectionValid || !selectedLocationId) {
-            const firstFavorite = favoriteLocations.find(favId => locations.some(loc => loc.id === favId));
+            const favoriteLocationObjects = locations.filter(loc => favoriteLocations.includes(loc.id));
+            const firstFavorite = favoriteLocationObjects.length > 0 ? favoriteLocationObjects[0].id : null;
             const firstCarpso = locations.find(l => l.isCarpsoManaged);
             const newSelection = firstFavorite || (firstCarpso ? firstCarpso.id : locations[0]?.id);
             if (newSelection) {
@@ -643,8 +639,6 @@ export default function ParkingLotManager() {
 
  const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
 
- // AuthModal is now global, so onAuthClick is handled by MainLayoutClientWrapper
- // const handleAuthSuccess = (...) => { ... }; // This specific handler can be removed if not used elsewhere
 
   const simulatePinCar = async (spotId: string, locationId: string) => {
       setIsPinning(true);
@@ -714,7 +708,6 @@ export default function ParkingLotManager() {
   const toggleFavoriteLocation = (locationId: string) => {
       if (!userId) {
            toast({ title: "Sign In Required", description: "Please sign in to save favorite locations." });
-           // setIsAuthModalOpen(true); // Global modal, trigger via context or prop if needed
            return;
        }
       let updatedFavorites: string[];
@@ -781,6 +774,8 @@ export default function ParkingLotManager() {
 
    const carpsoManagedLots = locations.filter(loc => loc.isCarpsoManaged);
    const externalLots = locations.filter(loc => !loc.isCarpsoManaged);
+   const favoriteLocationObjects = locations.filter(loc => favoriteLocations.includes(loc.id));
+
 
   const handleSpotReserved = (spotId: string, locationId: string) => {
     simulatePinCar(spotId, locationId);
@@ -789,6 +784,7 @@ export default function ParkingLotManager() {
 
    return (
      <div className="container py-8 px-4 md:px-6 lg:px-8">
+       {/* Header and Auth Section */}
        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
            <h1 className="text-3xl font-bold">Home</h1>
            <div className="flex items-center gap-2">
@@ -813,7 +809,6 @@ export default function ParkingLotManager() {
                 >
                     {getVoiceButtonIcon()}
                 </Button>
-              {/* Auth button is now handled by global BottomNavBar through MainLayoutClientWrapper */}
           </div>
       </div>
        {isClient && voiceAssistant.isSupported && isOnline && currentVoiceState !== 'idle' && (
